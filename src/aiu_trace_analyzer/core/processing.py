@@ -23,9 +23,8 @@ class EventProcessor:
       3. pass those through registered post-processing functions (none exist yet)
     '''
     def __init__(self, intermediate: str = None) -> None:
-        self.prehooks = []
-        self.posthooks = []
-        self.prehooks.append((EventProcessor.sanity_check, None, {}))
+        self.stages = []
+        self.stages.append((EventProcessor.sanity_check, None, {}))
         self.event_count = 0
         self.intermediate = intermediate
         self.stage_count = 0
@@ -39,23 +38,15 @@ class EventProcessor:
        * a context object for any necessary global state (see context.py)
        * a dictionary for k/v config arguments
     '''
-    def register_pre_process(self, callback, context: procCTX.AbstractContext = None, **kwargs):
-        self.prehooks.append((callback, context, kwargs))
+    def register_stage(self, callback, context: procCTX.AbstractContext = None, **kwargs):
+        self.stages.append((callback, context, kwargs))
 
         # if intermediate results are requested, register an additional special function+context
         if self.intermediate:
             next_intermediate = IntermediateDuplicateAndHoldContext(JsonFileTraceExporter(target_uri=f'{self.intermediate}_{callback.__name__}_{self.stage_count}'))
             aiulog.log(aiulog.TRACE, "DAH: registering preprocessing stage export:", next_intermediate.exporter.target_uri)
-            self.prehooks.append((duplicate_and_hold, next_intermediate, None))
+            self.stages.append((duplicate_and_hold, next_intermediate, None))
             self.stage_count += 1
-
-    '''
-    Post-Process functions required to take
-       * a single event (as an AbstractEventType) to process and
-       * a context object for any necessary global state (see context.py)
-    '''
-    def register_post_process(self, callback, context: procCTX.AbstractContext = None):
-        self.posthooks.append((callback, context))
 
     '''
     Basic sanity check of events to make sure they contain the minimum required keys to be valid
@@ -78,13 +69,6 @@ class EventProcessor:
 
         output_event_list = self.convert_events(event_list)
 
-        # walk through registered post-processing hooks for the created event list
-        for post_process in self.posthooks:
-            output_event_list = post_process(output_event_list)
-            if output_event_list == None:
-                aiulog.log(aiulog.ERROR, "PostProcessing failed at", post_process)
-                raise BrokenPipeError(f"PostProcessing pipeline failed at: {post_process}")
-
         # tracking number of exported events
         self.event_count += len(output_event_list)
         return output_event_list
@@ -93,7 +77,7 @@ class EventProcessor:
     # split any returned list of events into single events for each next stage pre-processor
     def pre_process(self, event: TraceEvent) -> list[TraceEvent]:
         event_list = [ event ]
-        for pre_process, context, keyword_dictionary in self.prehooks:
+        for pre_process, context, keyword_dictionary in self.stages:
             next_event_list = []
             for event in event_list:
                 aiulog.log(aiulog.TRACE, "Prehook: ", pre_process, "for: ", event)
@@ -133,9 +117,9 @@ class EventProcessor:
         # split any returned list of events into single events for each next stage pre-processor
         next_event_list = []
 
-        while len(self.prehooks) > 0:
+        while len(self.stages) > 0:
             # remove the first hook from the chain to drain and process any remaining/buffered events
-            _, drain_context, _ = self.prehooks.pop(0)
+            _, drain_context, _ = self.stages.pop(0)
 
             if drain_context:
                 aiulog.log(aiulog.DEBUG, "Draining pre-processing context:", drain_context)

@@ -236,10 +236,10 @@ class Acelyzer:
         ##############################################################
         # Event preparation, cleanup, and sanitization
         # register pre-processing: filtern events with broken time stamps (E < B)
-        process.register_pre_process(callback=event_pipe.drop_timestamp_reversed_events,
+        process.register_stage(callback=event_pipe.drop_timestamp_reversed_events,
                                 context=event_pipe.InversedTSDetectionContext() )
         # register pre-processing: turn B/E into X-slices
-        process.register_pre_process(callback=event_pipe.create_slice_from_BE,
+        process.register_stage(callback=event_pipe.create_slice_from_BE,
                                 context=event_pipe.SliceCreationContext(make_complete=True) )
 
         ##############################################################
@@ -247,84 +247,84 @@ class Acelyzer:
         # and event manipulation/normalization in 2 phases
         normalize_ctx = event_pipe.NormalizationContext(soc_frequency=args.freq[0])
         frequency_align_ctx = event_pipe.FlexJobOffsetContext(soc_frequency=args.freq[0])
-        process.register_pre_process(callback=event_pipe.normalize_phase1, context=normalize_ctx)
+        process.register_stage(callback=event_pipe.normalize_phase1, context=normalize_ctx)
         if args.flex_ts_fix:
-            process.register_pre_process(callback=event_pipe.frequency_align_collect, context=frequency_align_ctx)
-            process.register_pre_process(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
-            process.register_pre_process(callback=event_pipe.frequency_align_apply, context=frequency_align_ctx)
-        process.register_pre_process(callback=event_pipe.normalize_phase2, context=normalize_ctx)
+            process.register_stage(callback=event_pipe.frequency_align_collect, context=frequency_align_ctx)
+            process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+            process.register_stage(callback=event_pipe.frequency_align_apply, context=frequency_align_ctx)
+        process.register_stage(callback=event_pipe.normalize_phase2, context=normalize_ctx)
 
         # make sure the data in the events have no unexpected values
-        process.register_pre_process(callback=event_pipe.event_sanity_checks)
+        process.register_stage(callback=event_pipe.event_sanity_checks)
 
 
         ##############################################################
         # Torch/Flex time alignment
         time_align_ctx = event_pipe.TimeAlignmentContext()
-        process.register_pre_process(callback=event_pipe.time_align_collect, context=time_align_ctx)
-        process.register_pre_process(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
-        process.register_pre_process(callback=event_pipe.time_align_apply, context=time_align_ctx)
+        process.register_stage(callback=event_pipe.time_align_collect, context=time_align_ctx)
+        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+        process.register_stage(callback=event_pipe.time_align_apply, context=time_align_ctx)
 
         ##############################################################
         # Event manipulation: making changes to args or other event parameters beyond cleanup
         # move request IDs from the event name into args
         if self._overlap_option_from_arg(args.overlap) == event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_ASYNC:
-            process.register_pre_process(callback=event_pipe.remove_ids_from_name)
+            process.register_stage(callback=event_pipe.remove_ids_from_name)
 
         # register pre-processing: mapping TID to human eye-friendly
         cid_mapping_ctx = event_pipe.TIDMappingContext(self.defaults["remap_size"],
                                                      self.defaults["remap_start"],
                                                      self.defaults["remap_step"])
-        process.register_pre_process(callback=event_pipe.map_tid_to_range, context=cid_mapping_ctx)
+        process.register_stage(callback=event_pipe.map_tid_to_range, context=cid_mapping_ctx)
 
         # add a args.ts_all list for TS1-5 cycle timestamps if available
-        process.register_pre_process(callback=event_pipe.cycle_count_to_wallclock, soc_frequency=args.freq[0])
-        process.register_pre_process(callback=event_pipe.tighten_hts_by_instr_type, soc_frequency=args.freq[0])
+        process.register_stage(callback=event_pipe.cycle_count_to_wallclock, soc_frequency=args.freq[0])
+        process.register_stage(callback=event_pipe.tighten_hts_by_instr_type, soc_frequency=args.freq[0])
 
         if args.split_events:
             # split each X-event into DmaI, Cmpt, DmaO based on TS1-5
-            process.register_pre_process(callback=event_pipe.tripple_phased_events, soc_frequency=args.freq[0])
+            process.register_stage(callback=event_pipe.tripple_phased_events, soc_frequency=args.freq[0])
 
         if not args.skip_mpsync:
             if not args.mp_sync_v2:
-                process.register_pre_process(callback=event_pipe.mp_sync_tight_v1, context=event_pipe.MpSyncTightContext())
+                process.register_stage(callback=event_pipe.mp_sync_tight_v1, context=event_pipe.MpSyncTightContext())
             else:
-                process.register_pre_process(callback=event_pipe.mp_ts_calibration_v2, context=event_pipe.MpTsCalibV2Context())
+                process.register_stage(callback=event_pipe.mp_ts_calibration_v2, context=event_pipe.MpTsCalibV2Context())
 
         # process.registerPreProcess(callback=event_pipe.cycle_count_conversion_cleanup)
         # process.registerPreProcess(callback=event_pipe.cycle_count_to_wallclock)
 
         # dealing with prep-queue needs to be done before dropping prep events might happen
         if any(args.counter) and "prep_queue" in args.counter:
-            process.register_pre_process(callback=event_pipe.queueing_counter, context=event_pipe.QueueingCounterContext(), keep_prep=args.keep_prep)
+            process.register_stage(callback=event_pipe.queueing_counter, context=event_pipe.QueueingCounterContext(), keep_prep=args.keep_prep)
 
         # optionally dropping events without TSx or are Prep events
         if args.drop_globals:
-            process.register_pre_process(callback=event_pipe.drop_global_events, context=None)
+            process.register_stage(callback=event_pipe.drop_global_events, context=None)
 
         # Merge CPU events into a single TID-stream (except AIU Roundtrip)
-        process.register_pre_process(callback=event_pipe.recombine_cpu_events, context=None, cpu_stream_tid=1000)
+        process.register_stage(callback=event_pipe.recombine_cpu_events, context=None, cpu_stream_tid=1000)
 
         ##############################################################
         # modifying/detecting things across groups of events (e.g. overlapping, sorting)
         # register pre-processing: resolve overlap conflicts caused by partially overlapping slices
         ts_sorting_ctx = event_pipe.EventSortingContext(event_types=["X"], sortkey="ts")
-        process.register_pre_process(callback=event_pipe.sort_events, context=ts_sorting_ctx)
+        process.register_stage(callback=event_pipe.sort_events, context=ts_sorting_ctx)
 
         # check whether the inflow into overlap detection has monotonic increasing ts (per pid/tid stream)
         monotonic_ts_ctx_a = event_pipe.TSSequenceContext(ts3check=True)
-        process.register_pre_process(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_a)
+        process.register_stage(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_a)
 
 
         # register pre-processing: resolve overlap conflicts caused by partially overlapping slices
         overlap_ctx = event_pipe.OverlapDetectionContext(overlap_resolve=self._overlap_option_from_arg(args.overlap))
-        process.register_pre_process(callback=event_pipe.detect_partial_overlap_events, context=overlap_ctx)
+        process.register_stage(callback=event_pipe.detect_partial_overlap_events, context=overlap_ctx)
 
         # validate that the overlap has not messed up the event stream ordering
         monotonic_ts_ctx_b = event_pipe.TSSequenceContext(ts3check=True)
-        process.register_pre_process(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_b)
+        process.register_stage(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_b)
 
-        process.register_pre_process(callback=event_pipe.collect_iteration_stats, context=event_pipe.IterationDectectContext())
+        process.register_stage(callback=event_pipe.collect_iteration_stats, context=event_pipe.IterationDectectContext())
 
         ##############################################################
         # dealing with power counter data
@@ -333,12 +333,12 @@ class Acelyzer:
             power_data_ctx = event_pipe.PowerExtractionContext(
                 filter_pattern=" Prep",
                 use_ts4=use_ts4)
-            process.register_pre_process(callback=event_pipe.extract_power_event, context=power_data_ctx)
+            process.register_stage(callback=event_pipe.extract_power_event, context=power_data_ctx)
 
             # register callback to to the power counter sorting
             # create global context for sorting power counter events (using TS3 timestamp)
             sorting_counter_ctx = event_pipe.EventSortingContext(event_types=["C"], sortkey=TS_CYCLE_KEY)
-            process.register_pre_process(callback=event_pipe.sort_events, context=sorting_counter_ctx)
+            process.register_stage(callback=event_pipe.sort_events, context=sorting_counter_ctx)
 
             # checking power timestamps (TS3) are in ascending order
             #process.registerPreProcess(callback=event_pipe.check_power_ts_sequence, context=powerDataContext)
@@ -348,76 +348,76 @@ class Acelyzer:
                 skip_events_flag=args.skip_events,
                 filter_pattern=" Prep",
                 use_ts4=use_ts4)
-            process.register_pre_process(callback=event_pipe.compute_power, context=power_compute_ctx)
+            process.register_stage(callback=event_pipe.compute_power, context=power_compute_ctx)
 
         # dealing with bandwidth counter data
         if any(args.counter) and "bandwidth" in args.counter:
             # dealing with bytes (data transfer) counter data
             data_transfer_data_ctx = event_pipe.DataTransferExtractionContext()
-            process.register_pre_process(callback=event_pipe.extract_data_transfer_event, context=data_transfer_data_ctx)
+            process.register_stage(callback=event_pipe.extract_data_transfer_event, context=data_transfer_data_ctx)
 
             # calculate bandwidth
             data_transfer_compute_ctx = event_pipe.DataTransferExtractionContext()
-            process.register_pre_process(callback=event_pipe.compute_bandwidth, context=data_transfer_compute_ctx)
+            process.register_stage(callback=event_pipe.compute_bandwidth, context=data_transfer_compute_ctx)
 
         if any(args.counter) and "rcu_util" in args.counter and args.compiler_log:
             rcu_util_ctx = event_pipe.MultiRCUUtilizationContext(compiler_log=args.compiler_log,
                                                                     csv_fname=args.output,
                                                                     scale_factor=self.frequency_scale)
-            process.register_pre_process(callback=event_pipe.compute_utilization_fingerprints, context=rcu_util_ctx)
+            process.register_stage(callback=event_pipe.compute_utilization_fingerprints, context=rcu_util_ctx)
 
 
         ##############################################################
         # dealing with collective call flows
         monotonic_ts_ctx_c = event_pipe.TSSequenceContext(ts3check=True)
-        process.register_pre_process(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_c)
+        process.register_stage(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_c)
 
         if args.comm_summarize_seq:
             communication_event_ctx = event_pipe.CommunicationGroupContext()
-            process.register_pre_process(callback=event_pipe.communication_event_collection, context=communication_event_ctx)
-        process.register_pre_process(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+            process.register_stage(callback=event_pipe.communication_event_collection, context=communication_event_ctx)
+        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
 
         if args.comm_summarize_seq:
-            process.register_pre_process(callback=event_pipe.communication_event_apply, context=communication_event_ctx)
+            process.register_stage(callback=event_pipe.communication_event_apply, context=communication_event_ctx)
 
         if any(args.counter) and "rcu_util" in args.counter and args.compiler_log:
-            process.register_pre_process(callback=event_pipe.compute_utilization, context=rcu_util_ctx)
+            process.register_stage(callback=event_pipe.compute_utilization, context=rcu_util_ctx)
 
 
         # register callback to to the power counter sorting
         # create an event sorter for X-events with a global order across ranks required for flow detection
         sorting_flow_ctx = event_pipe.EventSortingContext(event_types=["X"], sortkey="ts", global_sort=True)
-        process.register_pre_process(callback=event_pipe.sort_events, context=sorting_flow_ctx)
+        process.register_stage(callback=event_pipe.sort_events, context=sorting_flow_ctx)
 
         if args.flow:
             monotonic_ts_ctx_c = event_pipe.TSSequenceContext()
-            process.register_pre_process(callback=event_pipe.assert_global_ts_sequence, context=monotonic_ts_ctx_c)
+            process.register_stage(callback=event_pipe.assert_global_ts_sequence, context=monotonic_ts_ctx_c)
 
-            process.register_pre_process(callback=event_pipe.flow_prepare_event_data)
+            process.register_stage(callback=event_pipe.flow_prepare_event_data)
 
             flow_ctx = event_pipe.CollectiveGroupingContext(build_coll_event=args.build_coll_event)
-            process.register_pre_process(callback=event_pipe.flow_extraction, context=flow_ctx)
+            process.register_stage(callback=event_pipe.flow_extraction, context=flow_ctx)
 
             #process.registerPreProcess(callback=event_pipe.flow_data_cleanup)
 
         # dealing with collective call bandwidth
         if any(args.counter) and "coll_bw" in args.counter:
             if args.build_coll_event:
-                process.register_pre_process(callback=event_pipe.mp_calc_bw_v2, context=event_pipe.MpCalcBwV2Context())
+                process.register_stage(callback=event_pipe.mp_calc_bw_v2, context=event_pipe.MpCalcBwV2Context())
             else:
-                process.register_pre_process(callback=event_pipe.mp_calc_bw, context=event_pipe.MpCalcBwContext())
+                process.register_stage(callback=event_pipe.mp_calc_bw, context=event_pipe.MpCalcBwContext())
 
         # calculate statistics
         if args.stats:
             # pass stats filename
             data_stats_compute_ctx = event_pipe.StatsExtractionContext(stats_filename=args.output)
-            process.register_pre_process(callback=event_pipe.calculate_stats, context=data_stats_compute_ctx)
+            process.register_stage(callback=event_pipe.calculate_stats, context=data_stats_compute_ctx)
 
         ##############################################################
         # This is for json file debugging or evaluation of new features
         # special optional filter out all events, except for the ones in the event pattern
         if args.filter != "":
-            process.register_pre_process(
+            process.register_stage(
                 callback=event_pipe.processing_filter,
                 context=None,
                 filter_pattern=args.filter,
@@ -426,22 +426,22 @@ class Acelyzer:
         ##############################################################
         # event cleanup for cases where processing functions had added temporary data
         # remove the ts_all from args that got added by cycle_count_to_wallclock
-        process.register_pre_process(callback=event_pipe.flow_data_cleanup)
-        process.register_pre_process(callback=event_pipe.cycle_count_conversion_cleanup)
-        process.register_pre_process(callback=event_pipe.cleanup_copy_of_device_ts)
+        process.register_stage(callback=event_pipe.flow_data_cleanup)
+        process.register_stage(callback=event_pipe.cycle_count_conversion_cleanup)
+        process.register_stage(callback=event_pipe.cleanup_copy_of_device_ts)
 
         tb_refinement_ctx=event_pipe.RefinementContext(exporter)
         if args.tb_refinement:
-            process.register_pre_process(callback=event_pipe.tb_refinement_intrusive, context=tb_refinement_ctx)
+            process.register_stage(callback=event_pipe.tb_refinement_intrusive, context=tb_refinement_ctx)
 
         # lightweight tb refinement changes cannot be disabled
-        process.register_pre_process(callback=event_pipe.tb_refinement_lightweight, context=tb_refinement_ctx)
+        process.register_stage(callback=event_pipe.tb_refinement_lightweight, context=tb_refinement_ctx)
 
         # calculate V2 statistics: relies on some lightweight tb-refinements
         if args.stats:
             if args.build_coll_event:
                 data_stats_compute_ctx = event_pipe.EventStatsTrackerContext(stats_filename=args.output, stat_metrics=self.defaults["stats_v2"])
-                process.register_pre_process(callback=event_pipe.calculate_stats_v2, context=data_stats_compute_ctx)
+                process.register_stage(callback=event_pipe.calculate_stats_v2, context=data_stats_compute_ctx)
 
 
         # <<< END Event processing functions registration
