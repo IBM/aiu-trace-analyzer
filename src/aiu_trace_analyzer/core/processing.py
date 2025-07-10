@@ -8,6 +8,7 @@ import aiu_trace_analyzer.pipeline.context as procCTX
 from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.core.duplicate_hold import IntermediateDuplicateAndHoldContext, duplicate_and_hold
 from aiu_trace_analyzer.export.exporter import JsonFileTraceExporter
+from aiu_trace_analyzer.core.stage_profile import StageProfile, StageProfileChecker
 
 _MINREQKEYS = ["ph", "ts", "pid", "name"]
 
@@ -21,13 +22,14 @@ class EventProcessor:
       1. pass event(s) through registered pre-processing functions
       2. convert from python dict no AbstractEventType object
     '''
-    def __init__(self, profile: dict = {}, intermediate: str = None) -> None:
+    def __init__(self, profile: StageProfile = None, intermediate: str = None) -> None:
         self.stages = []
         self.stages.append((EventProcessor.sanity_check, None, {}))
         self.profile = profile
         self.event_count = 0
         self.intermediate = intermediate
         self.stage_count = 0
+        self.stage_check = StageProfileChecker(self.profile)
 
     def __del__(self) -> None:
         aiulog.log(aiulog.INFO, "Exported events: ", self.event_count)
@@ -39,9 +41,11 @@ class EventProcessor:
        * a dictionary for k/v config arguments
     '''
     def register_stage(self, callback, context: procCTX.AbstractContext = None, **kwargs):
-        if not self._callback_in_profile(callback.__name__):
+        if not self.stage_check.fwd_find_stage(callback.__name__):
             aiulog.log(aiulog.DEBUG, "DAH: Skipping registration of", callback.__name__, ": disabled in profile.")
             return
+        else:
+            aiulog.log(aiulog.DEBUG, "DAH: registering: ", callback.__name__)
 
         self.stages.append((callback, context, kwargs))
 
@@ -134,6 +138,3 @@ class EventProcessor:
             for event in pending:
                 next_event_list += self.process(event)
         return next_event_list
-
-    def _callback_in_profile(self, callback: str) -> bool:
-        return len(self.profile) == 0 or (callback in self.profile and self.profile[callback])
