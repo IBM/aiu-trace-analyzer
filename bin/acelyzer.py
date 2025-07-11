@@ -16,7 +16,8 @@ from aiu_trace_analyzer.core.acelyzer import Acelyzer
 
 def main(input_args=None) -> None:
     # this is just a wrapper, processing runs as part of instance creation right now
-    Acelyzer(input_args)
+    acelyzer = Acelyzer(input_args)
+    acelyzer.run()
 
 if __name__ == "__main__":
     if enable_tool_profiler:
