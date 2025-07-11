@@ -37,11 +37,11 @@ class StageProfile:
 
 class StageProfileChecker:
     def __init__(self, profile: StageProfile):
-        self.profile = profile
+        self.stages = profile
         self.reg_idx = 0
 
     def fwd_find_stage(self, stage: str) -> bool:
-        for incr, st in enumerate(self.profile.profile[self.reg_idx:]):
+        for incr, st in enumerate(self.stages.profile[self.reg_idx:]):
             if stage == st:
                 self.reg_idx += incr
                 return True

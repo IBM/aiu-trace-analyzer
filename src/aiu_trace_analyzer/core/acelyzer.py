@@ -95,7 +95,7 @@ class Acelyzer:
         "time_unit": "ns",
 
         # name of a processing profile
-        "stage_profile": "profiles/default.json"
+        "stage_profile": "profiles/everything.json"
     }
 
     def __init__(self, in_args=None):
