@@ -6,12 +6,14 @@ import argparse
 import math
 
 from aiu_trace_analyzer.constants import TS_CYCLE_KEY
+from aiu_trace_analyzer.core.stage_profile import StageProfile
 import aiu_trace_analyzer.core.engine as engine
 import aiu_trace_analyzer.core.processing as processor
 import aiu_trace_analyzer.ingest.ingestion as ingest
 import aiu_trace_analyzer.export.exporter as output
 import aiu_trace_analyzer.logger as aiulog
 import aiu_trace_analyzer.pipeline as event_pipe
+
 
 class Acelyzer:
 
@@ -91,6 +93,9 @@ class Acelyzer:
 
         # displayTimeUnit setting for exported json trace files
         "time_unit": "ns",
+
+        # name of a processing profile
+        "stage_profile": "profiles/everything.json"
     }
 
     def __init__(self, in_args=None):
@@ -109,7 +114,6 @@ class Acelyzer:
 
         self.frequency_scale = self.args.freq[0] / self.args.freq[1]
 
-
         # setup/configure data ingestion
         try:
             importer = ingest.MultifileIngest(source_uri=self.args.input, show_warnings=(not self.args.disable_input_warnings))
@@ -117,18 +121,25 @@ class Acelyzer:
             sys.exit(1)
 
         # create event processor
+        profile = StageProfile.from_json(self.args.profile)
         intermediate_file = self.args.output if self.args.intermediate else None
-        process = processor.EventProcessor(intermediate=intermediate_file)
+        process = processor.EventProcessor(profile=profile,
+                                           intermediate=intermediate_file)
 
         # set up output
         if self.args.tb and self.args.tb_refinement:
             # prepare traces for TB distributed view
-            self.exporter = output.TensorBoardFileTraceExporter(target_uri=self.args.output, timescale=self.args.time_unit, settings=vars(self.args))
+            self.exporter = output.TensorBoardFileTraceExporter(target_uri=self.args.output,
+                                                                timescale=self.args.time_unit,
+                                                                settings=vars(self.args))
         else:
             if self.args.format == "json":
-                self.exporter = output.JsonFileTraceExporter(target_uri=self.args.output, timescale=self.args.time_unit, settings=vars(self.args))
+                self.exporter = output.JsonFileTraceExporter(target_uri=self.args.output,
+                                                             timescale=self.args.time_unit,
+                                                             settings=vars(self.args))
             else:
-                self.exporter = output.ProtobufTraceExporter(target_uri=self.args.output, settings=vars(self.args))
+                self.exporter = output.ProtobufTraceExporter(target_uri=self.args.output,
+                                                             settings=vars(self.args))
 
         self.register_processing_functions(process, self.args, self.exporter)
 
@@ -138,14 +149,14 @@ class Acelyzer:
 
         aiulog.log(aiulog.INFO, "Finishing Test parser. Return code=", rc)
 
-
     def parse_inputs(self, args=None):
-        parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)    # to include default value in --help output
+        # to include default value in --help output
+        parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         parser.add_argument("-C", "--counter", type=str, nargs='*', default=self.defaults["counter"],
                             choices=["power_ts4", "power_ts3", "coll_bw", "bandwidth", "prep_queue", "rcu_util"],
                             help="Space-separated list of counters to extract/display. Note: power_ts4 and power_ts3 are mutually exclusive.")
         parser.add_argument("-c", "--compiler_log", type=str, default=None, help="(Comma-separated list of per-rank) Path/Filename of compiler log to ingest compile-time data references. Required e.g. for rcu_util counters. Multi-AIU rank outputs need to be sorted by rank.")
-        parser.add_argument("-D", "--loglevel", type=int, default=self.defaults["loglevel"], choices=range(0,5), help="Logging level 0(ERROR)..4(TRACE)")
+        parser.add_argument("-D", "--loglevel", type=int, default=self.defaults["loglevel"], choices=range(0, 5), help="Logging level 0(ERROR)..4(TRACE)")
         parser.add_argument("-F", "--filter", type=str, default=self.defaults["filter"], help="List of event types to keep. E.g. 'C' to just keep counters.")
         parser.add_argument("-f", "--format", type=str, default=self.defaults["format"], help="Type of output format (json, protobuf)")
         parser.add_argument("--freq", type=str, default=':'.join([str(self.defaults["freq"]), str(self.defaults["ideal_freq"])]), help="Frequency spec for <SoC_freq>[:<core_freq>] in MHz")
@@ -156,7 +167,8 @@ class Acelyzer:
         parser.add_argument("-k", "--skip_events", dest="skip_events", action='store_true', default=self.defaults["skip_events"], help="skip certain events when calculating the power")
         parser.add_argument("--drop_globals", dest="drop_globals", action='store_true', default=self.defaults["drop_globals"], help="drop throw-away events like Prep, etc.")
         parser.add_argument("-M", "--no_mp_sync", dest="skip_mpsync", action='store_true', default=self.defaults["skip_mpsync"], help="Do not attempt to sync multi-AIU streams based on AIU timestamps, e.g. if torch profile input aligns those already.")
-        parser.add_argument("-O", "--overlap", type=str, default=self.defaults["overlap"], choices=["drop","tid","async"], help="How to resolve overlapping/non-displayable events )")
+        parser.add_argument("-O", "--overlap", type=str, default=self.defaults["overlap"], choices=["drop", "tid", "async"], help="How to resolve overlapping/non-displayable events )")
+        parser.add_argument("-P", "--profile", type=str, default=self.defaults["stage_profile"], help="Name of a processing profile json that lists the active processing stages to run")
         parser.add_argument("-o", "--output", type=str, default=None, help="Output file name.")
         parser.add_argument("-R", "--build_coll_event", dest="build_coll_event", action="store_true", default=self.defaults["build_coll_event"], help="Enable collective event detection/visualization. Note: The --flow option must be enabled first for this feature to work.")
         parser.add_argument("-S", "--use_mp_sync_v2", dest='mp_sync_v2', action='store_true', default=self.defaults["mp_sync_v2"], help="Use the newer version of multi-AIU time alignment (v2).")
@@ -171,7 +183,7 @@ class Acelyzer:
         parser.add_argument("--flex_ts_fix", dest="flex_ts_fix", action="store_true", default=self.defaults["flex_ts_fix"], help="Enable an experimental per-job time-stamp adjustment.")
         parser.add_argument("--disable_input_warnings", action="store_true", default=True, help="Disable warnings encountered while ingesting data.")
         parser.add_argument("--comm_summarize_seq", action="store_true", default=self.defaults["comm_summ"], help="Combine each sequence of communication events into a single send/recv.")
-        parser.add_argument("--time_unit", default=self.defaults["time_unit"], choices=["ms","ns"], help="Display Time Unit of the resulting json.")
+        parser.add_argument("--time_unit", default=self.defaults["time_unit"], choices=["ms", "ns"], help="Display Time Unit of the resulting json.")
         parsed_args = parser.parse_args(args)
         if parsed_args.output is None:
             if parsed_args.tb_refinement:
@@ -182,26 +194,24 @@ class Acelyzer:
         if ":" in parsed_args.freq:
             freq_split = parsed_args.freq.split(':')
             try:
-                parsed_args.freq = [float(freq_split[0]), float(freq_split[1]) ]
+                parsed_args.freq = [float(freq_split[0]), float(freq_split[1])]
             except ValueError:
                 print('ERROR: Frequency setting requires float values.')
                 sys.exit(1)
         else:
             print(f'HINT: --freq only specified SoC freqency {parsed_args.freq}. Using default core freq {self.defaults["ideal_freq"]}. You may specify both by using: --freq=<soc>:<core>')
             try:
-                parsed_args.freq = [float(parsed_args.freq), self.defaults["ideal_freq"] ]
+                parsed_args.freq = [float(parsed_args.freq), self.defaults["ideal_freq"]]
             except ValueError:
                 print('ERROR: Frequency setting requires float values.')
                 sys.exit(1)
         return parsed_args
-
 
     def get_output_data(self) -> str:
         if self.args.tb and self.args.tb_refinement:
             return self.exporter.get_data()
         else:
             return "Only supported for TensorBoard exporter."
-
 
     def _args_sanity_check(self, args) -> bool:
         assert math.isclose(args.freq_scaling, 0.0, abs_tol=1e-9), "ERROR: Use of obsolete cmdline '--freq_scaling'. Use '--freq=<soc>:<core>' instead!"
@@ -210,11 +220,10 @@ class Acelyzer:
             aiulog.log(aiulog.ERROR, "power_ts3 and power_ts4 are mutually exclusive")
             return False
 
-        if "rcu_util" in args.counter and args.compiler_log==None:
+        if "rcu_util" in args.counter and args.compiler_log is None:
             aiulog.log(aiulog.WARN, "rcu_util counter requested but no compiler log provided. No utilization will be plotted.")
 
         return True
-
 
     def _overlap_option_from_arg(self, inarg: str) -> int:
         if inarg == "drop":
@@ -226,21 +235,21 @@ class Acelyzer:
         else:
             raise ValueError("UNRECOGNIZED Overlap Option (drop, tid, async).")
 
-
-
     def register_processing_functions(self,
-                                    process: processor.EventProcessor,
-                                    args,
-                                    exporter: output.AbstractTraceExporter):
+                                      process: processor.EventProcessor,
+                                      args,
+                                      exporter: output.AbstractTraceExporter):
 
         ##############################################################
         # Event preparation, cleanup, and sanitization
         # register pre-processing: filtern events with broken time stamps (E < B)
-        process.register_stage(callback=event_pipe.drop_timestamp_reversed_events,
-                                context=event_pipe.InversedTSDetectionContext() )
+        process.register_stage(
+            callback=event_pipe.drop_timestamp_reversed_events,
+            context=event_pipe.InversedTSDetectionContext())
         # register pre-processing: turn B/E into X-slices
-        process.register_stage(callback=event_pipe.create_slice_from_BE,
-                                context=event_pipe.SliceCreationContext(make_complete=True) )
+        process.register_stage(
+            callback=event_pipe.create_slice_from_BE,
+            context=event_pipe.SliceCreationContext(make_complete=True))
 
         ##############################################################
         # frequency detection and per-job offset correction
@@ -257,7 +266,6 @@ class Acelyzer:
         # make sure the data in the events have no unexpected values
         process.register_stage(callback=event_pipe.event_sanity_checks)
 
-
         ##############################################################
         # Torch/Flex time alignment
         time_align_ctx = event_pipe.TimeAlignmentContext()
@@ -272,9 +280,10 @@ class Acelyzer:
             process.register_stage(callback=event_pipe.remove_ids_from_name)
 
         # register pre-processing: mapping TID to human eye-friendly
-        cid_mapping_ctx = event_pipe.TIDMappingContext(self.defaults["remap_size"],
-                                                     self.defaults["remap_start"],
-                                                     self.defaults["remap_step"])
+        cid_mapping_ctx = event_pipe.TIDMappingContext(
+            self.defaults["remap_size"],
+            self.defaults["remap_start"],
+            self.defaults["remap_step"])
         process.register_stage(callback=event_pipe.map_tid_to_range, context=cid_mapping_ctx)
 
         # add a args.ts_all list for TS1-5 cycle timestamps if available
@@ -296,7 +305,10 @@ class Acelyzer:
 
         # dealing with prep-queue needs to be done before dropping prep events might happen
         if any(args.counter) and "prep_queue" in args.counter:
-            process.register_stage(callback=event_pipe.queueing_counter, context=event_pipe.QueueingCounterContext(), keep_prep=args.keep_prep)
+            process.register_stage(
+                callback=event_pipe.queueing_counter,
+                context=event_pipe.QueueingCounterContext(),
+                keep_prep=args.keep_prep)
 
         # optionally dropping events without TSx or are Prep events
         if args.drop_globals:
@@ -315,7 +327,6 @@ class Acelyzer:
         monotonic_ts_ctx_a = event_pipe.TSSequenceContext(ts3check=True)
         process.register_stage(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_a)
 
-
         # register pre-processing: resolve overlap conflicts caused by partially overlapping slices
         overlap_ctx = event_pipe.OverlapDetectionContext(overlap_resolve=self._overlap_option_from_arg(args.overlap))
         process.register_stage(callback=event_pipe.detect_partial_overlap_events, context=overlap_ctx)
@@ -329,7 +340,7 @@ class Acelyzer:
         ##############################################################
         # dealing with power counter data
         if any(args.counter) and ("power_ts3" in args.counter or "power_ts4" in args.counter):
-            use_ts4="power_ts4" in args.counter
+            use_ts4 = "power_ts4" in args.counter
             power_data_ctx = event_pipe.PowerExtractionContext(
                 filter_pattern=" Prep",
                 use_ts4=use_ts4)
@@ -341,7 +352,7 @@ class Acelyzer:
             process.register_stage(callback=event_pipe.sort_events, context=sorting_counter_ctx)
 
             # checking power timestamps (TS3) are in ascending order
-            #process.registerPreProcess(callback=event_pipe.check_power_ts_sequence, context=powerDataContext)
+            # process.registerPreProcess(callback=event_pipe.check_power_ts_sequence, context=powerDataContext)
 
             # calculate power
             power_compute_ctx = event_pipe.PowerExtractionContext(
@@ -361,11 +372,11 @@ class Acelyzer:
             process.register_stage(callback=event_pipe.compute_bandwidth, context=data_transfer_compute_ctx)
 
         if any(args.counter) and "rcu_util" in args.counter and args.compiler_log:
-            rcu_util_ctx = event_pipe.MultiRCUUtilizationContext(compiler_log=args.compiler_log,
-                                                                    csv_fname=args.output,
-                                                                    scale_factor=self.frequency_scale)
+            rcu_util_ctx = event_pipe.MultiRCUUtilizationContext(
+                compiler_log=args.compiler_log,
+                csv_fname=args.output,
+                scale_factor=self.frequency_scale)
             process.register_stage(callback=event_pipe.compute_utilization_fingerprints, context=rcu_util_ctx)
-
 
         ##############################################################
         # dealing with collective call flows
@@ -383,7 +394,6 @@ class Acelyzer:
         if any(args.counter) and "rcu_util" in args.counter and args.compiler_log:
             process.register_stage(callback=event_pipe.compute_utilization, context=rcu_util_ctx)
 
-
         # register callback to to the power counter sorting
         # create an event sorter for X-events with a global order across ranks required for flow detection
         sorting_flow_ctx = event_pipe.EventSortingContext(event_types=["X"], sortkey="ts", global_sort=True)
@@ -398,7 +408,7 @@ class Acelyzer:
             flow_ctx = event_pipe.CollectiveGroupingContext(build_coll_event=args.build_coll_event)
             process.register_stage(callback=event_pipe.flow_extraction, context=flow_ctx)
 
-            #process.registerPreProcess(callback=event_pipe.flow_data_cleanup)
+            # process.registerPreProcess(callback=event_pipe.flow_data_cleanup)
 
         # dealing with collective call bandwidth
         if any(args.counter) and "coll_bw" in args.counter:
@@ -430,7 +440,7 @@ class Acelyzer:
         process.register_stage(callback=event_pipe.cycle_count_conversion_cleanup)
         process.register_stage(callback=event_pipe.cleanup_copy_of_device_ts)
 
-        tb_refinement_ctx=event_pipe.RefinementContext(exporter)
+        tb_refinement_ctx = event_pipe.RefinementContext(exporter)
         if args.tb_refinement:
             process.register_stage(callback=event_pipe.tb_refinement_intrusive, context=tb_refinement_ctx)
 
@@ -440,9 +450,9 @@ class Acelyzer:
         # calculate V2 statistics: relies on some lightweight tb-refinements
         if args.stats:
             if args.build_coll_event:
-                data_stats_compute_ctx = event_pipe.EventStatsTrackerContext(stats_filename=args.output, stat_metrics=self.defaults["stats_v2"])
+                data_stats_compute_ctx = event_pipe.EventStatsTrackerContext(
+                    stats_filename=args.output,
+                    stat_metrics=self.defaults["stats_v2"])
                 process.register_stage(callback=event_pipe.calculate_stats_v2, context=data_stats_compute_ctx)
 
-
         # <<< END Event processing functions registration
-
