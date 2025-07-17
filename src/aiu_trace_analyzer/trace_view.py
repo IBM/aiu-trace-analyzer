@@ -147,6 +147,15 @@ class AbstractEventType(object):
                                 pid=event["pid"],
                                 args=event["args"],
                                 tid=event["tid"] if "tid" in event else None)
+        elif etype in ["i"]:
+            new_event = InstantEvents(
+                name=event["name"],
+                cat=event["cat"] if "cat" in event else None,
+                ts=event["ts"],
+                pid=event["pid"],
+                tid=event["tid"],
+                s=event["s"],
+                args=event["args"] if "args" in event else None)
         else:
             raise Exception(f"Unimplemented or invalid Event-PH: {etype}")
         return new_event
@@ -220,7 +229,7 @@ class InstantEvents(AbstractEventType):
     {"name": "OutOfMemory", "ph": "i", "ts": 1234523.3, "pid": 2343, "tid": 2347, "s": "g"}
     """
 
-    def __init__(self, name, ts, pid, tid, s="g"):
+    def __init__(self, name, cat, ts, pid, tid, s="g", args={}):
         """
         name: name of event
         ph: phase
@@ -229,11 +238,13 @@ class InstantEvents(AbstractEventType):
         s: stack trace
         """
         self.name = name
+        self.cat = cat
         self.ph = "i"
         self.ts = ts
         self.pid = pid
         self.tid = tid
         self.s = s
+        self.args = args
 
 
 class CounterEvents(AbstractEventType):
