@@ -151,7 +151,7 @@ class Acelyzer:
 
     def parse_inputs(self, args=None):
         # to include default value in --help output
-        parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        parser = argparse.ArgumentParser(prog="acelyzer", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         parser.add_argument("-C", "--counter", type=str, nargs='*', default=self.defaults["counter"],
                             choices=["power_ts4", "power_ts3", "coll_bw", "bandwidth", "prep_queue", "rcu_util"],
                             help="Space-separated list of counters to extract/display. Note: power_ts4 and power_ts3 are mutually exclusive.")
