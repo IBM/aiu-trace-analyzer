@@ -1,18 +1,19 @@
 # Copyright 2024-2025 IBM Corporation
 
 import pytest
+import os
 
 from aiu_trace_analyzer.core.stage_profile import StageProfile, StageProfileChecker
 
 
 @pytest.fixture
 def default_profile_config() -> str:
-    return "profiles/default.json"
+    return os.path.join(os.path.dirname(__file__), "../../../src/aiu_trace_analyzer/profiles/default.json")
 
 
 @pytest.fixture
 def everything_profile() -> str:
-    return "profiles/everything.json"
+    return os.path.join(os.path.dirname(__file__), "../../../src/aiu_trace_analyzer/profiles/everything.json")
 
 
 @pytest.fixture
