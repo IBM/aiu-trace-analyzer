@@ -98,7 +98,7 @@ class Acelyzer:
         "stage_profile": "profiles/everything.json"
     }
 
-    def __init__(self, in_args=None):
+    def __init__(self, in_args=None, in_data=None):
         print(in_args)
         self.args = self.parse_inputs(in_args)
 
@@ -114,9 +114,18 @@ class Acelyzer:
 
         self.frequency_scale = self.args.freq[0] / self.args.freq[1]
 
+        if in_data is not None and "api://" in self.args.input:
+            self.direct_data = memoryview(in_data)
+        else:
+            self.direct_data = None
+
+    def run(self) -> int:
         # setup/configure data ingestion
         try:
-            importer = ingest.MultifileIngest(source_uri=self.args.input, show_warnings=(not self.args.disable_input_warnings))
+            importer = ingest.MultifileIngest(
+                source_uri=self.args.input,
+                show_warnings=(not self.args.disable_input_warnings),
+                direct_data=self.direct_data)
         except FileNotFoundError:
             sys.exit(1)
 
@@ -148,6 +157,7 @@ class Acelyzer:
         rc = dr.run()
 
         aiulog.log(aiulog.INFO, "Finishing Test parser. Return code=", rc)
+        return rc
 
     def parse_inputs(self, args=None):
         # to include default value in --help output
