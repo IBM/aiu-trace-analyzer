@@ -12,9 +12,11 @@ version = "0.5"
 requires-python = ">=3.9"
 dependencies = [
     "numpy",
-    "pytest",
     "pandas"
 ]
+
+[project.optional-dependencies]
+test = ["pytest"]
 
 [project.scripts]
 acelyzer = "acelyzer.acelyzer:main"
@@ -22,3 +24,6 @@ acelyzer = "acelyzer.acelyzer:main"
 [tool.setuptools]
 package-dir = {"" = "src"}
 packages = {find = {where = ["src"]}}
+
+[tool.setuptools.package-data]
+aiu_trace_analyzer = ["profiles/*"]

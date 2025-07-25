@@ -4,6 +4,7 @@
 import sys
 import argparse
 import math
+import os
 
 from aiu_trace_analyzer.constants import TS_CYCLE_KEY
 from aiu_trace_analyzer.core.stage_profile import StageProfile
@@ -95,7 +96,7 @@ class Acelyzer:
         "time_unit": "ns",
 
         # name of a processing profile
-        "stage_profile": "profiles/everything.json"
+        "stage_profile": os.path.join(os.path.dirname(__file__), "../profiles/everything.json")
     }
 
     def __init__(self, in_args=None, in_data=None):
