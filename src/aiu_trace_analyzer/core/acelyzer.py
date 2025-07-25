@@ -96,7 +96,7 @@ class Acelyzer:
         "time_unit": "ns",
 
         # name of a processing profile
-        "stage_profile": os.path.join(os.path.dirname(__file__), "../../../profiles/everything.json")
+        "stage_profile": os.path.join(os.path.dirname(__file__), "../profiles/everything.json")
     }
 
     def __init__(self, in_args=None):

@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 class StageProfile:
-    _everything_profile = os.path.join(os.path.dirname(__file__), "../../../profiles/everything.json")
+    _everything_profile = os.path.join(os.path.dirname(__file__), "../profiles/everything.json")
 
     def __init__(self, profile_data: dict):
         self.profile = self._ingest_profile_data(profile_data)
