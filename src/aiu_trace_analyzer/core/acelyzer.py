@@ -100,7 +100,7 @@ class Acelyzer:
     }
 
     def __init__(self, in_args=None, in_data=None):
-        print(in_args)
+#        print(in_args)
         self.args = self.parse_inputs(in_args)
 
         try:
