@@ -269,7 +269,7 @@ class MemoryJsonTraceIngest(JsonEventTraceIngest):
         keep_processed = True
         data = json.loads(direct_data.tobytes())
 
-        data_dialect = InputDialectTORCH() if self.is_torch_profile(data) else InputDialectFLEX
+        data_dialect = InputDialectTORCH() if self.is_torch_profile(data) else InputDialectFLEX()
         super().__init__(source_uri, jobdata, data_dialect, scale, keep_processed, show_warnings)
 
         self._initialize_data(data)
@@ -290,7 +290,7 @@ class JsonFileEventTraceIngest(JsonEventTraceIngest):
         with open(source_uri, 'r') as sourcefile:
             data = json.load(sourcefile)
 
-        data_dialect = InputDialectTORCH() if self.is_torch_profile(data) else InputDialectFLEX
+        data_dialect = InputDialectTORCH() if self.is_torch_profile(data) else InputDialectFLEX()
         super().__init__(source_uri, jobdata, data_dialect, scale, keep_processed, show_warnings)
 
         self._initialize_data(data)
