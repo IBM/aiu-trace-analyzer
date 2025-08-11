@@ -6,7 +6,7 @@ import pathlib  # for multifile patterns
 import math
 
 import aiu_trace_analyzer.logger as aiulog
-from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
+from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, InputDialect, InputDialectFLEX, InputDialectTORCH
 
 
 class AbstractTraceIngest:
@@ -30,10 +30,11 @@ class AbstractTraceIngest:
             self,
             source_uri,
             jobdata: GlobalIngestData = GlobalIngestData(),
+            data_dialect: InputDialect = InputDialectTORCH(),
             scale: float = 1.0,
             show_warnings: bool = True) -> None:
         self.source_uri = source_uri
-        self.jobhash = jobdata.add_job_info(source_uri)
+        self.jobhash = jobdata.add_job_info(source_uri, data_dialect)
         self.scale = scale
         self.ts_offset = None
         self.rank_pid = -1
@@ -49,6 +50,9 @@ class AbstractTraceIngest:
 
     def set_ts_offset(self, offset):
         self.ts_offset = offset
+
+    def is_torch_profile(self, data: dict) -> bool:
+        return ("deviceProperties" in data)
 
     def __iter__(self):
         raise NotImplementedError("Class %s doesn't implement __iter__" % (self.__class__.__name__))
@@ -133,10 +137,11 @@ class JsonEventTraceIngest(AbstractTraceIngest):
             self,
             source_uri,
             jobdata: GlobalIngestData,
+            data_dialect: InputDialect,
             scale: float = 1.0,
             keep_processed: bool = False,
             show_warnings: bool = True) -> None:
-        super().__init__(source_uri, jobdata=jobdata, scale=scale, show_warnings=show_warnings)
+        super().__init__(source_uri, jobdata=jobdata, data_dialect=data_dialect, scale=scale, show_warnings=show_warnings)
 
         self.data = {}
         self.last_ts = 0.0
@@ -172,12 +177,11 @@ class JsonEventTraceIngest(AbstractTraceIngest):
             self.data = self.data["traceEvents"]
 
         self._len = len(self.data)
-        print("CREATING _index", self._len)
         self._index = 0
         self._initialized = True
 
     def __iter__(self):
-        assert self._initialized == True, "ERROR: Data not initialized."
+        assert self._initialized is True, "ERROR: Data not initialized."
         return self
 
     def get_next_event(self) -> TraceEvent:
@@ -263,9 +267,11 @@ class MemoryJsonTraceIngest(JsonEventTraceIngest):
             show_warnings: bool = True,
             direct_data: memoryview = None):
         keep_processed = True
-        super().__init__(source_uri, jobdata, scale, keep_processed, show_warnings)
-
         data = json.loads(direct_data.tobytes())
+
+        data_dialect = InputDialectTORCH() if self.is_torch_profile(data) else InputDialectFLEX()
+        super().__init__(source_uri, jobdata, data_dialect, scale, keep_processed, show_warnings)
+
         self._initialize_data(data)
 
 
@@ -280,10 +286,12 @@ class JsonFileEventTraceIngest(JsonEventTraceIngest):
             scale: float = 1.0,
             keep_processed: bool = False,
             show_warnings: bool = True):
-        super().__init__(source_uri, jobdata, scale, keep_processed, show_warnings)
 
-        with open(self.source_uri, 'r') as sourcefile:
+        with open(source_uri, 'r') as sourcefile:
             data = json.load(sourcefile)
+
+        data_dialect = InputDialectTORCH() if self.is_torch_profile(data) else InputDialectFLEX()
+        super().__init__(source_uri, jobdata, data_dialect, scale, keep_processed, show_warnings)
 
         self._initialize_data(data)
 

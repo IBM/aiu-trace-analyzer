@@ -100,7 +100,7 @@ class Acelyzer:
     }
 
     def __init__(self, in_args=None, in_data=None):
-        print(in_args)
+#        print(in_args)
         self.args = self.parse_inputs(in_args)
 
         try:
@@ -448,7 +448,6 @@ class Acelyzer:
         # event cleanup for cases where processing functions had added temporary data
         # remove the ts_all from args that got added by cycle_count_to_wallclock
         process.register_stage(callback=event_pipe.flow_data_cleanup)
-        process.register_stage(callback=event_pipe.cycle_count_conversion_cleanup)
         process.register_stage(callback=event_pipe.cleanup_copy_of_device_ts)
 
         tb_refinement_ctx = event_pipe.RefinementContext(exporter)
@@ -457,6 +456,7 @@ class Acelyzer:
 
         # lightweight tb refinement changes cannot be disabled
         process.register_stage(callback=event_pipe.tb_refinement_lightweight, context=tb_refinement_ctx)
+        process.register_stage(callback=event_pipe.cycle_count_conversion_cleanup)
 
         # calculate V2 statistics: relies on some lightweight tb-refinements
         if args.stats:

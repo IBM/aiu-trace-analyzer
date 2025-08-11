@@ -2,6 +2,7 @@
 
 import re
 
+from aiu_trace_analyzer.types import InputDialectTORCH, GlobalIngestData
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.hashqueue import AbstractHashQueueContext
@@ -9,12 +10,13 @@ from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
 from aiu_trace_analyzer.types import TraceEvent
 import aiu_trace_analyzer.export.exporter as output
 
-DmaI="DmaI"
-DmaO="DmaO"
-RDMA="Rdma"
+DmaI = "DmaI"
+DmaO = "DmaO"
+RDMA = "Rdma"
 
-Coll_data_size="Coll_data_size"
-AllReduce="AllReduce_all_reduce"
+Coll_data_size = "Coll_data_size"
+AllReduce = "AllReduce_all_reduce"
+
 
 class RefinementContext(AbstractHashQueueContext):
     name_converter = re.compile(r"[_-]\d+")
@@ -24,6 +26,7 @@ class RefinementContext(AbstractHashQueueContext):
         self.exporter = exporter
         self.meta_exported = False
         self.has_coll_bw = False
+        self.dialect = InputDialectTORCH()
 
     def drain(self) -> list[TraceEvent]:
         # make metadata event export idempotent
@@ -31,24 +34,24 @@ class RefinementContext(AbstractHashQueueContext):
             return []
 
         revents = []
-        for p,(s,i,l,t) in self.queues.items():
+        for p, (s, i, l, t) in self.queues.items():
             revents.append({
                 "ph": "M", "name": "process_name",
                 "pid": p,
                 "ts": t,
-                "args": { "name": s }
+                "args": {"name": s}
             })
             revents.append({
                 "ph": "M", "name": "process_label",
                 "pid": p,
                 "ts": t,
-                "args": { "name": l }
+                "args": {"name": l}
             })
             revents.append({
                 "ph": "M", "name": "process_sort_index",
                 "pid": p,
                 "ts": t,
-                "args": { "sort_index": i+10 }
+                "args": {"sort_index": i+10}
             })
 
         if self.has_coll_bw:
@@ -56,18 +59,17 @@ class RefinementContext(AbstractHashQueueContext):
                 "ph": "M", "name": "process_name",
                 "pid": -1,
                 "ts": 0,
-                "args": { "name": "CollectiveBW" }
+                "args": {"name": "CollectiveBW"}
             })
             revents.append({
                 "ph": "M", "name": "process_sort_index",
                 "pid": -1,
                 "ts": 0,
-                "args": { "sort_index": 0 }
+                "args": {"sort_index": 0}
             })
 
         self.meta_exported = True
         return revents
-
 
     def update_event_data_heavy(self, event) -> TraceEvent:
         pid = event["pid"]
@@ -87,6 +89,42 @@ class RefinementContext(AbstractHashQueueContext):
         event["tid"] = pid*100000 + event["tid"]
         return event
 
+    def _queue_add_device(self, pid, ts, is_acc: bool = True):
+        if pid not in self.queues:
+            if is_acc:
+                self.queues[pid] = ("AIU Device"+str(pid), pid*2+1, "AIU", ts)
+                self.exporter.add_device(
+                    pid,
+                    {"type": "AIU",
+                     "name": "AIU",
+                     "core": "PT Array"})
+            else:
+                self.queues[pid] = ("Host"+str(pid), pid*2, "cpu", ts)
+
+    def is_acc_event(self, event: TraceEvent) -> bool:
+        dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
+        classifier = dialect.get("acc_event_cat").split('.')
+        if classifier[0] == "is":
+            assert len(classifier) > 2, "Not enough parameters in 'acc_event_cat' classifier. 'is' requires at least 2"
+            attribute = event
+            for c in classifier[1:-1]:
+                if c in attribute:
+                    attribute = attribute[c]
+                else:
+                    return False
+            return attribute == classifier[-1]
+
+        if classifier[0] == "has":
+            assert len(classifier) > 1, "Not enough parameters in 'acc_event_cat' classifier. 'has' requires at least 1"
+            attribute = event
+            for c in classifier[1:]:
+                if c in attribute:
+                    attribute = attribute[c]
+                else:
+                    return False
+            return True
+        return False
+
     def update_event_data_light(self, event) -> TraceEvent:
 
         def _cat_for_regular_event(event: TraceEvent) -> str:
@@ -104,47 +142,44 @@ class RefinementContext(AbstractHashQueueContext):
                 if AllReduce in event["name"] and 'Cmpt Exec' in event["name"]:
                     return "user_annotation"
                 else:
-                    return "kernel"
+                    return self.dialect.get("acc_category_kernel")
 
         def _update_collective_event(event: TraceEvent) -> TraceEvent:
             # if collective call block, change 'cat'
             # and 'name' for communication tb calculation
             if "args" in event and Coll_data_size in event["args"] and AllReduce in event["name"]:
-                event["cat"] = "user_annotation"
+                event["cat"] = event["cat"] if "cat" in event else "user_annotation"
                 event["name"] = "gloo:all_reduce"
                 event["external id"] = event["args"].pop("fn_idx")
             else:
-                event["cat"] = "cpu_op"
+                event["cat"] = event["cat"] if "cat" in event else "cpu_op"
             return event
 
+        def _resolve_string_pids(pid) -> int:
+            if isinstance(pid, str):
+                aiulog.log(aiulog.WARN, f'TBR: input pid is string: {pid}')
+                try:
+                    return int(pid)
+                except (ValueError, TypeError):
+                    return hash(pid) % 10000 + 10000
+            return pid
 
+        if "args" in event and "jobhash" in event["args"]:
+            self.dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
 
-        pid = event["pid"]
+        pid = _resolve_string_pids(event["pid"])
 
-        if isinstance(pid, str):
-            aiulog.log(aiulog.WARN, f'TBR: input pid is string: {pid}')
-            try:
-                pid = int(pid)
-            except (ValueError, TypeError):
-                pid = hash(pid) % 10000 + 10000
-
-        if "args" in event and "TS1" in event["args"]:
+        if self.is_acc_event(event):
             event["cat"] = _cat_for_regular_event(event)
 
             event["args"]["device"] = pid
-            if pid not in self.queues:
-                self.queues[pid] = ("AIU Device"+str(pid), pid*2+1, "AIU", event["ts"])
-                self.exporter.add_device(pid, {"type": "AIU", "core": "PT Array", "name":"AIU DD1", "RCU":32, "ScratchMem": 128})
+            self._queue_add_device(pid, event["ts"], is_acc=True)
+
         else:
             event = _update_collective_event(event)
+            event["pid"] = pid + 1000
 
-            if isinstance(pid, str):
-                event["pid"] = pid + "1000"
-            else:
-                event["pid"] = pid + 1000
-
-            if event["pid"] not in self.queues:
-                self.queues[event["pid"]] = ("Host"+str(pid), pid*2, "cpu", event["ts"])
+            self._queue_add_device(pid, event["ts"], is_acc=False)
 
             # events that are not from flex should appear at the top and thus we shrink the TID
             if not PipelineContextTool.is_FLEX_event(event):
@@ -156,17 +191,18 @@ class RefinementContext(AbstractHashQueueContext):
 # more significant changes to events that are needed for TB to work
 # this function can be disabled with cmd-line flag
 def tb_refinement_intrusive(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
-    assert( isinstance(context, RefinementContext) )
+    assert (isinstance(context, RefinementContext))
 
     if event["ph"] in "X":
         event = context.update_event_data_heavy(event)
 
     return [event]
 
+
 # more lightweight changes to event that are useful for not just TB (e.g. stats)
 # this function CANNOT be disable with cmd-line flag
 def tb_refinement_lightweight(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
-    assert( isinstance(context, RefinementContext) )
+    assert (isinstance(context, RefinementContext))
 
     if event["ph"] in "X":
         event = context.update_event_data_light(event)
