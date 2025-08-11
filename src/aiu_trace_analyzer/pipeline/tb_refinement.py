@@ -79,8 +79,8 @@ class RefinementContext(AbstractHashQueueContext):
         match = self.name_converter.search(event["name"])
         if match and "args" in event:
             event["args"]["fn_idx"] = event["name"][match.start()+1:match.end()]
-        # ...and replace it with _N
-            event["name"] = re.sub(self.name_converter, "_N", event["name"], count=1)
+        # ...and replace it with _[N]
+            event["name"] = re.sub(self.name_converter, "_[N]", event["name"], count=1)
 
         if "coll" in str(event["tid"]):
             event["tid"] = 10000+int(str(event["tid"])[4])

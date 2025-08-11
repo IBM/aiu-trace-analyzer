@@ -242,7 +242,7 @@ def calculate_stats(event: TraceEvent, context: AbstractContext) -> list[TraceEv
         # becames "addmm_N_Matmult Cmpt Exec"
         name_converter = re.compile(r"[_-]\d+")
 
-        stripped_name = name_converter.sub("_N", event["name"])
+        stripped_name = name_converter.sub("_[N]", event["name"])
 
         event_start = event["ts"]
         event_dur = event["dur"]
