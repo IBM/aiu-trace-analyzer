@@ -34,19 +34,20 @@ class AbstractTraceIngest:
             scale: float = 1.0,
             show_warnings: bool = True) -> None:
         self.source_uri = source_uri
-        self.jobhash = jobdata.add_job_info(source_uri, data_dialect)
         self.scale = scale
         self.ts_offset = None
         self.rank_pid = -1
         self.show_warnings = show_warnings
         self.warnings = {}
         self._initialized = False
+        self.jobhash = jobdata.add_job_info(source_uri, data_dialect)
         assert scale > 0.0, 'Scale parameter needs to be >0.0'
 
     def __del__(self):
-        if self.show_warnings:
+        if hasattr(self, "show_warnings") and self.show_warnings:
             for warnclass, warning in self.warnings.items():
                 aiulog.log(aiulog.WARN, self.source_uri, warnclass, self.WARN_MSG_MAP[warnclass], warning)
+
 
     def set_ts_offset(self, offset):
         self.ts_offset = offset

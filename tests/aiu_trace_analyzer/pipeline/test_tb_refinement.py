@@ -18,15 +18,15 @@ def tb_ctx(tmp_path):
 list_events_test_heavy = [
     # regular, simple case for fn-idx removal
     ({"name":"event_123", "pid": 1, "tid": 1, "args": {}},
-     {"name":"event_N", "pid": 1, "tid": 1, "args": {"fn_idx": "123"}}),
+     {"name":"event_[N]", "pid": 1, "tid": 1, "args": {"fn_idx": "123"}}),
 
     # testing for only replacing the first index and keep the rest
     ({"name":"event_123[sync=sgroup_0_s2_321]", "pid": 1, "tid": 1, "args": {}},
-     {"name":"event_N[sync=sgroup_0_s2_321]", "pid": 1, "tid": 1, "args": {"fn_idx": "123"}} ),
+     {"name":"event_[N][sync=sgroup_0_s2_321]", "pid": 1, "tid": 1, "args": {"fn_idx": "123"}} ),
 
     # testing existing fn_idx will be overwritten if it already exists
     ({"name":"event_123", "pid": 1, "tid": 1, "args": {"fn_idx": "321"}},
-     {"name":"event_N", "pid": 1, "tid": 1, "args": {"fn_idx": "123"}}),
+     {"name":"event_[N]", "pid": 1, "tid": 1, "args": {"fn_idx": "123"}}),
 
     # testing with event name without idx
     ({"name":"eventname", "pid": 1, "tid": 1, "args": {}},
@@ -38,7 +38,7 @@ list_events_test_heavy = [
 
     # testing the coll-tid replacement
     ({"name":"event_123", "pid": 1, "tid": "coll1", "args": {}},
-     {"name":"event_N", "pid": 1, "tid": 10001, "args": {"fn_idx": "123"}}),
+     {"name":"event_[N]", "pid": 1, "tid": 10001, "args": {"fn_idx": "123"}}),
 ]
 
 @pytest.mark.parametrize('event_in, reference', list_events_test_heavy)
