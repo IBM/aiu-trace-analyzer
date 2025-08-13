@@ -388,7 +388,7 @@ class MultifileIngest(AbstractTraceIngest):
     and skips any iterators that are exhausted.
     '''
     def __init__(self, source_uri, show_warnings: bool = True, direct_data: memoryview = None) -> None:
-        super().__init__(source_uri, show_warnings=show_warnings)
+        super().__init__("top_level_multifile", show_warnings=show_warnings)
 
         self.split_pattern = re.compile(r"[,\s]")
         filelist = self.generate_filelist(source_uri)
