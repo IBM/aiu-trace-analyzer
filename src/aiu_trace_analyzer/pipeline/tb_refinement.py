@@ -19,7 +19,7 @@ AllReduce = "AllReduce_all_reduce"
 
 
 class RefinementContext(AbstractHashQueueContext):
-    name_converter = re.compile(r"[_-]\d+")
+    name_converter = re.compile(r"^([^-\[]+_)(\d+)")
 
     def __init__(self, exporter: output.AbstractTraceExporter) -> None:
         super().__init__()
@@ -78,9 +78,9 @@ class RefinementContext(AbstractHashQueueContext):
         # ...extract a function index (if any) from the event name
         match = self.name_converter.search(event["name"])
         if match and "args" in event:
-            event["args"]["fn_idx"] = event["name"][match.start()+1:match.end()]
+            event["args"]["fn_idx"] = match.group(2)
         # ...and replace it with _[N]
-            event["name"] = re.sub(self.name_converter, "_[N]", event["name"], count=1)
+            event["name"] = re.sub(self.name_converter, f"{match.group(1)}[N]", event["name"], count=1)
 
         if "coll" in str(event["tid"]):
             event["tid"] = 10000+int(str(event["tid"])[4])
@@ -100,30 +100,6 @@ class RefinementContext(AbstractHashQueueContext):
                      "core": "PT Array"})
             else:
                 self.queues[pid] = ("Host"+str(pid), pid*2, "cpu", ts)
-
-    def is_acc_event(self, event: TraceEvent) -> bool:
-        dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
-        classifier = dialect.get("acc_event_cat").split('.')
-        if classifier[0] == "is":
-            assert len(classifier) > 2, "Not enough parameters in 'acc_event_cat' classifier. 'is' requires at least 2"
-            attribute = event
-            for c in classifier[1:-1]:
-                if c in attribute:
-                    attribute = attribute[c]
-                else:
-                    return False
-            return attribute == classifier[-1]
-
-        if classifier[0] == "has":
-            assert len(classifier) > 1, "Not enough parameters in 'acc_event_cat' classifier. 'has' requires at least 1"
-            attribute = event
-            for c in classifier[1:]:
-                if c in attribute:
-                    attribute = attribute[c]
-                else:
-                    return False
-            return True
-        return False
 
     def update_event_data_light(self, event) -> TraceEvent:
 
@@ -169,7 +145,7 @@ class RefinementContext(AbstractHashQueueContext):
 
         pid = _resolve_string_pids(event["pid"])
 
-        if self.is_acc_event(event):
+        if PipelineContextTool.is_acc_event(event):
             event["cat"] = _cat_for_regular_event(event)
 
             event["args"]["device"] = pid
