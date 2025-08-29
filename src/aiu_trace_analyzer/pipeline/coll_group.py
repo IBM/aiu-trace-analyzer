@@ -423,6 +423,8 @@ class CollectiveGroupingContext(EventPairDetectionContext):
                 NP = len(str(group_state.peers).strip('{}').split(','))
                 # Calculate the total data size for the collective operation.
                 coll_data_size = self._calculate_data_size(NP, int(num_bytes.rstrip('B')))
+                # assign to first encountered job (for dialect purposes)
+                jobhash = group_state.rank_first_event[pid]["jobhash"]
                 '''
                 Template for call_duration_event:
                 call_duration_event = {
@@ -459,7 +461,8 @@ class CollectiveGroupingContext(EventPairDetectionContext):
                         "peers": str(group_state.peers),
                         "CollGroup":str(revents[0]["cat"]),
                         "rank group compute event":str(cmpt_event["name"]),
-                        "Coll_data_size": coll_data_size
+                        "Coll_data_size": coll_data_size,
+                        "jobhash": jobhash,
                     }
                 }
 
@@ -776,7 +779,7 @@ def flow_prepare_event_data(event: TraceEvent, _: AbstractContext) -> list[Trace
             flow_extraction_event[_KEY_TYPE] = _TYPE_NONE
 
 
-
+        flow_extraction_event["jobhash"] = flow_extraction_event["args"]["jobhash"]
         # drop the args dict from the flow-prep event
         flow_extraction_event.pop("args","")
 
