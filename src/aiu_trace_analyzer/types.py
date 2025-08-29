@@ -76,6 +76,7 @@ class InputDialectFLEX(InputDialect):
         "acc_category_kernel": "kernel",
         "acc_category_runtime": "cuda_runtime",
         "acc_compute_prep": "Cmpt Prep$",
+        "acc_kernel": "is.name.Cmpt Exec$",
         "acc_event_cat": "has.args.TS1",
     }
 
@@ -127,6 +128,7 @@ class InputDialectTORCH(InputDialect):
         "acc_category_kernel": "kernel",
         "acc_category_runtime": "cuda_runtime",
         "acc_compute_prep": "Cmpt Prep$",
+        "acc_kernel": "is.cat.kernel",
         "acc_event_cat": "is.cat.kernel",
     }
 

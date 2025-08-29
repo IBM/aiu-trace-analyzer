@@ -3,8 +3,9 @@
 import hashlib
 import json
 import copy
+import re
 
-from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
 import aiu_trace_analyzer.logger as aiulog
 
 
@@ -33,7 +34,69 @@ class PipelineContextTool:
         Returns True for events that do not contain the information that torch profiler would add
         '''
         is_torch = "args" in event and ("External id" in event["args"] or "Python id" in event["args"])
-        return (is_torch == False)
+        return (is_torch is False)
+
+    # TODO this should be folded into the dialect classes/objects for more efficient processing
+    def is_acc_event(event: TraceEvent) -> bool:
+        if "args" not in event:
+            return False
+        if "jobhash" not in event["args"]:
+            print("ERROR: no jobhash in event. You hit a bug in the code.")
+            return False
+        dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
+        classifier = dialect.get("acc_event_cat").split('.')
+        if classifier[0] == "is":
+            assert len(classifier) > 2, "Not enough parameters in 'acc_event_cat' classifier. 'is' requires at least 2"
+            attribute = event
+            for c in classifier[1:-1]:
+                if c in attribute:
+                    attribute = attribute[c]
+                else:
+                    return False
+            return attribute == classifier[-1]
+
+        if classifier[0] == "has":
+            assert len(classifier) > 1, "Not enough parameters in 'acc_event_cat' classifier. 'has' requires at least 1"
+            attribute = event
+            for c in classifier[1:]:
+                if c in attribute:
+                    attribute = attribute[c]
+                else:
+                    return False
+            return True
+        return False
+
+    def is_acc_kernel(event: TraceEvent) -> bool:
+        if "args" not in event:
+            return False
+        if "jobhash" not in event["args"]:
+            print("ERROR: no jobhash in event. You hit a bug in the code.")
+            return False
+        dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
+        classifier = dialect.get("acc_kernel").split('.')
+        if classifier[0] == "is":
+            assert len(classifier) > 2, "Not enough parameters in 'acc_event_cat' classifier. 'is' requires at least 2"
+            attribute = event
+            for c in classifier[1:-1]:
+                if c in attribute:
+                    attribute = attribute[c]
+                else:
+                    return False
+            kernel_re = re.compile(classifier[-1])
+            return (kernel_re.search(attribute) is not None)
+
+        elif classifier[0] == "has":
+            assert len(classifier) > 1, "Not enough parameters in 'acc_event_cat' classifier. 'has' requires at least 1"
+            attribute = event
+            for c in classifier[1:]:
+                if c in attribute:
+                    attribute = attribute[c]
+                else:
+                    return False
+            return True
+        else:
+            aiulog.log(aiulog.WARN, "Dialect entry for acc_kernel has unknown operator:", classifier[0])
+        return False
 
 
 class AutopilotDetail:
