@@ -46,10 +46,10 @@
         {"calculate_stats": true},
         {"processing_filter": true},
         {"flow_data_cleanup": true},
-        {"cycle_count_conversion_cleanup": true},
+        {"cleanup_copy_of_device_ts": true},
         {"tb_refinement_intrusive": true},
         {"tb_refinement_lightweight": true},
-        {"cleanup_copy_of_device_ts": true},
+        {"cycle_count_conversion_cleanup": true},
         {"calculate_stats_v2": true}
     ]
 }
