@@ -16,7 +16,8 @@ class AbstractTraceIngest:
     FTYPE_API = 3
 
     WARN_MSG_MAP = {
-        "zero_duration": "detected 'CompleteEvent' type (ph=X) of zero duration. This should be an 'InstantEvent' type (ph=i). Events skipped:",
+        "zero_duration":    "detected 'CompleteEvent' type (ph=X) of zero duration. "
+                            "This should be an 'InstantEvent' type (ph=i). Events skipped:",
         "negative_duration": "Ingestion: detected negative duration event(s). Events ignored:"
     }
 
@@ -47,7 +48,6 @@ class AbstractTraceIngest:
         if hasattr(self, "show_warnings") and self.show_warnings:
             for warnclass, warning in self.warnings.items():
                 aiulog.log(aiulog.WARN, self.source_uri, warnclass, self.WARN_MSG_MAP[warnclass], warning)
-
 
     def set_ts_offset(self, offset):
         self.ts_offset = offset
@@ -95,7 +95,7 @@ class AbstractTraceIngest:
         if "ts" in event:
             event["ts"] *= self.scale
         if "dur" in event:
-            event["dur"] = int(event["dur"] * self.scale)
+            event["dur"] = float(event["dur"] * self.scale)
         if self.rank_pid >= 0:
             event["pid"] = self.rank_pid
 
@@ -151,13 +151,14 @@ class JsonEventTraceIngest(AbstractTraceIngest):
 
     def _initialize_data(self, data_stream) -> None:
         self.data = data_stream
-        if "displayTimeUnit" in self.data:
-            if self.data["displayTimeUnit"] == "ms":
-                self.scale = 1000
-            elif self.data["displayTimeUnit"] == "ns":
-                self.scale = 1
-            else:
-                raise NotImplementedError(f'Time Scale detection for {self.data["displayTimeUnit"]} not implemented.')
+        # removed: display-unit is only for the visualization not the input data
+        # if "displayTimeUnit" in self.data:
+        #     if self.data["displayTimeUnit"] == "ms":
+        #         self.scale = 1000
+        #     elif self.data["displayTimeUnit"] == "ns":
+        #         self.scale = 1
+        #     else:
+        #         raise NotImplementedError(f'Time Scale detection for {self.data["displayTimeUnit"]} not implemented.')
         if "distributedInfo" in self.data and "rank" in self.data["distributedInfo"]:
             self.rank_pid = self.data["distributedInfo"]["rank"]
             aiulog.log(aiulog.DEBUG, "INGEST: Detected distributedInfo Rank", self.rank_pid)
@@ -310,7 +311,8 @@ try:
             # self.data = self.tp.query('SELECT * FROM slice')
             #
             slice_fields = "ts, dur, cat, slice.name as slice_name, slice.id as slice_id, slice.arg_set_id as aid,"
-            pt_fields = "utid, thread.name as thread_name, thread.tid as tid, process.upid as upid, process.pid as pid, process.name as process_name"
+            pt_fields = "utid, thread.name as thread_name, thread.tid as tid, " \
+                "process.upid as upid, process.pid as pid, process.name as process_name"
             self.fields = slice_fields+pt_fields
 
             '''
