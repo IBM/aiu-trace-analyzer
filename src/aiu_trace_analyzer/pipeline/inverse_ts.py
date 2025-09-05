@@ -91,6 +91,9 @@ class InversedTSDetectionContext(AbstractContext):
 # uses InversedTSDetectionContext to hold B- or E-events until their counterpart is appears
 # and checks timestamps are ordered before emitting them in the B -> E order
 def drop_timestamp_reversed_events(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
+    return [event]
+
+    # current ingestion will create complete events, so this is no longer needed
     assert( isinstance(context, InversedTSDetectionContext) )
 
     event_list = []

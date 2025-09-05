@@ -143,6 +143,15 @@ class RefinementContext(AbstractHashQueueContext):
         if "args" in event and "jobhash" in event["args"]:
             self.dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
 
+        if self.dialect.get("NAME") == "TORCH":
+            if "opid" in event["args"]:
+                event["pid"] = event["args"]["opid"]
+                event["args"].pop("opid")
+            if "otid" in event["args"]:
+                event["tid"] = event["args"]["otid"]
+                event["args"].pop("otid")
+            return event
+
         pid = _resolve_string_pids(event["pid"])
 
         if PipelineContextTool.is_acc_event(event):

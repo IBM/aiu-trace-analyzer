@@ -441,7 +441,7 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
         cmpt_dur = float(event["dur"])
         utilization = abs(ideal_dur/cmpt_dur)
 
-        if utilization > 0:
+        if utilization > 0.0:
             event["args"]["core used"] = True
 
         if utilization > 1.0:   # warning about >100% utilization
