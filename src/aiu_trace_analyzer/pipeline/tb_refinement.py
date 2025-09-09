@@ -105,7 +105,6 @@ class RefinementContext(AbstractHashQueueContext):
         assert new_name != "", f"Event Name treatment created an empty name from event:'{event["name"]}'."
         event["name"] = new_name
 
-
         event = self._update_for_collective(event)
         return event
 
@@ -145,8 +144,9 @@ class RefinementContext(AbstractHashQueueContext):
             # and 'name' for communication tb calculation
             if "args" in event and Coll_data_size in event["args"] and AllReduce in event["name"]:
                 event["cat"] = event["cat"] if "cat" in event else "user_annotation"
+                event["args"]["orig_name"] = event["name"]
                 event["name"] = "gloo:all_reduce"
-                event["external id"] = event["args"].pop("fn_idx")
+                event["external id"] = re.search(r"_(\d+)", event["args"]["orig_name"]).group(1)
             else:
                 event["cat"] = event["cat"] if "cat" in event else "cpu_op"
             return event
