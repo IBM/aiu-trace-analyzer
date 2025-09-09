@@ -50,14 +50,17 @@ The `-c` argument provides the tool with the log file which is being processed f
 acelyzer -i "${TRACE_DIR}/hap-json-files/hap-bs8-seq256-autopilot-0-34707-job-*.json" -c ${TRACE_GIT}/hap-json-files/hap-bs8-seq256-autopilot-0.log -o hap_trace.json
 ```
 
+An evolving feature is the use of processing profiles (option `-P`) to allow control which processing stages are enabled. By default, the `everything.json` profile is used. Note that the cmdline still overrides the deactivation of stages so that if a stage is not requested via cmdline, its activation in the profile has no effect. When creating a profile, it's currently necessary to start from the everything-profile and set unwanted stages to `false`.
+
 ### Input Files
 
 The tool is capable of ingesting these types of input files:
 
- * json traces: So far this is the primary and supported option. It can be a json file that contains a list of events or another trace file that's formatted after the Trace Event Format. The tool is also capable of processing torch profiler trace files.
+ * json traces: So far this is the primary and supported option. It can be a json file that contains a list of events or another trace file that's formatted after the Trace Event Format. The tool is also capable of processing torch profiler trace files. It attempts to detect the input 'dialect' and adjusts event treatment accordingly.
  * perfetto protobuf files: so far it's able to extract trace events and their arguments from those files. It's not reading counters or other more sophisticated things yet (limited functionality).
 
 There's a basic autodetect function for the file type built in. If the filename extension doesn't indicate the type, it detects log files by their lines with time stamps, it detects json files by finding the initial open parenthesis, and for everything else, it assumes binary format of perfetto.
+
 
 
 ### Output Files
