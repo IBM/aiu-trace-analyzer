@@ -466,8 +466,8 @@ class MultifileIngest(AbstractTraceIngest):
         tsidx = (event, idx)   # keep idx with event so we immediately know which iterator/file to use to refill
         self.event_front.append(tsidx)
         # sorting reverse so that list.pop() can be used to emit the event with lowest TS
-        self.event_front.sort(reverse=True, key=lambda x: x[0]["ts"])
-        aiulog.log(aiulog.TRACE, "INGEST:", [e[0]["ts"] for e in self.event_front])
+        self.event_front.sort(reverse=True, key=lambda x: x[0]["ts"] if "ts" in x[0] else 0.0)
+        aiulog.log(aiulog.TRACE, "INGEST:", [e[0]["ts"] if "ts" in e[0] else 0.0 for e in self.event_front])
 
     # return False if no more active ingests available
     def disable_ingest(self, index) -> bool:
