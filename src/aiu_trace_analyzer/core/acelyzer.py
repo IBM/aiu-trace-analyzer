@@ -81,7 +81,7 @@ class Acelyzer:
 
         # default ideal and SOC Frequency
         "freq": 1000.0,
-        "ideal_freq": 800.0,
+        "ideal_freq": 1100.0,
 
         # experimental FLEX per-job timestamp correction
         "flex_ts_fix": False,
