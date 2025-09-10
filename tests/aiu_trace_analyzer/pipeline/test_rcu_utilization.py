@@ -1,6 +1,7 @@
 # Copyright 2024-2025 IBM Corporation
 
 import pytest
+import pandas as pd
 
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.rcu_utilization import RCUUtilizationContext,MultiRCUUtilizationContext,compute_utilization
@@ -17,20 +18,24 @@ def logfile():
 def rcu(logfile: str, tmp_path):
     return RCUUtilizationContext(compiler_log=logfile,
                                  csv_fname=f'{tmp_path}/test_output.json',
-                                 scale_factor=0.7)
+                                 soc_freq = 1000,
+                                 core_freq = 800)
 
 # setup a context class instance without table as a fixture
 @pytest.fixture
 def rcu_without_table(tmp_path):
     return RCUUtilizationContext(compiler_log=None,
+                                 soc_freq = 1000,
+                                 core_freq = 800,
                                  csv_fname=f'{tmp_path}/test_output.json')
 
 
 @pytest.fixture
 def multircu_single(logfile: str, tmp_path):
     return MultiRCUUtilizationContext(compiler_log=logfile,
-                                      csv_fname=f'{tmp_path}/test_output.json',
-                                      scale_factor=0.7)
+                                      csv_fname = f'{tmp_path}/test_output.json',
+                                      soc_freq = 1000,
+                                      core_freq = 800)
 
 '''
 Testing the values of certain member variables after creating RCUUtilizationContext
@@ -38,14 +43,14 @@ The input is the fixture created above using the logfile() fixture.
 The test cases specify a var and its expected value after reading the log
 '''
 expected_vars_and_values = [
-    ( "scale_factor", 0.7),
+    ( "cycle_to_clock_factor", 1.0/800.0),
     ( "multi_table", 0),
     ( "autopilot", False),
     ( "unscaled", False),
     ( "warn_util_100", 0),
     ( "other_warning", 0),
     ( "kernel_cycles",
-      {"somevalue": {'addmm_MatMul-BMM_1 Cmpt Exec': 19353, 'addmm_1_MatMul-BMM_1 Cmpt Exec': 19353, 'bmm-BMM_1 Cmpt Exec': 8601, 'Total Cmpt Exec': 47308}}
+      {"somevalue": {'addmm_MatMul-BMM_1 Cmpt Exec': 27648, 'addmm_1_MatMul-BMM_1 Cmpt Exec': 27648, 'bmm-BMM_1 Cmpt Exec': 12288, 'Total Cmpt Exec': 67584}}
     )
 ]
 
@@ -63,11 +68,11 @@ def test_no_table_context(rcu_without_table: RCUUtilizationContext):
 
 
 list_of_cycles_tests = [
-    ("addmm_MatMul-BMM_1 Cmpt Exec",0,19353),
+    ("addmm_MatMul-BMM_1 Cmpt Exec",0,27648),
     ("",1,0),
     ("blabla Cmpt Exec", 0, 0),
     ("Total",100, 0),
-    ("bmm-BMM_1 Cmpt Exec",0, 8601)
+    ("bmm-BMM_1 Cmpt Exec",0, 12288)
 ]
 
 @pytest.mark.parametrize("input,pid,expected", list_of_cycles_tests)
@@ -108,7 +113,6 @@ def test_rcu_util_category(test_args: str, num_rows: int, num_columns: int, tmp_
     args_list=extend_args_with_tmpout(test_args.split(' '), output_file_base)
     main(args_list)
 
-    import pandas as pd
     csv_dims = pd.read_csv( f"{output_file_base}_categories.csv" ).shape
     txt_dims = pd.read_fwf( f"{output_file_base}_categories.txt" ).shape   # fixed width format
 

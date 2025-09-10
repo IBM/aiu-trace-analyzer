@@ -80,7 +80,7 @@ class Acelyzer:
         "config_file": "ace.conf",
 
         # default ideal and SOC Frequency
-        "freq": 560.0,
+        "freq": 1000.0,
         "ideal_freq": 800.0,
 
         # experimental FLEX per-job timestamp correction
@@ -100,7 +100,6 @@ class Acelyzer:
     }
 
     def __init__(self, in_args=None, in_data=None):
-#        print(in_args)
         self.args = self.parse_inputs(in_args)
 
         try:
@@ -113,7 +112,8 @@ class Acelyzer:
         aiulog.loglevel = self.args.loglevel
         aiulog.log(aiulog.INFO, "Starting Test parser")
 
-        self.frequency_scale = self.args.freq[0] / self.args.freq[1]
+        self.freq_soc = self.args.freq[0]
+        self.freq_core = self.args.freq[1]
 
         if in_data is not None and "api://" in self.args.input:
             self.direct_data = memoryview(in_data)
@@ -386,7 +386,8 @@ class Acelyzer:
             rcu_util_ctx = event_pipe.MultiRCUUtilizationContext(
                 compiler_log=args.compiler_log,
                 csv_fname=args.output,
-                scale_factor=self.frequency_scale)
+                soc_freq=self.freq_soc,
+                core_freq=self.freq_core)
             process.register_stage(callback=event_pipe.compute_utilization_fingerprints, context=rcu_util_ctx)
 
         ##############################################################
