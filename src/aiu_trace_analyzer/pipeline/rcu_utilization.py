@@ -290,7 +290,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
     def accumulate_categories(self, pid, kernel, ideal_dur, duration):
         if kernel not in self.kernel_cat_map:
             self.other_warning += 1
-            aiulog.log(aiulog.INFO, "UTL:", pid, "Unexpected kernel name: ", kernel, "Accounting for as 'other'.")
+            aiulog.log(aiulog.DEBUG, "UTL:", pid, "Unexpected kernel name: ", kernel, "Accounting for as 'other'.")
             kernel = "other"
 
         cat = self.kernel_cat_map[kernel]
@@ -441,7 +441,7 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
         cmpt_dur = float(event["dur"])
         utilization = abs(ideal_dur/cmpt_dur)
 
-        if utilization > 0:
+        if utilization > 0.0:
             event["args"]["core used"] = True
 
         if utilization > 1.0:   # warning about >100% utilization
@@ -451,7 +451,10 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
             context.warn_util_100 += 1
             utilization = 1.0
 
-        event["cat"] = context.accumulate_categories(pid, kernel_name, ideal_dur, cmpt_dur)
+        if "cat" in event:
+            event["args"]["user_cat"] = context.accumulate_categories(pid, kernel_name, ideal_dur, cmpt_dur)
+        else:
+            event["cat"] = context.accumulate_categories(pid, kernel_name, ideal_dur, cmpt_dur)
         util_counter = context.make_utilization_event(event, utilization*100.0)
         return [event] + util_counter
 

@@ -81,7 +81,7 @@ class Acelyzer:
 
         # default ideal and SOC Frequency
         "freq": 1000.0,
-        "ideal_freq": 800.0,
+        "ideal_freq": 1100.0,
 
         # experimental FLEX per-job timestamp correction
         "flex_ts_fix": False,
@@ -188,6 +188,7 @@ class Acelyzer:
         parser.add_argument("-T", "--sync_to_dev", dest='sync_to_dev', action='store_const', const=True, default=self.defaults["sync_to_dev"], help="When set, use epoch from device timers")
         parser.add_argument("--autopilot_data", type=str, default=self.defaults["autopilot_db"], help="(Not yet implemented) Where to look for kernel category data from runs with 'autopilot=0'.")
         parser.add_argument("--keep_prep", dest="keep_prep", action="store_true", default=False, help="Prep-events are counted and the dropped. Use this option to keep them.")
+        parser.add_argument("--keep_names", dest="keep_names", action="store_true", default=False, help="Keep original event names when using the --tb option. By default most numbers are removed from name for aggregation purposes.")
         parser.add_argument("--disable_tb", dest="tb_refinement", action="store_false", default=self.defaults["tb_refinement"], help="To use Chrome-trace to render timeline, disable TB refinement")
         parser.add_argument("--tb", dest="tb", action="store_true", default=self.defaults["tb"], help="Enable output files for tensorboard.")
         parser.add_argument("--disable_file", dest="save_to_file", action="store_false", default=True, help="Disable output to file (primarily for TensorBoard integration). Prevents output file creation for integrated mode.")
@@ -451,7 +452,7 @@ class Acelyzer:
         process.register_stage(callback=event_pipe.flow_data_cleanup)
         process.register_stage(callback=event_pipe.cleanup_copy_of_device_ts)
 
-        tb_refinement_ctx = event_pipe.RefinementContext(exporter)
+        tb_refinement_ctx = event_pipe.RefinementContext(exporter, keep_names=args.keep_names)
         if args.tb_refinement:
             process.register_stage(callback=event_pipe.tb_refinement_intrusive, context=tb_refinement_ctx)
 

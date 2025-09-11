@@ -92,6 +92,9 @@ class AbstractTraceIngest:
 
     # update event data with things like ts-offset or ts-scaling
     def updated_event(self, event: TraceEvent) -> TraceEvent:
+        if event["ph"] not in "XBE":
+            return event
+
         if "ts" in event:
             event["ts"] *= self.scale
         if "dur" in event:
@@ -99,10 +102,17 @@ class AbstractTraceIngest:
         if self.rank_pid >= 0:
             event["pid"] = self.rank_pid
 
+        the_args = "args"
+        if "attr" in event:
+            the_args = "attr"
+        if the_args not in event:
+            event[the_args] = {}
+
         # make sure the pid/tid entries are numbers
         try:
             event["pid"] = int(event["pid"])
         except ValueError:
+            event[the_args]["opid"] = event["pid"]
             event["pid"] = hash(event["pid"])
         except KeyError:
             aiulog.log(aiulog.WARN, "Imported event has no PID!!! Setting -1", event)
@@ -112,15 +122,11 @@ class AbstractTraceIngest:
             try:
                 event["tid"] = int(event["tid"])
             except ValueError:
+                event[the_args]["otid"] = event["tid"]
                 event["tid"] = hash(event["tid"])
 
-        if event["ph"] not in ["F", "f", "s", "t", "C"]:
-            if "args" in event:
-                event["args"]["jobhash"] = self.jobhash
-            elif "attr" in event:
-                event["attr"]["jobhash"] = self.jobhash
-            else:
-                event["args"] = {"jobhash": self.jobhash}
+        if event["ph"] not in ["F", "f", "s", "t", "C", "M"]:
+            event[the_args]["jobhash"] = self.jobhash
         return event
 
 
@@ -199,7 +205,7 @@ class JsonEventTraceIngest(AbstractTraceIngest):
     def build_complete_event(self) -> TraceEvent:
         def _torch_prof_or_none(name, evtype) -> TraceEvent:
             if evtype == "M":
-                return None
+                return event
             elif "PyTorch Profiler" not in name:
                 return event
             else:
@@ -460,8 +466,8 @@ class MultifileIngest(AbstractTraceIngest):
         tsidx = (event, idx)   # keep idx with event so we immediately know which iterator/file to use to refill
         self.event_front.append(tsidx)
         # sorting reverse so that list.pop() can be used to emit the event with lowest TS
-        self.event_front.sort(reverse=True, key=lambda x: x[0]["ts"])
-        aiulog.log(aiulog.TRACE, "INGEST:", [e[0]["ts"] for e in self.event_front])
+        self.event_front.sort(reverse=True, key=lambda x: x[0]["ts"] if "ts" in x[0] else 0.0)
+        aiulog.log(aiulog.TRACE, "INGEST:", [e[0]["ts"] if "ts" in e[0] else 0.0 for e in self.event_front])
 
     # return False if no more active ingests available
     def disable_ingest(self, index) -> bool:

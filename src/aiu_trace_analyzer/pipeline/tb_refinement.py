@@ -1,6 +1,7 @@
 # Copyright 2024-2025 IBM Corporation
 
 import re
+import copy
 
 from aiu_trace_analyzer.types import InputDialectTORCH, GlobalIngestData
 import aiu_trace_analyzer.logger as aiulog
@@ -19,13 +20,14 @@ AllReduce = "AllReduce_all_reduce"
 
 
 class RefinementContext(AbstractHashQueueContext):
-    name_converter = re.compile(r"^([^-\[]+_)(\d+)")
+    name_converter = re.compile(r"([\D\[\]-]+)(\d+)")
 
-    def __init__(self, exporter: output.AbstractTraceExporter) -> None:
+    def __init__(self, exporter: output.AbstractTraceExporter, keep_names: bool = False) -> None:
         super().__init__()
         self.exporter = exporter
         self.meta_exported = False
         self.has_coll_bw = False
+        self.keep_names = keep_names
         self.dialect = InputDialectTORCH()
 
     def drain(self) -> list[TraceEvent]:
@@ -71,22 +73,39 @@ class RefinementContext(AbstractHashQueueContext):
         self.meta_exported = True
         return revents
 
-    def update_event_data_heavy(self, event) -> TraceEvent:
-        pid = event["pid"]
+    def _update_event_names(self, ev_name: str) -> tuple[str, bool]:
+        if self.keep_names:
+            return ev_name, False
 
-        # to group function calls by name without index...
-        # ...extract a function index (if any) from the event name
-        match = self.name_converter.search(event["name"])
-        if match and "args" in event:
-            event["args"]["fn_idx"] = match.group(2)
-        # ...and replace it with _[N]
-            event["name"] = re.sub(self.name_converter, f"{match.group(1)}[N]", event["name"], count=1)
+        new_name = ""
+        last_idx = 0
+        for match in self.name_converter.finditer(ev_name):
+            new_name += re.sub("_$", "", match.group(1))
+            if match.group(1).endswith("V"):
+                new_name += match.group(2)
+            last_idx = match.end()
 
+        new_name += ev_name[last_idx:]
+        return new_name, last_idx > 0
+
+    def _update_for_collective(self, event: TraceEvent) -> TraceEvent:
         if "coll" in str(event["tid"]):
             event["tid"] = 10000+int(str(event["tid"])[4])
 
         # ensure events with different PIDs have different TIDs
-        event["tid"] = pid*100000 + event["tid"]
+        event["tid"] = event["pid"]*100000 + event["tid"]
+        return event
+
+    def update_event_data_heavy(self, event: TraceEvent) -> TraceEvent:
+        if not PipelineContextTool.is_acc_event(event):
+            return event
+        (new_name, changed) = self._update_event_names(event["name"])
+        if changed:
+            event["args"]["orig_name"] = event["name"]
+        assert new_name != "", f"Event Name treatment created an empty name from event:'{event["name"]}'."
+        event["name"] = new_name
+
+        event = self._update_for_collective(event)
         return event
 
     def _queue_add_device(self, pid, ts, is_acc: bool = True):
@@ -125,8 +144,9 @@ class RefinementContext(AbstractHashQueueContext):
             # and 'name' for communication tb calculation
             if "args" in event and Coll_data_size in event["args"] and AllReduce in event["name"]:
                 event["cat"] = event["cat"] if "cat" in event else "user_annotation"
+                event["args"]["orig_name"] = event["name"]
                 event["name"] = "gloo:all_reduce"
-                event["external id"] = event["args"].pop("fn_idx")
+                event["external id"] = re.search(r"_(\d+)", event["args"]["orig_name"]).group(1)
             else:
                 event["cat"] = event["cat"] if "cat" in event else "cpu_op"
             return event
@@ -140,8 +160,16 @@ class RefinementContext(AbstractHashQueueContext):
                     return hash(pid) % 10000 + 10000
             return pid
 
-        if "args" in event and "jobhash" in event["args"]:
-            self.dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
+        self.dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
+
+        if self.dialect.get("NAME") == "TORCH":
+            if "opid" in event["args"]:
+                event["pid"] = event["args"]["opid"]
+                event["args"].pop("opid")
+            if "otid" in event["args"]:
+                event["tid"] = event["args"]["otid"]
+                event["args"].pop("otid")
+            return event
 
         pid = _resolve_string_pids(event["pid"])
 

@@ -124,7 +124,7 @@ class TensorBoardFileTraceExporter(JsonFileTraceExporter):
 
         for event in data:
             rank_id = event[key]
-            if rank_id is not None:
+            if rank_id is not None and isinstance(rank_id, int):
                 if rank_id >= 1000:
                     rank_id -= 1000
 

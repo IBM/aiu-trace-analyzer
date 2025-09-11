@@ -116,7 +116,7 @@ def _attr_to_args(event: TraceEvent) -> TraceEvent:
         if "args" not in event:
             event["args"] = copy.deepcopy({})
         for k,v in event["attr"].items():
-            event["args"][k] = event["attr"][k]
+            event["args"][k] = copy.deepcopy( v )
         event.pop("attr")
     return event
 
@@ -125,10 +125,10 @@ def _hex_to_int_str(event: TraceEvent) -> TraceEvent:
         if not isinstance(event["args"], dict):
             return event
 
-        for k, v in event["args"].items():
-            if isinstance(v, str):
+        for k in ["TS1", "TS2", "TS3", "TS4", "TS5", "Power"]:
+            if k in event["args"] and isinstance(event["args"][k], str):
                 try:
-                    event["args"][k] = str(int(v,0))
+                    event["args"][k] = str(int(event["args"][k], 0))
                 except ValueError:
                     pass # do nothing and leave the value alone
     return event
@@ -151,7 +151,7 @@ def normalize_phase1(event: TraceEvent, context: AbstractContext) -> list[TraceE
 
     # don't let anything pass that's not in X-event
     if event["ph"] not in ["X"]:
-        return []
+        return [ event ]
 
     event = _attr_to_args(event)
     event = _hex_to_int_str(event)
@@ -170,7 +170,7 @@ def normalize_phase2(event: TraceEvent, context: AbstractContext) -> list[TraceE
 
     # don't let anything pass that's not in X-event
     if event["ph"] not in ["X"]:
-        return []
+        return [ event ]
 
     if "args" in event and "TS1" in event["args"]:
         qid = context.queue_hash(event)
