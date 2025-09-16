@@ -13,13 +13,6 @@ def tb_ctx(tmp_path):
     exporter = JsonFileTraceExporter(f'{tmp_path}/tb_test_out.json')
     return RefinementContext(exporter)
 
-@pytest.fixture
-def global_ingest_data():
-    jobdata = GlobalIngestData.add_job_info(source_uri="tb_test_frame.json", data_dialect=InputDialectFLEX())
-    return jobdata
-
-
-
 list_events_test_heavy = [
     # regular, simple case for fn-idx removal
     ({"name":"event_123", "pid": 1, "tid": 1, "cat": "kernel", "args": {"TS1": 12345}},
@@ -46,10 +39,11 @@ list_events_test_heavy = [
      {"name":"event_123", "pid": 1, "tid": 10001, "args": {}}),
 ]
 
-@pytest.mark.parametrize('event_in, reference', list_events_test_heavy)
-def test_tb_refinement_heavy(event_in: TraceEvent, reference: TraceEvent, tb_ctx, global_ingest_data):
-    event_in["args"]["jobhash"] = global_ingest_data   # need to artificially add jobinfo hash to allow dialect-based detection of accellerator events
-    result = tb_ctx.update_event_data_heavy(event_in)
+### @pytest.mark.parametrize('generate_event_list, explen', list_test_cases, indirect=['generate_event_list'])
+
+@pytest.mark.parametrize('flex_event_with_jobhash, reference', list_events_test_heavy, indirect=['flex_event_with_jobhash'])
+def test_tb_refinement_heavy(flex_event_with_jobhash: TraceEvent, reference: TraceEvent, tb_ctx):
+    result = tb_ctx.update_event_data_heavy(flex_event_with_jobhash)
 
     assert result["name"] == reference["name"]
 

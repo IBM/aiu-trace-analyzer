@@ -4,8 +4,7 @@ import pytest
 import random
 import glob
 
-from aiu_trace_analyzer.types import TraceEvent
-
+from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, InputDialect, InputDialectFLEX, InputDialectTORCH
 
 @pytest.fixture(scope="module")
 def generate_event(request) -> TraceEvent:
@@ -47,3 +46,16 @@ def get_intermediate_filename(shared_tmp_path):
     def _get_intermediate_filename(pattern):
         return glob.glob(str(shared_tmp_path / pattern))
     return _get_intermediate_filename
+
+@pytest.fixture
+def global_ingest_data():
+    jobdata = GlobalIngestData.add_job_info(source_uri="test_frame_flex.json", data_dialect=InputDialectFLEX())
+    return jobdata
+
+@pytest.fixture(scope="session")
+def flex_event_with_jobhash(request, global_ingest_data) -> tuple[TraceEvent, TraceEvent]:
+    event = request.param
+    if "args" not in event:
+        event["args"] = {}
+    event["args"]["jobhash"] = global_ingest_data
+    return event
