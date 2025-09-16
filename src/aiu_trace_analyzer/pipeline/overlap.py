@@ -5,7 +5,7 @@ import copy
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.pipeline import AbstractContext,EventPairDetectionContext
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
-from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
 
 class OverlapTracking(tuple[float, bool, list[float]]):
     pass
@@ -241,6 +241,12 @@ def recombine_cpu_events(event: TraceEvent, context:AbstractContext, config:dict
         is_cpu = ("args" not in event)
         is_cpu |= ("args" in event and "TS1" not in event["args"])
         return is_cpu
+
+    try:
+        if GlobalIngestData.get_dialect(event["args"]["jobhash"]).get("NAME") != "FLEX":
+            return [event]
+    except KeyError:
+        return [event]
 
     if event["ph"] in "X" and is_CPU_event(event) and "AIU Roundtrip" not in event["name"] and PipelineContextTool.is_FLEX_event(event):
         fixed_tid = config.get("cpu_stream_tid", 1000)  # extract the new tid from config
