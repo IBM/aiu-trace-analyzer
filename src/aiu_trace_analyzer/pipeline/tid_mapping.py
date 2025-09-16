@@ -3,7 +3,7 @@
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.pipeline import AbstractContext
-
+from aiu_trace_analyzer.types import GlobalIngestData
 
 class TIDMappingContext(AbstractContext):
     '''
@@ -28,8 +28,14 @@ def map_tid_to_range(event: TraceEvent, context: AbstractContext) -> list[TraceE
     assert( isinstance( context, TIDMappingContext) )
 
     # ignore anything that has no tid
-    if "tid" not in event:
-        return [event ]
+    if event["ph"] != "X" or "tid" not in event:
+        return [event]
+
+    try:
+        if GlobalIngestData.get_dialect(event["args"]["jobhash"]).get("NAME") != "FLEX":
+            return [event]
+    except KeyError:
+        return [event]
 
     tid = event['tid']
     aiulog.log(aiulog.TRACE, f"tid: {tid}")
