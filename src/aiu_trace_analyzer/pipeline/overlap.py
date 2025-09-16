@@ -28,6 +28,7 @@ class OverlapDetectionContext(EventPairDetectionContext):
     OVERLAP_RESOLVE_DROP=1
     OVERLAP_RESOLVE_TID=2
     OVERLAP_RESOLVE_ASYNC=3
+    OVERLAP_RESOLVE_WARN=4
 
     def __init__(self, overlap_resolve=OVERLAP_RESOLVE_DROP) -> None:
         super().__init__()
@@ -100,11 +101,15 @@ class OverlapDetectionContext(EventPairDetectionContext):
     # solve a detected overlap between a pair of pairs
     def handle_overlap(self,
                        oevent: TraceEvent,
-                       queue_id: int) -> TraceEvent:
+                       queue_id: int) -> list[TraceEvent]:
         if self.overlap_resolve == self.OVERLAP_RESOLVE_DROP:
             aiulog.log(aiulog.WARN, "Solving overlap conflict by dropping:", oevent)
             self.resolved += 1
             return []
+        elif self.overlap_resolve == self.OVERLAP_RESOLVE_WARN:
+            aiulog.log(aiulog.WARN, "Detected overlap conflict: ", oevent["name"])
+            self.resolved += 1
+            return [oevent]
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_TID:
             oevent["tid"] += 1
             # feed offending event back into the detector with the new TID to make sure there are no collisions there either
