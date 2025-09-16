@@ -52,7 +52,7 @@ class EventProcessor:
         # if intermediate results are requested, register an additional special function+context
         if self.intermediate:
             next_intermediate = IntermediateDuplicateAndHoldContext(
-                JsonFileTraceExporter(target_uri=f'{self.intermediate}_{callback.__name__}_{self.stage_count}')
+                JsonFileTraceExporter(target_uri=f'{self.intermediate}_{self.stage_count:02}_{callback.__name__}')
             )
             aiulog.log(aiulog.TRACE, "DAH: registering preprocessing stage export:", next_intermediate.exporter.target_uri)
             self.stages.append((duplicate_and_hold, next_intermediate, None))
