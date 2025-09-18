@@ -99,10 +99,11 @@ class RefinementContext(AbstractHashQueueContext):
     def update_event_data_heavy(self, event: TraceEvent) -> TraceEvent:
         if not PipelineContextTool.is_acc_event(event):
             return event
-        (new_name, changed) = self._update_event_names(event["name"])
+        cur_name = event["name"]
+        (new_name, changed) = self._update_event_names(cur_name)
         if changed:
-            event["args"]["orig_name"] = event["name"]
-        assert new_name != "", f"Event Name treatment created an empty name from event:'{event["name"]}'."
+            event["args"]["orig_name"] = cur_name
+        assert new_name != "", f"Event Name treatment created an empty name from event:'{cur_name}'."
         event["name"] = new_name
 
         event = self._update_for_collective(event)

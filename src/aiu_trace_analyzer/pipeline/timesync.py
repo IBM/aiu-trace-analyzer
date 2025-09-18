@@ -122,8 +122,8 @@ def cycle_count_to_wallclock(event: TraceEvent, _: AbstractContext, config: dict
     # we can only do that conversion if the event has all necessary data
     if event["ph"] == "X" and "args" in event and "TS1" in event["args"]:
         event["args"]["ts_all"] = _convert_cycle_timestamps(event, config["soc_frequency"])
-        assert event["ts"]>= get_cycle_ts_as_clock(1, event["args"]["ts_all"])
-        assert event["ts"]+event["dur"] <= get_cycle_ts_as_clock(5, event["args"]["ts_all"])
+        assert event["ts"]>= get_cycle_ts_as_clock(1, event["args"]["ts_all"]), "TS1 is projected before the event timestamp. Please check the frequency setting."
+        assert event["ts"]+event["dur"] <= get_cycle_ts_as_clock(5, event["args"]["ts_all"]), "TS5 is projected past the end of the event. Please check the frequency setting."
 
         last = event["args"]["ts_all"][0]
         for i,t in enumerate(event["args"]["ts_all"][1:]):

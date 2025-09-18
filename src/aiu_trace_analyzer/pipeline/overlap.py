@@ -5,7 +5,7 @@ import copy
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.pipeline import AbstractContext,EventPairDetectionContext
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
-from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
 
 class OverlapTracking(tuple[float, bool, list[float]]):
     pass
@@ -28,6 +28,7 @@ class OverlapDetectionContext(EventPairDetectionContext):
     OVERLAP_RESOLVE_DROP=1
     OVERLAP_RESOLVE_TID=2
     OVERLAP_RESOLVE_ASYNC=3
+    OVERLAP_RESOLVE_WARN=4
 
     def __init__(self, overlap_resolve=OVERLAP_RESOLVE_DROP) -> None:
         super().__init__()
@@ -100,11 +101,15 @@ class OverlapDetectionContext(EventPairDetectionContext):
     # solve a detected overlap between a pair of pairs
     def handle_overlap(self,
                        oevent: TraceEvent,
-                       queue_id: int) -> TraceEvent:
+                       queue_id: int) -> list[TraceEvent]:
         if self.overlap_resolve == self.OVERLAP_RESOLVE_DROP:
             aiulog.log(aiulog.WARN, "Solving overlap conflict by dropping:", oevent)
             self.resolved += 1
             return []
+        elif self.overlap_resolve == self.OVERLAP_RESOLVE_WARN:
+            aiulog.log(aiulog.WARN, "Detected overlap conflict: ", oevent["name"])
+            self.resolved += 1
+            return [oevent]
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_TID:
             oevent["tid"] += 1
             # feed offending event back into the detector with the new TID to make sure there are no collisions there either
@@ -241,6 +246,12 @@ def recombine_cpu_events(event: TraceEvent, context:AbstractContext, config:dict
         is_cpu = ("args" not in event)
         is_cpu |= ("args" in event and "TS1" not in event["args"])
         return is_cpu
+
+    try:
+        if GlobalIngestData.get_dialect(event["args"]["jobhash"]).get("NAME") != "FLEX":
+            return [event]
+    except KeyError:
+        return [event]
 
     if event["ph"] in "X" and is_CPU_event(event) and "AIU Roundtrip" not in event["name"] and PipelineContextTool.is_FLEX_event(event):
         fixed_tid = config.get("cpu_stream_tid", 1000)  # extract the new tid from config

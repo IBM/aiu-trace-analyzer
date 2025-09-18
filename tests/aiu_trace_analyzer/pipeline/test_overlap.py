@@ -15,7 +15,17 @@ list_of_cpu_combine_tests = [
     ({"name":"cpu_event3","ph":"b","tid":3000},{"name":"cpu_event3","ph":"b","tid":3000}),                                                     # not X type -> do not touch
 ]
 
-@pytest.mark.parametrize("input,expected", list_of_cpu_combine_tests)
-def test_get_cycles(input:TraceEvent, expected:TraceEvent):
-    modified = recombine_cpu_events(input, context=None, config={"cpu_stream_tid":1000})
+# flex_event_with_jobhash fixture is adding a flex-dialect jobhash info to allow dialect detection to work in the called functions
+@pytest.mark.parametrize("flex_event_with_jobhash,expected", list_of_cpu_combine_tests, indirect=['flex_event_with_jobhash'])
+def test_get_cycles(flex_event_with_jobhash:TraceEvent, expected:TraceEvent):
+
+    modified = recombine_cpu_events(flex_event_with_jobhash, context=None, config={"cpu_stream_tid":1000})
+
+    # revert the 'addition' of the jobhash, before comparison
+    assert "args" in modified[0]
+    modified[0]["args"].pop("jobhash")
+    if len(modified[0]["args"]) == 0:
+        modified[0].pop("args")
+
+    # actual result check
     assert modified[0] == expected
