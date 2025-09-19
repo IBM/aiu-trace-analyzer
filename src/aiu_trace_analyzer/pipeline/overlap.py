@@ -4,7 +4,6 @@ import copy
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.pipeline import AbstractContext,EventPairDetectionContext
-from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
 from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
 
 class OverlapTracking(tuple[float, bool, list[float]]):
@@ -29,13 +28,18 @@ class OverlapDetectionContext(EventPairDetectionContext):
     OVERLAP_RESOLVE_TID=2
     OVERLAP_RESOLVE_ASYNC=3
     OVERLAP_RESOLVE_WARN=4
+    OVERLAP_RESOLVE_SHIFT=5
 
-    def __init__(self, overlap_resolve=OVERLAP_RESOLVE_DROP) -> None:
+    def __init__(self,
+                 overlap_resolve=OVERLAP_RESOLVE_DROP,
+                 ts_shift_threshold=0.0
+                 ) -> None:
         super().__init__()
         self.overlap_resolve = overlap_resolve
         self.resolved = 0
         self.async_id = 0
         self.async_queues = {}
+        self.ts_shift_threshold = ts_shift_threshold
 
     def __del__(self) -> None:
         level = aiulog.WARN if self.resolved else aiulog.INFO
@@ -64,8 +68,7 @@ class OverlapDetectionContext(EventPairDetectionContext):
             self.queues[queue_id] = (event_ts, True, [event_end])
             revents = [event]
         else:
-            # only do overlap resolution for flex events, ptorch events already have parentID etc for traceviewer to disentangle
-            if PipelineContextTool.is_FLEX_event and self.check_overlap_condition(event_ts, event_end, self.queues[queue_id]):
+            if self.check_overlap_condition(event_ts, event_end, self.queues[queue_id]):
                 # actual overlap
                 revents = self.handle_overlap(event,queue_id)
             else:
@@ -98,6 +101,15 @@ class OverlapDetectionContext(EventPairDetectionContext):
         is_blocked = (len(new_end_q) > 0)  # unblock the queue if no more end-ts are remaining
         self.queues[queue_id] = (new_current, is_blocked, new_end_q)
 
+    def get_overlap_time(self, ts: float, end: float, qstate: OverlapTracking) -> float:
+        _,_,end_q = qstate
+        overlap_time = -1.e99
+        for e in end_q:
+            # consider potential overlap time only if this event is not fully embedded
+            if e <= end:
+                overlap_time = max(overlap_time, e - ts)
+        return overlap_time
+
     # solve a detected overlap between a pair of pairs
     def handle_overlap(self,
                        oevent: TraceEvent,
@@ -108,6 +120,22 @@ class OverlapDetectionContext(EventPairDetectionContext):
             return []
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_WARN:
             aiulog.log(aiulog.WARN, "Detected overlap conflict: ", oevent["name"])
+            self.resolved += 1
+            return [oevent]
+        elif self.overlap_resolve == self.OVERLAP_RESOLVE_SHIFT:
+            ts_shift = self.get_overlap_time(oevent["ts"], oevent["ts"]+oevent["dur"], self.queues[queue_id])
+            if ts_shift > 0.0001:
+                aiulog.log(aiulog.DEBUG, "Detected overlap for event", oevent["name"], "Start-shift to solve: ", ts_shift)
+            if ts_shift < self.ts_shift_threshold:
+                oevent["args"]["orig_ts"] = oevent["ts"]   # keep the original ts in args
+                oevent["ts"] += round(ts_shift+0.0015, 3)  # round-up the required ts-shift and add 1ns
+                if ts_shift > oevent["dur"]:
+                    aiulog.log(aiulog.WARN, "Overlap shifting of", oevent["name"], "exceeds its duration", oevent["dur"])
+            else:
+                aiulog.log(aiulog.WARN, "Detected overlap of", oevent["name"], "exceeds the threshold/limit",
+                           self.ts_shift_threshold, "us. Overlap of", ts_shift,
+                           "us: increase threshold or use different overlap res option.")
+
             self.resolved += 1
             return [oevent]
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_TID:
@@ -253,7 +281,7 @@ def recombine_cpu_events(event: TraceEvent, context:AbstractContext, config:dict
     except KeyError:
         return [event]
 
-    if event["ph"] in "X" and is_CPU_event(event) and "AIU Roundtrip" not in event["name"] and PipelineContextTool.is_FLEX_event(event):
+    if event["ph"] in "X" and is_CPU_event(event) and "AIU Roundtrip" not in event["name"]:
         fixed_tid = config.get("cpu_stream_tid", 1000)  # extract the new tid from config
         event["tid"] = fixed_tid
     return [event]

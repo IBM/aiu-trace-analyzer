@@ -32,8 +32,9 @@ class Acelyzer:
         "remap_start": 1000,
         "remap_step": 100,
 
-        # overlap detection defaults
+        # overlap detection defaults (method and potential 'ts-shift' threshold)
         "overlap": "tid",
+        "ts_shift_threshold": 0.005,
 
         # event manipulation/extraction
         "split_events": False,
@@ -178,7 +179,7 @@ class Acelyzer:
         parser.add_argument("-k", "--skip_events", dest="skip_events", action='store_true', default=self.defaults["skip_events"], help="skip certain events when calculating the power")
         parser.add_argument("--drop_globals", dest="drop_globals", action='store_true', default=self.defaults["drop_globals"], help="drop throw-away events like Prep, etc.")
         parser.add_argument("-M", "--no_mp_sync", dest="skip_mpsync", action='store_true', default=self.defaults["skip_mpsync"], help="Do not attempt to sync multi-AIU streams based on AIU timestamps, e.g. if torch profile input aligns those already.")
-        parser.add_argument("-O", "--overlap", type=str, default=self.defaults["overlap"], choices=["drop", "tid", "async", "warn"], help="How to resolve overlapping/non-displayable events )")
+        parser.add_argument("-O", "--overlap", type=str, default=self.defaults["overlap"], choices=["drop", "tid", "async", "warn", "shift"], help="How to resolve overlapping/non-displayable events )")
         parser.add_argument("-P", "--profile", type=str, default=self.defaults["stage_profile"], help="Name of a processing profile json that lists the active processing stages to run")
         parser.add_argument("-o", "--output", type=str, default=None, help="Output file name.")
         parser.add_argument("-R", "--build_coll_event", dest="build_coll_event", action="store_true", default=self.defaults["build_coll_event"], help="Enable collective event detection/visualization. Note: The --flow option must be enabled first for this feature to work.")
@@ -246,6 +247,8 @@ class Acelyzer:
             return event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_ASYNC
         elif inarg == "warn":
             return event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_WARN
+        elif inarg == "shift":
+            return event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_SHIFT
         else:
             raise ValueError("UNRECOGNIZED Overlap Option (drop, tid, async).")
 
@@ -342,7 +345,8 @@ class Acelyzer:
         process.register_stage(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_a)
 
         # register pre-processing: resolve overlap conflicts caused by partially overlapping slices
-        overlap_ctx = event_pipe.OverlapDetectionContext(overlap_resolve=self._overlap_option_from_arg(args.overlap))
+        overlap_ctx = event_pipe.OverlapDetectionContext(overlap_resolve=self._overlap_option_from_arg(args.overlap),
+                                                         ts_shift_threshold=self.defaults["ts_shift_threshold"])
         process.register_stage(callback=event_pipe.detect_partial_overlap_events, context=overlap_ctx)
 
         # validate that the overlap has not messed up the event stream ordering
