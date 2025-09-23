@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+from copy import deepcopy
 
 import aiu_trace_analyzer.logger as aiulog
 
@@ -21,7 +22,7 @@ class StageProfile:
 
         # if a profile is empty, then assume all stages to be enabled
         if len(profile_data) == 0:
-            profile_data = all_stages
+            profile_data = deepcopy(all_stages)
 
         profile = StageProfile(profile_data, all_stages)
         return profile
