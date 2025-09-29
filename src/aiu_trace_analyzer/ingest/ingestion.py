@@ -99,7 +99,8 @@ class AbstractTraceIngest:
             event["ts"] *= self.scale
         if "dur" in event:
             event["dur"] = float(event["dur"] * self.scale)
-        if self.rank_pid >= 0:
+        dialect = GlobalIngestData.get_dialect(self.jobhash)
+        if self.rank_pid >= 0 and not isinstance(dialect, InputDialectTORCH):
             event["pid"] = self.rank_pid
 
         the_args = "args"
