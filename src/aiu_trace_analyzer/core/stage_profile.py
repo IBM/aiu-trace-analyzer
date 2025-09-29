@@ -55,6 +55,6 @@ class StageProfileChecker:
     def fwd_find_stage(self, stage: str) -> bool:
         for incr, st in enumerate(self.stages.profile[self.reg_idx:]):
             if stage == st[0]:
-                self.reg_idx += incr
+                self.reg_idx += incr + 1
                 return st[1]
         return False
