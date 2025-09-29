@@ -35,7 +35,7 @@ def test_default_is_everything(default_profile_config, everything_profile):
 
 
 def test_fwd_find(default_stage_checker):
-    test_stages = [('create_slice_from_BE', True, 1), ('do_not_move_index', False, 1), ('pipeline_barrier', True, 4)]
+    test_stages = [('create_slice_from_BE', True, 2), ('do_not_move_index', False, 2), ('pipeline_barrier', True, 5)]
 
     assert isinstance(default_stage_checker, StageProfileChecker)
 
