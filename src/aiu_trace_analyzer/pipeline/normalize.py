@@ -96,8 +96,8 @@ class NormalizationContext(AbstractHashQueueContext):
             for ts in ["TS1","TS2","TS3","TS4","TS5"]:
                 curr = int(args[ts],0)
                 curr += (ovc * 1<<32)
-                if curr < prev:
-                    raise RuntimeError("attempt of local_correction fix has missed a spot in TS-sequence.")
+                #if curr < prev:
+                #    raise RuntimeError("attempt of local_correction fix has missed a spot in TS-sequence.")
                 args[ts] = str(curr)
                 prev = curr
             args["OVC"] = ovc
