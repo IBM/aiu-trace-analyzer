@@ -131,13 +131,19 @@ class OverlapDetectionContext(EventPairDetectionContext):
                 oevent["ts"] += round(ts_shift+0.0015, 3)  # round-up the required ts-shift and add 1ns
                 if ts_shift > oevent["dur"]:
                     aiulog.log(aiulog.WARN, "Overlap shifting of", oevent["name"], "exceeds its duration", oevent["dur"])
+                else:
+                    oevent["args"]["orig_dur"] = oevent["dur"]
+                    oevent["dur"] -= round(ts_shift+0.0015, 3) # reduce the duration to keep the end-time unchanged
+                # feed offending event back into the detector to make sure it's end time does not collide with anything else
+                rlist = self.overlap_detection(oevent)
             else:
                 aiulog.log(aiulog.WARN, "Detected overlap of", oevent["name"], "exceeds the threshold/limit",
                            self.ts_shift_threshold, "us. Overlap of", ts_shift,
                            "us: increase threshold or use different overlap res option.")
+                rlist = [oevent]
 
             self.resolved += 1
-            return [oevent]
+            return rlist
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_TID:
             oevent["tid"] += 1
             # feed offending event back into the detector with the new TID to make sure there are no collisions there either
