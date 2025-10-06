@@ -19,8 +19,8 @@ def tripple_phased_events(event: TraceEvent, _: AbstractContext, config: dict) -
     2nd set of time stamps, in device timezone and epoch are kept in 'ts_dev' dict, unit in micro-second.
     '''
 
-    if event["ph"] == "X" :
-        if not "args" in event or not "TS1" in event["args"]:
+    if event["ph"] == "X":
+        if "args" not in event or "TS1" not in event["args"]:
             return [event]
 
         if " Prep" in event["name"]:
@@ -31,8 +31,9 @@ def tripple_phased_events(event: TraceEvent, _: AbstractContext, config: dict) -
         # Let T_dmao = T_ts[4], Duration_dmao = T_ts[5] - T_ts[4]
 
         # Create a new TS step array, with device's epoch
-        assert("soc_frequency" in config)
-        event["args"]["ts_dev"] = _create_dev_ts_list_in_us( event["args"], config["soc_frequency"] )    # DO: move out of here
+        assert ("soc_frequency" in config)
+        # DO: move out of here
+        event["args"]["ts_dev"] = _create_dev_ts_list_in_us(event["args"], config["soc_frequency"])
 
         # Decide to use host epoch or device epoch
         converted = event["args"]["ts_all"]
@@ -54,7 +55,7 @@ def tripple_phased_events(event: TraceEvent, _: AbstractContext, config: dict) -
 
         if " DmaI" in event["name"]:
             event1["ts"], event1["dur"] = _assign_ts_dur(1, 2, converted)
-            e_end = event1["ts"] + event1["dur"]
+            _ = event1["ts"] + event1["dur"]
             dev_ts = event1["args"]["ts_dev"]
             dev_ts[2] = dev_ts[3] = dev_ts[4] = dev_ts[1]   # alter TSx for x > 1
             # event1["dur"] = min(0.2, event1["dur"])
@@ -64,7 +65,9 @@ def tripple_phased_events(event: TraceEvent, _: AbstractContext, config: dict) -
         elif " Cmpt Ex" in event["name"]:
             event2["ts"], event2["dur"] = _assign_ts_dur(3, 4, converted)
             dev_ts = event2["args"]["ts_dev"]
-            dev_ts[0] = dev_ts[1] = dev_ts[2]; dev_ts[4] = dev_ts[3]  # alter TSx for x not in [2,3]
+            # alter TSx for x not in [2,3]
+            dev_ts[0] = dev_ts[1] = dev_ts[2]
+            dev_ts[4] = dev_ts[3]
             # event2["dur"] = max(0.2, event2["dur"])
             event1["dur"] = 0
             event3["dur"] = 0

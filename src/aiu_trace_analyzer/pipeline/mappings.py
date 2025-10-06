@@ -7,12 +7,13 @@ import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.types import TraceEvent
 
+
 # turn complete (X) events into a pair of duration events (B+E)
 def map_complete_to_duration(event: TraceEvent, _: AbstractContext) -> list[TraceEvent]:
     if event["ph"] == "X":
         # extract the duration from the event
         duration = event.pop("dur", 0)
-        assert(duration != 0)
+        assert (duration != 0)
         # create a B
 
         event["ph"] = "B"
@@ -24,7 +25,7 @@ def map_complete_to_duration(event: TraceEvent, _: AbstractContext) -> list[Trac
 
         return [b_event, event]
 
-    return [ event ]
+    return [event]
 
 
 def remove_ids_from_name(event: TraceEvent, _: AbstractContext) -> list[TraceEvent]:
@@ -39,6 +40,6 @@ def remove_ids_from_name(event: TraceEvent, _: AbstractContext) -> list[TraceEve
         aiulog.log(aiulog.DEBUG, "REPLACING:", event["name"])
         if "args" not in event:
             event["args"] = {}
-        event["args"]["reqID"] = event["name"][matchid.start()+1:matchid.end()-1]
+        event["args"]["reqID"] = event["name"][matchid.start() + 1:matchid.end() - 1]
         event["name"] = name_converter.sub(" ", event["name"])
-    return [ event ]
+    return [event]

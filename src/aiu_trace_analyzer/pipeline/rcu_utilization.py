@@ -27,7 +27,7 @@ _kernel_db_feature_implemented = False
 class RCUTableFingerprint():
     def __init__(self, datalimit: int = -1, initial_data: str = ''):
         self.initial_data = initial_data
-        self.datalimit = datalimit if datalimit > 0 else 1<<31   # yes, it's not really unlimited...
+        self.datalimit = datalimit if datalimit > 0 else 1 << 31   # yes, it's not really unlimited...
         self.reset()
 
     def get(self) -> int:
@@ -62,7 +62,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             csv_fname: str,
             soc_freq: float,
             core_freq: float,
-            kernel_db_url:str = "ai_kernel.db") -> None:
+            kernel_db_url: str = "ai_kernel.db") -> None:
         super().__init__()
 
         self.warn_util_100 = 0   # count the number of events with >100% utilization to print warning at the end
@@ -82,7 +82,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
         self.initialize_tables()
         try:
-            subdir,fpat = '/'.join(compiler_log.split('/')[:-1]), compiler_log.split('/')[-1]
+            subdir, fpat = '/'.join(compiler_log.split('/')[:-1]), compiler_log.split('/')[-1]
             compiler_log_name = list(pathlib.Path(subdir).rglob(fpat))[0]
             self.extract_tables(compiler_log=compiler_log_name)
         except Exception as e:
@@ -97,7 +97,8 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
     def __del__(self) -> None:
         if self.multi_table > 0:  # used as index, so 'n-1'
             aiulog.log(aiulog.WARN, "UTL:", self.multi_table+1,
-                       "tables with ideal cycles have been detected. Utilization results should be inspected carefully!!!!")
+                       "tables with ideal cycles have been detected."
+                       " Utilization results should be inspected carefully!!!!")
         if self.warn_util_100:
             aiulog.log(aiulog.WARN, "UTL: Encountered", self.warn_util_100, "Events with >100% utilization")
         if self.other_warning:
@@ -118,13 +119,13 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             else:
                 self.kernel_db.insert(self.table_hash, self.categories)
 
-        if len(self.categories.keys())>0:
+        if len(self.categories.keys()) > 0:
             self.print_table_as_pd(self.categories)
 
     def initialize_tables(self) -> None:
         self.kernel_cycles = {}  # tables indexed by fingerprint
         self.categories = {}
-        self.kernel_cat_map = {"other":"other"}
+        self.kernel_cat_map = {"other": "other"}
 
     def extract_tables(self, compiler_log: str):
         parse_mode = False
@@ -139,7 +140,9 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                     return
 
                 if self._clock_scaling.search(line):
-                    aiulog.log(aiulog.WARN, "UTL: Found obsolete 'Ideal Cycle Scaling' setting in logfile. This setting is ignored. Use '--freq=<soc>:<core>'.")
+                    aiulog.log(aiulog.WARN,
+                               "UTL: Found obsolete 'Ideal Cycle Scaling' setting in logfile."
+                               " This setting is ignored. Use '--freq=<soc>:<core>'.")
                     continue
 
                 if self._start_pattern.search(line):
@@ -147,7 +150,9 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                     current_table = {}
                     fprint.reset()
                     parse_mode = True
-                    aiulog.log(aiulog.DEBUG, "UTL: Start of Ideal Cycle Count section detected. Parse mode:", parse_mode, self.multi_table)
+                    aiulog.log(aiulog.DEBUG,
+                               "UTL: Start of Ideal Cycle Count section detected. Parse mode:",
+                               parse_mode, self.multi_table)
                     continue
 
                 # don't bother checking for the end_pattern if we're not even in parse mode
@@ -159,7 +164,9 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                     parse_mode = False
                     if fprint.get() in self.kernel_cycles:
                         aiulog.log(aiulog.ERROR, "UTL: Fingerprint of current table already exists in previous table.")
-                        raise NotImplementedError("UTL: Fingerprint of current table already exists in previous table. Support for same-sequence utilisation is not yet implemented. You may want to send us this sample to help enabling this feature.")
+                        raise NotImplementedError("UTL: Fingerprint of current table already exists in previous table."
+                                                  " Support for same-sequence utilisation is not yet implemented."
+                                                  " You may want to send us this sample to help enabling this feature.")
                     else:
                         aiulog.log(aiulog.INFO, f"UTL: Adding ideal cycles table with fingerprint: {fprint.get()}")
                         aiulog.log(aiulog.DEBUG, f"UTL:    TablefprintStr: {fprint.fprint_data}")
@@ -172,7 +179,9 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
                 ldata = re.split(" +", line)
                 if len(ldata) < 2 or len(ldata) > 3:  # strange format includes newline as a 3rd column
-                    aiulog.log(aiulog.WARN, "UTL: found data pattern line with more than 2 columns. Check patterns.", ldata)
+                    aiulog.log(aiulog.WARN,
+                               "UTL: found data pattern line with more than 2 columns. Check patterns.",
+                               ldata)
                     continue
 
                 cycles = int(ldata[1])
@@ -192,62 +201,71 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                     if cycles != 0:
                         current_table[kernel] = cycles
                 elif cycles != current_table[kernel]:
-                    aiulog.log(aiulog.WARN, "UTL: Kernel already has an entry with different cycle count:", kernel, cycles, current_table[kernel])
+                    aiulog.log(aiulog.WARN,
+                               "UTL: Kernel already has an entry with different cycle count:",
+                               kernel, cycles, current_table[kernel])
                 else:
                     pass  # found the same kernel name associated with the same ideal cycles: still consistent to go
 
                 if kernel not in self.kernel_cat_map:
                     self.kernel_cat_map[kernel] = category
                 elif category != self.kernel_cat_map[kernel]:
-                    aiulog.log(aiulog.WARN, "UTL: Kernel->Category map already has an entry with different category:", kernel, category, self.kernel_cat_map[kernel])
+                    aiulog.log(aiulog.WARN,
+                               "UTL: Kernel->Category map already has an entry with different category:",
+                               kernel, category, self.kernel_cat_map[kernel])
                 else:
                     pass  # found the same kernel name associated with the same category: still consistent to go
 
-    def print_table_as_pd(self, cat_tab ):
+    def print_table_as_pd(self, cat_tab):
         """
         Generate time breakdown along kernel categories
 
         Table columns
         ---------------------------
         .  Kernel Time: observed runtime of kernels
-        .  Frac Time: ratio of the accumulated observed time of kernels in a category and the total observed time of all kernels.
+        .  Frac Time: ratio of the accumulated observed time of kernels in a category and
+                      the total observed time of all kernels.
         .  Calls: number of kernels observed in a category
         .  Ideal Time: ideal time converted using core-clock frequency.
         .  Ideal Cycles: ideal cycle, as read from table.
-        .  Frac Ideal: ratio of the accumulated ideal-time of kernels in a category and the total ideal-time of all kernels.
-        .  PT Util: ratio of the accumulated ideal-time of kernels in a category and the accumulated observed-time of kernels in the same category.
+        .  Frac Ideal: ratio of the accumulated ideal-time of kernels in a category and
+                       the total ideal-time of all kernels.
+        .  PT Util: ratio of the accumulated ideal-time of kernels in a category and
+                    the accumulated observed-time of kernels in the same category.
         """
 
-        title_row = ["Pid", "Category","Kernel_Time","Frac_Time","Calls","Ideal_Time","Ideal_Cyc","Frac_Ideal","PT_Util"]
+        title_row = ["Pid", "Category", "Kernel_Time", "Frac_Time", "Calls",
+                     "Ideal_Time", "Ideal_Cyc", "Frac_Ideal", "PT_Util"]
         aiulog.log(aiulog.DEBUG, "UTL: category title_row: ", title_row)
 
         list_of_list = []
         for p, data in cat_tab.items():
-            if len(data) == 0: return
+            if len(data) == 0:
+                return
 
-            total       = data["Total"][0]
+            total = data["Total"][0]
             ideal_total = data["Total"][1]
 
-            for k, (dur,ideal,calls) in data.items():
+            for k, (dur, ideal, calls) in data.items():
                 ideal_cyc = int(ideal / abs(self.cycle_to_clock_factor))
 
                 # prevent div-by-zero exception
-                dur_frac   = 0 if isclose(total, 0.0, abs_tol=1e-9)       else round(dur/total, 4)
-                ideal_frac = 0 if isclose(ideal_total, 0.0, abs_tol=1e-9) else round(ideal/ideal_total, 4)
-                pt_util    = 0 if isclose(dur, 0.0, abs_tol=1e-9)         else round(ideal/dur, 4)
+                dur_frac = 0 if isclose(total, 0.0, abs_tol=1e-9) else round(dur / total, 4)
+                ideal_frac = 0 if isclose(ideal_total, 0.0, abs_tol=1e-9) else round(ideal / ideal_total, 4)
+                pt_util = 0 if isclose(dur, 0.0, abs_tol=1e-9) else round(ideal / dur, 4)
 
                 # note: to sync the columns of value_row with title_row
                 value_row = [p, k, dur, dur_frac, calls, round(ideal, 4), ideal_cyc, ideal_frac, pt_util]
-                list_of_list.append( value_row )
+                list_of_list.append(value_row)
 
                 aiulog.log(aiulog.DEBUG, "UTL: category value_row: ", value_row)
 
         # the sorting places the "Total" row to the last of each section (section per pid) of the table.
-        df = pd.DataFrame( list_of_list, columns = title_row )
-        sorted_df = df.sort_values( [title_row[0],title_row[2]], kind='stable', inplace=False, ignore_index=True )
+        df = pd.DataFrame(list_of_list, columns=title_row)
+        sorted_df = df.sort_values([title_row[0], title_row[2]], kind='stable', inplace=False, ignore_index=True)
 
-        sorted_df.to_csv( self.csv_fname, index=False, header=True )                   # dump to CSV file
-        print( sorted_df.to_string(index=False), file=open( self.tab_fname, 'w' ) )    # dump to TXT file
+        sorted_df.to_csv(self.csv_fname, index=False, header=True)                   # dump to CSV file
+        print(sorted_df.to_string(index=False), file=open(self.tab_fname, 'w'))    # dump to TXT file
 
         aiulog.log(aiulog.INFO, "UTL: category table(s) created as CSV:", self.csv_fname)
         aiulog.log(aiulog.INFO, "UTL: category table(s) created as TXT:", self.tab_fname)
@@ -259,10 +277,10 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         else:
             aiulog.log(aiulog.DEBUG, "UTL: Creating new categories table for", pid)
             # always have the StcdpHbm category
-            self.categories[pid] = {"Total":(0.0,0.0,0), "StcdpHbm":(0.0,0.0,0)}
+            self.categories[pid] = {"Total": (0.0, 0.0, 0), "StcdpHbm": (0.0, 0.0, 0)}
 
         for cat in self.kernel_cat_map.values():
-            self.categories[pid][cat] = (0.0,0.0,0)
+            self.categories[pid][cat] = (0.0, 0.0, 0)
 
     def get_cycles(self, kernel: str, fprint: int) -> int:
         if len(self.kernel_cycles):
@@ -313,7 +331,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             soc_freq: float,
             core_freq: float) -> None:
         super().__init__()
-        log_list=compiler_log.split(",")
+        log_list = compiler_log.split(",")
         self.multi_log = (len(log_list) > 1)
         self.warn_util_100 = 0
         self.warn_nomatch = 0  # count the number of events where no corresponding table/fingerprint was found
@@ -329,10 +347,13 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         for rank, log in enumerate(log_list):
             aiulog.log(aiulog.DEBUG, "UTL: Building kernel table for", rank)
             if self.multi_log:
-                csv_basename=csv_fname+str(rank)
+                csv_basename = csv_fname + str(rank)
             else:
-                csv_basename=csv_fname
-            self.rcuctx[rank] = RCUUtilizationContext(log, csv_fname=csv_basename, soc_freq=soc_freq, core_freq=core_freq)
+                csv_basename = csv_fname
+            self.rcuctx[rank] = RCUUtilizationContext(log,
+                                                      csv_fname=csv_basename,
+                                                      soc_freq=soc_freq,
+                                                      core_freq=core_freq)
 
     def __del__(self) -> None:
         if self.warn_util_100:
@@ -377,7 +398,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                 "ts": event["ts"],
                 "pid": event["pid"],
                 "name": RCU_pt_util_counter_name,
-                "args": { RCU_pt_util_counter_unit: utilization },
+                "args": {RCU_pt_util_counter_unit: utilization},
                 "dur": event["dur"]  # temporary duration in cycles- remove before viz
             }]
         if utilization > 0.0:   # add a reset-to-zero event only if util is non-zero
@@ -386,7 +407,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                 "ts": event["ts"]+event["dur"],
                 "pid": event["pid"],
                 "name": RCU_pt_util_counter_name,
-                "args": { RCU_pt_util_counter_unit: 0.0 }
+                "args": {RCU_pt_util_counter_unit: 0.0}
             })
         return revents
 
@@ -401,7 +422,7 @@ def compute_utilization_fingerprints(event: TraceEvent, context: AbstractContext
     if event["ph"] != "X":
         return [event]
 
-    assert( isinstance(context, MultiRCUUtilizationContext) )
+    assert isinstance(context, MultiRCUUtilizationContext)
 
     if PipelineContextTool.is_acc_event(event) and PipelineContextTool.is_acc_kernel(event):
         kernel_name = context.extract_kernel_from_event_name(event)
@@ -414,7 +435,7 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
     if event["ph"] != "X":
         return [event]
 
-    assert( isinstance(context, MultiRCUUtilizationContext ))
+    assert isinstance(context, MultiRCUUtilizationContext)
 
     if PipelineContextTool.is_acc_event(event) and PipelineContextTool.is_acc_kernel(event):
         pid = event["pid"]

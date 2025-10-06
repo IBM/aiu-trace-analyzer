@@ -1,7 +1,6 @@
 # Copyright 2024-2025 IBM Corporation
 
 import re
-import copy
 
 from aiu_trace_analyzer.types import InputDialectTORCH, GlobalIngestData
 import aiu_trace_analyzer.logger as aiulog

@@ -7,8 +7,9 @@ from typing import Union
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.constants import TS_CYCLE_KEY, TS_KEYS_LIST
 from aiu_trace_analyzer.types import TraceEvent
-from aiu_trace_analyzer.pipeline import AbstractContext,AbstractHashQueueContext
+from aiu_trace_analyzer.pipeline import AbstractContext, AbstractHashQueueContext
 from aiu_trace_analyzer.pipeline.timesync import get_cycle_ts_as_clock
+
 
 class PowerExtractionContext(AbstractHashQueueContext):
     '''
@@ -34,12 +35,14 @@ class PowerExtractionContext(AbstractHashQueueContext):
 
     def __del__(self):
         if self.bad_events:
-            aiulog.log(aiulog.WARN, f"PEC encountered {self.bad_events} bad power events set to 0.0W. Enable DEBUG (-D 3) to display.")
+            aiulog.log(aiulog.WARN,
+                       f"PEC encountered {self.bad_events} bad power events set to 0.0W."
+                       " Enable DEBUG (-D 3) to display.")
         aiulog.log(aiulog.INFO, "PEC event stats o/i:", self.ecount_out, '/', self.ecount_in)
 
     # power is per process, so we drop the tid information
     def queue_hash(self, pid) -> int:
-        return hash( pid )
+        return hash(pid)
 
     def get_prev(self, event: TraceEvent) -> TraceEvent:
         queue_id = self.queue_hash(event["pid"])
@@ -72,35 +75,38 @@ class PowerExtractionContext(AbstractHashQueueContext):
             if self.filter.search(prev['cat']):
                 # updating self.prev means: drop 'prev' by replacing with 'this'
                 self.update_prev(this)
-                aiulog.log(aiulog.TRACE, "prev: %d, %s, this: %d, %s" %(prev[TS_CYCLE_KEY], prev['cat'], this[TS_CYCLE_KEY], this['cat'] ))
+                aiulog.log(aiulog.TRACE, "prev: %d, %s, this: %d, %s" % (prev[TS_CYCLE_KEY],
+                                                                         prev['cat'],
+                                                                         this[TS_CYCLE_KEY],
+                                                                         this['cat']))
 
             if self.filter.search(this['cat']):
-                aiulog.log(aiulog.DEBUG, "PEC: filter match second event: ", this )
+                aiulog.log(aiulog.DEBUG, "PEC: filter match second event: ", this)
             # not updating self.prev means: drop/skip 'this'
-            aiulog.log(aiulog.DEBUG, "PEC: Keeping: ", self.prev[ self.queue_hash(prev["pid"]) ])
+            aiulog.log(aiulog.DEBUG, "PEC: Keeping: ", self.prev[self.queue_hash(prev["pid"])])
             # since we can't compute delta, we return nothing
             return None
 
         # check if self.skip_events is set
-        if self.skip_events == True :
+        if self.skip_events is True:
 
             # skip this event if both contain "Cmpt Exec" in the cat
-            if ("Cmpt Exec" in prev['cat']) and ("Cmpt Exec" in this['cat']) :
+            if ("Cmpt Exec" in prev['cat']) and ("Cmpt Exec" in this['cat']):
                 aiulog.log(aiulog.TRACE, "dumped event: ", this['cat'])
                 return None
 
             # skip this event if prev contains " DmaO" and this contains " DmaI"
-            if (" DmaO" in prev['cat']) and (" DmaI" in this['cat']) :
+            if (" DmaO" in prev['cat']) and (" DmaI" in this['cat']):
                 aiulog.log(aiulog.TRACE, "dumped event: ", this['cat'])
                 return None
 
             # skip this event if prev contains "Cmpt Exec" and this contains " DmaI"
-            if ("Cmpt Exec" in prev['cat']) and (" DmaI" in this['cat']) :
+            if ("Cmpt Exec" in prev['cat']) and (" DmaI" in this['cat']):
                 aiulog.log(aiulog.TRACE, "dumped event: ", this['cat'])
                 return None
 
         # delta charge
-        new_val = pb-pa if pa<pb else (2**32)+ pb-pa
+        new_val = pb - pa if pa < pb else (2**32) + pb - pa
 
         # _TS_CYCLE_KEY is already in MHz cycles
         if self.power_ts == 3:
@@ -110,9 +116,10 @@ class PowerExtractionContext(AbstractHashQueueContext):
             new_val = round((new_val / (this[TS_CYCLE_KEY] - prev[TS_CYCLE_KEY])), 3)
 
         elif self.power_ts == 4:
-            dt_in_ns = (this[TS_CYCLE_KEY]-prev[TS_CYCLE_KEY]) * 1000 # nano-second
-            LSB_on_ADC = 5.37/512                   # Least significant bit for the Analog-2-Digital Converter (LSB=1/512 from snt_dpm_dcr: Register-ro)
-            voltage = 12                            # volt/s
+            dt_in_ns = (this[TS_CYCLE_KEY] - prev[TS_CYCLE_KEY]) * 1000  # nano-second
+            # Least significant bit for the Analog-2-Digital Converter (LSB=1/512 from snt_dpm_dcr: Register-ro)
+            LSB_on_ADC = 5.37 / 512
+            voltage = 12            # volt/s
 
             # dcharge is sum(current), has to be in nano-Ampere to get Power in Watts
             new_val = voltage * new_val * LSB_on_ADC / dt_in_ns
@@ -123,42 +130,40 @@ class PowerExtractionContext(AbstractHashQueueContext):
 
         # TODO: remove these statements
         # check if power value is huge
-        if self.skip_events == True :
+        if self.skip_events is True:
             #
             aiulog.log(aiulog.TRACE, "compute-power(): prev['cat'] ", prev['cat'])
-            aiulog.log(aiulog.TRACE, f"compute-power(): power: {new_val}, delta-t: {this[TS_CYCLE_KEY] - prev[TS_CYCLE_KEY]}")
+            aiulog.log(aiulog.TRACE,
+                       f"compute-power(): power: {new_val}, delta-t:"
+                       f" {this[TS_CYCLE_KEY] - prev[TS_CYCLE_KEY]}")
 
         return new_val
 
-
     def name_from_category(self, prev: TraceEvent) -> TraceEvent:
         #
-        if self.power_ts==4:
+        if self.power_ts == 4:
             prev["name"] = "Power"
             return prev
 
-        cat = prev['cat'] # keep name in the category to keep all power readings in one viz track
-
+        cat = prev['cat']   # keep name in the category to keep all power readings in one viz track
 
         # possible categories: DmaI, DmaO, AllGather, Exec
-        if "DmaI" in cat :
+        if "DmaI" in cat:
             cat_type = " DmaI"
-        elif "DmaO" in cat :
+        elif "DmaO" in cat:
             cat_type = " DmaO"
-        elif "AllGather" in cat :
+        elif "AllGather" in cat:
             cat_type = " AllGather"
-        elif "AllReduce" in cat :
+        elif "AllReduce" in cat:
             cat_type = " AllReduce"
         elif "Cmpt Exec" in cat:
             cat_type = " Cmpt Exec"
-        else :
+        else:
             cat_type = " Other"
-
 
         # overwrite name field
         prev["name"] += cat_type
         return prev
-
 
     def create_zero_event(self, event: TraceEvent, ts) -> Union[TraceEvent, None]:
         if self.power_ts == 4:
@@ -169,7 +174,6 @@ class PowerExtractionContext(AbstractHashQueueContext):
         zevent['ts'] = ts
 
         return zevent
-
 
     def compute_power(self, event: TraceEvent) -> list[TraceEvent]:
         # just eat all events and wait for drain to sort and emit
@@ -187,10 +191,10 @@ class PowerExtractionContext(AbstractHashQueueContext):
         # else, we need to compute power/delta
         power = self.compute_delta(prev, event)
         # if there are computation issues, then return nothing
-        if power == None:
+        if power is None:
             return []
 
-        if power<0.0:
+        if power < 0.0:
             aiulog.log(aiulog.ERROR, "PEC computed negative power", prev, event)
             raise OverflowError("Negative power value detected/computed.")
 
@@ -211,9 +215,9 @@ class PowerExtractionContext(AbstractHashQueueContext):
         self.update_prev(event)
         self.ecount_out += 1
         if zero_event:
-            return [ prev, zero_event ]
+            return [prev, zero_event]
         else:
-            return [ prev ]
+            return [prev]
 
     def _base_counter(self, pid, cat, counter_value) -> TraceEvent:
         return {
@@ -232,7 +236,7 @@ class PowerExtractionContext(AbstractHashQueueContext):
             return []
 
         counters = []
-        queue_id=self.queue_hash(event["pid"])
+        queue_id = self.queue_hash(event["pid"])
         if self.power_ts == 4 and queue_id not in self.processed_first:
             # for TS3-based Power, there's no first event in that same sense
             # The first event for the TS4-based Power can reference the TS3 timestamp
@@ -269,12 +273,11 @@ class PowerExtractionContext(AbstractHashQueueContext):
         return []
 
 
-
 def extract_power_event(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
     '''
     extracts power counter data from X and b events
     '''
-    assert( isinstance(context, PowerExtractionContext))
+    assert isinstance(context, PowerExtractionContext)
     if event["ph"] in ["X", "b"] and not context.filter.search(event["name"]):
         if "args" in event and "Power" in event["args"] and "ts_all" in event["args"]:
             counters = context.build_input_events(event)
@@ -282,25 +285,27 @@ def extract_power_event(event: TraceEvent, context: AbstractContext) -> list[Tra
 
     return [event]
 
+
 def check_power_ts_sequence(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
     '''
     sanity check for power counter events: make sure their TS appears in ascending order
     '''
-    assert(isinstance(context, PowerExtractionContext))
+    assert isinstance(context, PowerExtractionContext)
     queue_id = context.queue_hash(event["pid"])
     if queue_id not in context.last_TS:
         context.last_TS[queue_id] = 0
     if event["ph"] == "C":
         if event["ts"] < context.last_TS[queue_id]:
-            aiulog.log(aiulog.ERROR, "PEC: Counter event TS broken. last>new", context.last_TS[queue_id], event["ts"], context.ecount_out)
-            assert(False)
+            aiulog.log(aiulog.ERROR, "PEC: Counter event TS broken. last>new",
+                       context.last_TS[queue_id], event["ts"], context.ecount_out)
+            assert False
         context.last_TS[queue_id] = event["ts"]
-    return [ event ]
+    return [event]
 
 
 def compute_power(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
 
-    assert(isinstance(context, PowerExtractionContext))
+    assert isinstance(context, PowerExtractionContext)
 
     # only process 'C' events
     if event['ph'] == "C" and event["name"] == "Power":

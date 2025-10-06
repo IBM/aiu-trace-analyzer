@@ -4,6 +4,7 @@ import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.pipeline import AbstractContext
 
+
 class AbstractHashQueueContext(AbstractContext):
     '''
     Provides a dictionary for e.g. queues to group events for processing
@@ -40,9 +41,9 @@ class AbstractHashQueueContext(AbstractContext):
         aiulog.log(aiulog.TRACE, "QUEUE IN:", include_list, a)
         hash_tuple = ()
         for key_str in include_list:
-            keys = key_str.split('.') # split to cover hierarchical entries
+            keys = key_str.split('.')  # split to cover hierarchical entries
             base_dict = a
-            for idx,key in enumerate(keys):
+            for idx, key in enumerate(keys):
                 if key not in base_dict:
                     if ignore_missing:
                         continue

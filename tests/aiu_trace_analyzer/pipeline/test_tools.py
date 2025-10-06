@@ -4,9 +4,11 @@ import pytest
 
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
 
+
 @pytest.fixture
 def tool_base():
     return PipelineContextTool()
+
 
 test_cases = [
     (
@@ -18,6 +20,7 @@ test_cases = [
     pytest.param("", None, None, marks=pytest.mark.xfail)
 ]
 
-@pytest.mark.parametrize("fname_base, category, result", test_cases )
-def test_generate_filename(fname_base, category, result, tool_base ):
+
+@pytest.mark.parametrize("fname_base, category, result", test_cases)
+def test_generate_filename(fname_base, category, result, tool_base):
     assert tool_base.generate_filename(fname_base, category) == result

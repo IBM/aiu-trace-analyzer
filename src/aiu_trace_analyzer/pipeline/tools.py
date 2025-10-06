@@ -21,7 +21,7 @@ class PipelineContextTool:
         # insert _summary before the last '.' and replace the .nnn with .csv
         fcomponents = fname.split('.')
         assert len(fcomponents) >= 1, "Filename cannot be empty."
-        if len(fcomponents)==1:
+        if len(fcomponents) == 1:
             fcomponents.append(extension)
 
         fcomponents[-2] += "_" + purpose
@@ -29,7 +29,7 @@ class PipelineContextTool:
 
         return '.'.join(fcomponents)
 
-    def is_FLEX_event(event:TraceEvent) -> bool:
+    def is_FLEX_event(event: TraceEvent) -> bool:
         '''
         Returns True for events that do not contain the information that torch profiler would add
         '''
@@ -120,15 +120,18 @@ class KernelDetailsDB:
      * the reference to a measured mapping: kernel_name -> runtime_percentage
     """
 
-    def __init__(self, db_url:str, autopilot: bool) -> None:
+    def __init__(self, db_url: str, autopilot: bool) -> None:
         self.db_url = db_url
         self.autopilot = autopilot
         try:
             with open(self.db_url, 'r') as db:
                 self.data = json.load(db)
-        except:
+        except FileNotFoundError:
             aiulog.log(aiulog.WARN, "APD: Unable to find an existing kernel db. Creating new at:", self.db_url)
             self.data = {}
+        except IOError as e:
+            aiulog.log(aiulog.ERROR, "APD: IO-Error. Cannot continue")
+            raise e
 
     def __del__(self):
         self.persist_db()
@@ -140,14 +143,16 @@ class KernelDetailsDB:
             with open(self.db_url, 'w') as db:
                 aiulog.log(aiulog.DEBUG, "APD: Exporting kernel detail db into:", self.db_url)
                 json.dump(self.data, db)
-        except:
+        except FileNotFoundError:
             aiulog.log(aiulog.ERROR, "APD: Failed to export/refresh kernel datail db into:", self.db_url)
+        except IOError as e:
+            aiulog.log(aiulog.ERROR, "APD: IO-Error. Connot continue")
+            raise e
 
-
-    def insert(self, hash:str, mapping_table:AutopilotDetail):
+    def insert(self, hash: str, mapping_table: AutopilotDetail):
         self.data[hash] = mapping_table
 
-    def retrieve(self, hash:str) -> AutopilotDetail:
+    def retrieve(self, hash: str) -> AutopilotDetail:
         try:
             return self.data[hash]
         except KeyError:

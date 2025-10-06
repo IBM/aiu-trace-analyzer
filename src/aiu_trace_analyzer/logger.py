@@ -2,6 +2,7 @@
 
 import datetime
 
+
 class _LogLevel(object):
     def __repr__(self):
         raise NotImplementedError
@@ -47,6 +48,7 @@ def string_to_loglevel(loglevel_str):
     else:
         raise Exception("Un expected log level: %s" % (loglevel_str))
 
+
 def int_to_loglevel(loglevel_int):
     if loglevel_int == 0:
         return _ERROR()
@@ -62,7 +64,6 @@ def int_to_loglevel(loglevel_int):
         raise Exception("Un expected log level: %s" % (loglevel_int))
 
 
-
 # log-level definitions as ints
 ERROR = 0
 WARN = 1
@@ -70,22 +71,24 @@ INFO = 2
 DEBUG = 3
 TRACE = 4
 
+
 # default global log warning
 loglevel = WARN
+
 
 # update the loglevel to 'll'
 def setloglevel(ll: int):
     global loglevel
-    assert(ll >= ERROR and ll <= TRACE)
+    assert (ll >= ERROR and ll <= TRACE)
     loglevel = ll
 
 
 logcolor_codes = [
-    ("\033[91m","\033[0m"),   # red error
-    ("\033[93m","\033[0m"),   # yellow warning
-    ("",""),           # everything else: nothing
-    ("",""),
-    ("","")
+    ("\033[91m", "\033[0m"),   # red error
+    ("\033[93m", "\033[0m"),   # yellow warning
+    ("", ""),           # everything else: nothing
+    ("", ""),
+    ("", "")
 ]
 
 
