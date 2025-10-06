@@ -149,7 +149,11 @@ class JsonEventTraceIngest(AbstractTraceIngest):
             scale: float = 1.0,
             keep_processed: bool = False,
             show_warnings: bool = True) -> None:
-        super().__init__(source_uri, jobdata=jobdata, data_dialect=data_dialect, scale=scale, show_warnings=show_warnings)
+        super().__init__(source_uri,
+                         jobdata=jobdata,
+                         data_dialect=data_dialect,
+                         scale=scale,
+                         show_warnings=show_warnings)
 
         self.data = {}
         self.last_ts = 0.0
@@ -246,7 +250,8 @@ class JsonEventTraceIngest(AbstractTraceIngest):
                 return None
 
             # TODO commented out until time stamp issue is clarified
-            # assert  self.last_ts-self.ts_tolerance <= open_event["ts"], f"TimeStamp Sequence problem in {self.sourceURI}"
+            # assert  self.last_ts-self.ts_tolerance <= open_event["ts"], \
+            #    f"TimeStamp Sequence problem in {self.sourceURI}"
             return open_event
         else:
             assert False, f'Expected to find E-event in {self.source_uri}. Found {event["ph"]}'
@@ -421,7 +426,9 @@ class MultifileIngest(AbstractTraceIngest):
         elif self.ftype == self.FTYPE_PFTRACE:
             self.ingesters.append(ProtobufIngest(ingest))
         elif self.ftype == self.FTYPE_API:
-            self.ingesters.append(MemoryJsonTraceIngest(ingest, show_warnings=self.show_warnings, direct_data=self.direct_data))
+            self.ingesters.append(
+                MemoryJsonTraceIngest(ingest, show_warnings=self.show_warnings, direct_data=self.direct_data)
+            )
         else:
             aiulog.log(aiulog.ERROR, "Unrecognized file type. file:", ingest)
             _added_new = False

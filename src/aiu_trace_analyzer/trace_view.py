@@ -67,7 +67,7 @@ class TraceView(object):
             "traceName": self.other_data["Settings"]["output"],
             "traceEvents": self.trace_events,
             "displayTimeUnit": self.display_time_unit,
-#            "systemTraceEvents": self.system_trace_events,
+            # "systemTraceEvents": self.system_trace_events,
             "otherData": self.other_data,
             # "stackFrames": self.stack_frames,
             # "samples": self.samples,
@@ -97,28 +97,28 @@ class AbstractEventType(object):
         etype = event["ph"]
         if etype == "B" or etype == "E":
             new_event = DurationEvents(ph=event["ph"],
-                                    ts=event["ts"],
-                                    pid=event["pid"],
-                                    tid=event["tid"],
-                                    name=event["name"],
-                                    args=event["args"] if "args" in event else {},
-                                    cat=event["cat"] if "cat" in event else "",
-                                    )
+                                       ts=event["ts"],
+                                       pid=event["pid"],
+                                       tid=event["tid"],
+                                       name=event["name"],
+                                       args=event["args"] if "args" in event else {},
+                                       cat=event["cat"] if "cat" in event else "",
+                                       )
         elif etype == "X":
             new_event = CompleteEvents(name=event["name"],
-                                        cat=event["cat"] if "cat" in event else "",
-                                        ts=event["ts"],
-                                        dur=event["dur"],
-                                        pid=event["pid"],
-                                        tid=event["tid"],
-                                        args=event["args"] if "args" in event else {})
+                                       cat=event["cat"] if "cat" in event else "",
+                                       ts=event["ts"],
+                                       dur=event["dur"],
+                                       pid=event["pid"],
+                                       tid=event["tid"],
+                                       args=event["args"] if "args" in event else {})
         elif etype == "C":
             new_event = CounterEvents(name=event["name"],
-                                    ts=event["ts"],
-                                    pid=event["pid"],
-                                    cat=event["cat"] if "cat" in event else "",
-                                    args=event["args"],
-                                    )
+                                      ts=event["ts"],
+                                      pid=event["pid"],
+                                      cat=event["cat"] if "cat" in event else "",
+                                      args=event["args"],
+                                      )
         elif etype in ["b", "e"]:
             # TODO: AsyncEvents needs extension
             new_event = AsyncEvents(ph=event["ph"],
@@ -132,21 +132,21 @@ class AbstractEventType(object):
                                     )
         elif etype in ["s", "f"]:
             new_event = FlowEvents(ph=event["ph"],
-                                ts=event["ts"],
-                                id=event["id"],
-                                pid=event["pid"],
-                                tid=event["tid"],
-                                name=event["name"],
-                                cat=event["cat"],
-                                bp=event["bp"] if "bp" in event else None
-                                )
+                                   ts=event["ts"],
+                                   id=event["id"],
+                                   pid=event["pid"],
+                                   tid=event["tid"],
+                                   name=event["name"],
+                                   cat=event["cat"],
+                                   bp=event["bp"] if "bp" in event else None
+                                   )
         elif etype in ["M"]:
             new_event = MetaEvents(ph=event["ph"],
-                                name=event["name"],
-                                ts=event["ts"],
-                                pid=event["pid"],
-                                args=event["args"],
-                                tid=event["tid"] if "tid" in event else None)
+                                   name=event["name"],
+                                   ts=event["ts"],
+                                   pid=event["pid"],
+                                   args=event["args"],
+                                   tid=event["tid"] if "tid" in event else None)
         elif etype in ["i"]:
             new_event = InstantEvents(
                 name=event["name"],
@@ -364,7 +364,6 @@ class MetaEvents(AbstractEventType):
         if tid:
             self.tid = tid
         self.args = args
-
 
 
 class SampleEvents(AbstractEventType):

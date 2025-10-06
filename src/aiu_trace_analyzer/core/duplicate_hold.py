@@ -13,6 +13,7 @@ from aiu_trace_analyzer.pipeline import AbstractContext
 
 from aiu_trace_analyzer.export.exporter import JsonFileTraceExporter
 
+
 class IntermediateDuplicateAndHoldContext(AbstractContext):
     '''
     Special context for export of intermediate state in form of json.
@@ -37,9 +38,11 @@ def duplicate_and_hold(event: TraceEvent, context: AbstractContext) -> list[Trac
     For that, the JsonFileExporter is extended with an export_raw() function to skip
     the restricted conversion to proper TraceView events.
     '''
-    assert( isinstance( context, IntermediateDuplicateAndHoldContext ))
+    assert isinstance(context, IntermediateDuplicateAndHoldContext)
 
-    aiulog.log(aiulog.TRACE, "DAH: Holding:", context.exporter.target_uri, event, id(context.exporter.traceview.trace_events))
+    aiulog.log(aiulog.TRACE,
+               "DAH: Holding:",
+               context.exporter.target_uri, event, id(context.exporter.traceview.trace_events))
     context.exporter.export_raw(copy.deepcopy(event))
 
     return [event]

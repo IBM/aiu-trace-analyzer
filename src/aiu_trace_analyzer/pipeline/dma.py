@@ -1,11 +1,10 @@
 # Copyright 2024-2025 IBM Corporation
 
-import re
 import copy
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent
-from aiu_trace_analyzer.pipeline import AbstractContext,EventPairDetectionContext
+from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionContext
 from aiu_trace_analyzer.pipeline.timesync import get_cycle_ts_as_clock
 
 
@@ -26,9 +25,10 @@ class DataTransferExtractionContext(EventPairDetectionContext):
 
     def __del__(self):
         aiulog.log(aiulog.INFO, "DTC event stats o/i:", self.ecount_out, '/', self.ecount_in)
+
     # dma (bytes transferred) is per process, so we drop the tid information
     def queue_hash(self, pid, _=0) -> int:
-        return hash( pid )
+        return hash(pid)
 
     def get_prev(self, event: TraceEvent) -> TraceEvent:
         queue_id = self.queue_hash(event["pid"])
@@ -44,61 +44,52 @@ class DataTransferExtractionContext(EventPairDetectionContext):
         aiulog.log(aiulog.TRACE, "DTC: Bandwidth: ", prev, this)
 
         # Handle Counter events (DmaI)
-        if " DmaI" in prev['cat'] :
+        if " DmaI" in prev['cat']:
             # data transfer size
             dts = int(prev["args"]["Bytes"])
 
-            assert(prev['DmaI_end'] > prev['DmaI_start'])
+            assert (prev['DmaI_end'] > prev['DmaI_start'])
 
-            aiulog.log(aiulog.TRACE, "DmaI duration (usec):  %f" %((prev['DmaI_end'] - prev['DmaI_start'])))
+            aiulog.log(aiulog.TRACE, "DmaI duration (usec):  %f" % ((prev['DmaI_end'] - prev['DmaI_start'])))
 
             new_val = round(dts / (prev['DmaI_end'] - prev['DmaI_start']), 3)
 
             return new_val
 
-
         # Handle Counter events (DmaO)
-        elif " DmaO" in prev['cat'] :
+        elif " DmaO" in prev['cat']:
             # data transfer size
             dts = int(prev["args"]["Bytes"])
 
-            assert(prev['DmaO_end'] > prev['DmaO_start'])
+            assert (prev['DmaO_end'] > prev['DmaO_start'])
 
-            aiulog.log(aiulog.TRACE, "DmaO duration (usec): %f" %(prev['DmaO_end'] - prev['DmaO_start']))
+            aiulog.log(aiulog.TRACE, "DmaO duration (usec): %f" % (prev['DmaO_end'] - prev['DmaO_start']))
 
             new_val = round(dts / (prev['DmaO_end'] - prev['DmaO_start']), 3)
 
             return new_val
 
-
-
-
     def name_from_category(self, prev: TraceEvent) -> TraceEvent:
         # cat field (event name)
-        #cat = prev.pop("cat") # remove category to keep all power readings in one viz track
+        # cat = prev.pop("cat") # remove category to keep all power readings in one viz track
 
         # TODO: remove this statement
-        cat = prev['cat'] # keep name in the category to keep all power readings in one viz track
-
+        cat = prev['cat']  # keep name in the category to keep all power readings in one viz track
 
         # possible categories: DmaI, DmaO, AllGather, Exec
-        if "DmaI" in cat :
+        if "DmaI" in cat:
             cat_type = " DmaI"
-        elif "DmaO" in cat :
+        elif "DmaO" in cat:
             cat_type = " DmaO"
-        else :
+        else:
             cat_type = " Other"
 
-
-        #print("name: %s, cat_type: %s" %(cat, cat_type))
+        # print("name: %s, cat_type: %s" %(cat, cat_type))
         # overwrite name field
         prev["name"] += cat_type
 
-        #print("name:    ", prev['name'])
-
-
+        # print("name:    ", prev['name'])
         return prev
-
 
     def create_zero_event(self, event: TraceEvent) -> TraceEvent:
         # deepcopy
@@ -107,11 +98,10 @@ class DataTransferExtractionContext(EventPairDetectionContext):
         zevent['args']['Bytes'] = 0.0
 
         # Get the appropriate timestamp (end of event)
-        if " DmaI" in zevent['cat'] :
+        if " DmaI" in zevent['cat']:
             zevent['ts'] = zevent['DmaI_end']
-        elif " DmaO" in zevent['cat'] :
+        elif " DmaO" in zevent['cat']:
             zevent['ts'] = zevent['DmaO_end']
-
 
         # remove intermediate fields from zevent
         zevent.pop('DmaI_start')
@@ -123,9 +113,7 @@ class DataTransferExtractionContext(EventPairDetectionContext):
         # remove 'cat' field
         zevent.pop('cat')
 
-
         return zevent
-
 
     def compute_bandwidth(self, event: TraceEvent) -> list[TraceEvent]:
         # just eat all events and wait for drain to sort and emit
@@ -135,20 +123,16 @@ class DataTransferExtractionContext(EventPairDetectionContext):
         # get the currently stored prev event matching the event's track/pid
         prev = self.get_prev(event)
 
-
         # if there's no prev event, this is the first encounter and we just update prev
         if not prev:
             self.update_prev(event)
             return []
-
-
 
         # else, we need to compute power/delta
         bw = self.compute_bandwidth_value(prev, event)
         # if there are computation issues, then return nothing
         if not bw:
             return []
-
 
         # update the older event bandwidth value
         prev["args"]["Bytes"] = bw
@@ -157,7 +141,6 @@ class DataTransferExtractionContext(EventPairDetectionContext):
 
         # make a copy of the prev event
         zero_event = self.create_zero_event(prev)
-
 
         # remove intermediate fields
         prev.pop('DmaI_start')
@@ -172,39 +155,37 @@ class DataTransferExtractionContext(EventPairDetectionContext):
         # make the current event the new prev
         self.update_prev(event)
         self.ecount_out += 1
-        return [ prev, zero_event ]
+        return [prev, zero_event]
 
     def drain(self) -> list[TraceEvent]:
         return []
-
-
 
 
 def extract_data_transfer_event(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
     '''
     extracts data transfer counter data from X and b events
     '''
-    assert( isinstance(context, DataTransferExtractionContext))
+    assert isinstance(context, DataTransferExtractionContext)
     if event["ph"] in ["X", "b"]:
         if "args" in event and "Bytes" in event["args"]:
             # Align TSx entries with event timestamps in cycles
             # cycle_count_to_wallclock has added ts_all with converted TS1-5, we just need to get TS3 from there:
 
             # If event name contains " DmaI" use TS1
-            if " DmaI" in event['name'] :
-                ts = int( get_cycle_ts_as_clock(1, event["args"]["ts_all"]) )
+            if " DmaI" in event['name']:
+                ts = int(get_cycle_ts_as_clock(1, event["args"]["ts_all"]))
             # If event name contains " DmaO" use TS4
-            elif " DmaO" in event['name'] :
-                ts = int( get_cycle_ts_as_clock(4, event["args"]["ts_all"]) )
+            elif " DmaO" in event['name']:
+                ts = int(get_cycle_ts_as_clock(4, event["args"]["ts_all"]))
 
             counter = {
                 "ph": "C",
                 "pid": event["pid"],
                 "ts": ts,
-                "DmaI_start" : get_cycle_ts_as_clock(1, event["args"]['ts_all']),
-                "DmaI_end" : get_cycle_ts_as_clock(2, event["args"]['ts_all']),
-                "DmaO_start" : get_cycle_ts_as_clock(4, event["args"]['ts_all']),
-                "DmaO_end" : get_cycle_ts_as_clock(5, event["args"]['ts_all']),
+                "DmaI_start": get_cycle_ts_as_clock(1, event["args"]['ts_all']),
+                "DmaI_end": get_cycle_ts_as_clock(2, event["args"]['ts_all']),
+                "DmaO_start": get_cycle_ts_as_clock(4, event["args"]['ts_all']),
+                "DmaO_end": get_cycle_ts_as_clock(5, event["args"]['ts_all']),
                 "cat": event['name'],
                 "name": "BW",
                 "args": {
@@ -217,10 +198,9 @@ def extract_data_transfer_event(event: TraceEvent, context: AbstractContext) -> 
     return [event]
 
 
-
 def compute_bandwidth(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
 
-    assert(isinstance(context, DataTransferExtractionContext))
+    assert isinstance(context, DataTransferExtractionContext)
 
     # only process 'C' events (BW)
     if event['ph'] == "C" and event['name'] == "BW":

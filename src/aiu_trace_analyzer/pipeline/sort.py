@@ -2,8 +2,7 @@
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent
-from aiu_trace_analyzer.pipeline import AbstractContext,EventPairDetectionContext
-
+from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionContext
 
 
 class EventSortingContext(EventPairDetectionContext):
@@ -22,7 +21,7 @@ class EventSortingContext(EventPairDetectionContext):
             return super().queue_hash(pid, tid)
 
     def sort(self, event: TraceEvent):
-        if ((self.event_types != None) and (event["ph"] not in self.event_types)) or (self.sortkey not in event):
+        if ((self.event_types is not None) and (event["ph"] not in self.event_types)) or (self.sortkey not in event):
             return [event]
 
         tid = event["tid"] if "tid" in event else 0
@@ -36,19 +35,17 @@ class EventSortingContext(EventPairDetectionContext):
 
     def drain(self):
         drained_events = []
-        for _,q in self.queues.items():
-            q.sort(key = lambda x: x[self.sortkey])
+        for _, q in self.queues.items():
+            q.sort(key=lambda x: x[self.sortkey])
         while len(self.queues.keys()) > 0:
             queue_id = list(self.queues.keys())[0]
             drained_events += self.queues.pop(queue_id)
         return drained_events
 
 
-
-
 def sort_events(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
     '''
     Collects events into queues and sorts by configured keys in context
     '''
-    assert( isinstance(context, EventSortingContext))
+    assert isinstance(context, EventSortingContext)
     return context.sort(event)

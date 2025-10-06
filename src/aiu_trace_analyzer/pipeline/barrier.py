@@ -1,6 +1,5 @@
 # Copyright 2024-2025 IBM Corporation
 
-import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.pipeline import AbstractContext, AbstractHashQueueContext
 from aiu_trace_analyzer.types import TraceEvent
 
@@ -18,13 +17,14 @@ class _BarrierContext(AbstractContext):
         self.hold = []
         return revents
 
+
 _main_barrier_context = _BarrierContext()
 
-def pipeline_barrier(event: TraceEvent, _:AbstractContext) -> list[TraceEvent]:
+
+def pipeline_barrier(event: TraceEvent, _: AbstractContext) -> list[TraceEvent]:
     bctx = _main_barrier_context
     bctx.collect(event)
     return []
-
 
 
 class TwoPhaseWithBarrierContext(AbstractHashQueueContext):
@@ -44,4 +44,6 @@ class TwoPhaseWithBarrierContext(AbstractHashQueueContext):
         else:
             # do nothing if this is the application phase
             pass
-        return []  # the queues for these contexts don't contain events (events are held in barrier context), so nothing to drain here
+        # the queues for these contexts don't contain events (events are held in barrier context),
+        # so nothing to drain here
+        return []

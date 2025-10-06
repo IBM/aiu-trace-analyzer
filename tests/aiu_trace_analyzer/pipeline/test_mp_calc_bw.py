@@ -2,9 +2,9 @@
 
 import pytest
 
-from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.types import TraceEvent
-from aiu_trace_analyzer.pipeline.mp_calc_bw_v2 import MpCalcBwV2Context, mp_calc_bw_v2
+from aiu_trace_analyzer.pipeline.mp_calc_bw_v2 import MpCalcBwV2Context
+
 
 # setup the context class instance with a table as a fixture
 @pytest.fixture
@@ -19,7 +19,7 @@ def mpc_ctx():
                     'Coll_data_size': 104506,
                     'Procs': 4,
                 }
-    mpc.NP=4
+    mpc.NP = 4
 
     return mpc
 
@@ -33,9 +33,9 @@ def test_create_counter(mpc_ctx):
 
 
 def test_gen_bw_counter_events(mpc_ctx):
-    cg_start=25.0
-    cg_end=35.0
-    event = {"name":"Allreduce", "ph":"X", "ts": 34.2, "dur": 0.8, "args": {"CollGroup":"CurrentCollGroup"}}
+    cg_start = 25.0
+    cg_end = 35.0
+    event = {"name": "Allreduce", "ph": "X", "ts": 34.2, "dur": 0.8, "args": {"CollGroup": "CurrentCollGroup"}}
 
     revents = mpc_ctx._gen_bw_counter_events(event, cg_start, cg_end, 104506, "CurrentCollGroup")
 
@@ -56,9 +56,9 @@ def test_gen_bw_counter_events(mpc_ctx):
 
 
 def test_gen_bw_counter_events_overlap(mpc_ctx):
-    cg_start=18.0
-    cg_end=35.0
-    event = {"name":"Allreduce", "ph":"X", "ts": 34.2, "dur": 0.8, "args": {"CollGroup":"CurrentCollGroup"}}
+    cg_start = 18.0
+    cg_end = 35.0
+    event = {"name": "Allreduce", "ph": "X", "ts": 34.2, "dur": 0.8, "args": {"CollGroup": "CurrentCollGroup"}}
 
     revents = mpc_ctx._gen_bw_counter_events(event, cg_start, cg_end, 104506, "CurrentCollGroup")
 
@@ -80,11 +80,12 @@ def test_gen_bw_counter_events_overlap(mpc_ctx):
 def test_insert():
     mpc_ctx = MpCalcBwV2Context()
     np = 4
-    ts_list = [ 10, 12, 9, 11,   # arrivals of ranks of group1
-                30, 31, 38, 35,  # arrivals of ranks of group2
-                65, 60, 61, 62,  # arrivals of ranks of repeated group1
+    ts_list = [10, 12, 9, 11,   # arrivals of ranks of group1
+               30, 31, 38, 35,  # arrivals of ranks of group2
+               65, 60, 61, 62,  # arrivals of ranks of repeated group1
                ]
-    name_list = [ "Group1", "Group2", "Group1" ]
+    name_list = ["Group1", "Group2", "Group1"]
+
     def create_event(i: int, name: str, ts: float) -> TraceEvent:
         return {
             "name": "CollectiveEvent",
@@ -99,17 +100,19 @@ def test_insert():
             }
         }
 
-    cgroup_list = [ x for x in name_list for _ in range(np) ]
+    cgroup_list = [x for x in name_list for _ in range(np)]
 
-    inputlist = [ create_event(i, name, ts) for i,(name,ts) in enumerate(zip(cgroup_list,ts_list)) ]
+    inputlist = [create_event(i, name, ts) for i, (name, ts) in enumerate(zip(cgroup_list, ts_list))]
 
     result = []
     for event in inputlist:
         result += mpc_ctx.insert(event=event)
 
-    assert len(result) == 12+4  # 12 events, 1 directly adjacent group would remove the zero-event for first group1 and the final zero event requires drain to get called
+    # 12 events, 1 directly adjacent group would remove the zero-event for first group1
+    #   and the final zero event requires drain to get called
+    assert len(result) == 12 + 4
     assert len(mpc_ctx.coll_groups) == 0
-    assert mpc_ctx.prev_group == (60.0, 85.0, {"Group1"} )
+    assert mpc_ctx.prev_group == (60.0, 85.0, {"Group1"})
 
     result += mpc_ctx.drain()
-    assert len(result) == 12+5  # drain should add the final zero event
+    assert len(result) == 12 + 5  # drain should add the final zero event

@@ -1,6 +1,6 @@
 # Copyright 2024-2025 IBM Corporation
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 import pandas as pd
 
 import aiu_trace_analyzer.logger as aiulog
@@ -8,9 +8,11 @@ from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.pipeline import AbstractContext
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
 
-_PID_COL="pid"
-_DURATION_COL="elapsed_time"
-_TIMEACCUM_COL="_atime"
+
+_PID_COL = "pid"
+_DURATION_COL = "elapsed_time"
+_TIMEACCUM_COL = "_atime"
+
 
 class Stat():
     @abstractmethod
@@ -24,6 +26,7 @@ class Stat():
     @abstractmethod
     def calculate_stat(self,  *args, **kwargs):
         pass
+
 
 class DurationStat(Stat):
     def __init__(self) -> None:
@@ -59,6 +62,7 @@ class DurationStat(Stat):
         aiulog.log(aiulog.TRACE, f"STATS_V2: Get DurationStat {df}")
         return df
 
+
 class TimeAccumStat(Stat):
     def __init__(self) -> None:
         self.accum_time = {}
@@ -80,6 +84,7 @@ class TimeAccumStat(Stat):
 
         aiulog.log(aiulog.TRACE, f"STATS_V2: Get TimeAccumStat {df}")
         return df
+
 
 class StatRegistry:
     def __init__(self, *args) -> None:
@@ -106,16 +111,18 @@ class StatRegistry:
 
         return None
 
-_COMPUTE_EVENT_KEY="Cmpt Exec"
-_COLLECTIVE_EVENT_KEY="AllReduce_all_reduce"
 
-_SUPPORTED_STAT_CLASS={
-        "DurationStat": DurationStat,
-        "TimeStat": TimeAccumStat,
-        }
+_COMPUTE_EVENT_KEY = "Cmpt Exec"
+_COLLECTIVE_EVENT_KEY = "AllReduce_all_reduce"
 
-_TYPE_COMP="comp"
-_TYPE_COMM="comm"
+_SUPPORTED_STAT_CLASS = {
+    "DurationStat": DurationStat,
+    "TimeStat": TimeAccumStat,
+}
+
+_TYPE_COMP = "comp"
+_TYPE_COMM = "comm"
+
 
 class EventStatsTrackerContext(PipelineContextTool):
     def __init__(self, stats_filename: str, stat_metrics: dict) -> None:
@@ -134,10 +141,11 @@ class EventStatsTrackerContext(PipelineContextTool):
                 stat_type = _SUPPORTED_STAT_CLASS.get(stat_type_name)
                 self.add_stat(name, stat_type())
             else:
-                aiulog.log(aiulog.ERROR, f"STATS_V2_INIT: {name} {stat_type_name} registeration failed, please check stats name and type")
+                aiulog.log(aiulog.ERROR,
+                           f"STATS_V2_INIT: {name} {stat_type_name} registeration failed,"
+                           f" please check stats name and type")
 
         aiulog.log(aiulog.TRACE, f"STATS_V2_INIT: Registered {self.registry.stats.keys()}")
-
 
     def add_stat(self, stat_name, stat_obj) -> None:
         self.registry.register_stat(stat_name, stat_obj)
@@ -176,21 +184,19 @@ class EventStatsTrackerContext(PipelineContextTool):
         tracker_df.to_csv(stats_filename, index=False)
         return []
 
+
 def calculate_stats_v2(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
     '''
     parses X events that contains "Cmpt Exec" string in the name
     '''
-    assert( isinstance(context, EventStatsTrackerContext))
+    assert isinstance(context, EventStatsTrackerContext)
 
-    if event["ph"] in ["X"] and _COMPUTE_EVENT_KEY in event['name'] :
+    if event["ph"] in ["X"] and _COMPUTE_EVENT_KEY in event['name']:
         aiulog.log(aiulog.TRACE, f"STATS_V2: Capture compute on {event['name']}")
         context.add_event(event, _TYPE_COMP)
 
-    if event["ph"] in ["X"] and _COLLECTIVE_EVENT_KEY == event['name'] :
+    if event["ph"] in ["X"] and _COLLECTIVE_EVENT_KEY == event['name']:
         aiulog.log(aiulog.TRACE, f"STATS_V2: Capture collective on {event['name']}")
         context.add_event(event, _TYPE_COMM)
 
-
     return [event]
-
-

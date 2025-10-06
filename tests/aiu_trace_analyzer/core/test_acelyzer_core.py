@@ -1,9 +1,9 @@
 # Copyright 2024-2025 IBM Corporation
 
-import pytest
 import json
 
 from aiu_trace_analyzer.core.acelyzer import Acelyzer
+
 
 def test_default_is_everything():
     args_list = ["-i", "api://jsonbuffer", "--disable_file", "--tb"]

@@ -6,9 +6,11 @@ central imports for contexts and processing functions
 Adding new functionality as follows:
 
   1)  create a file in src/aiu_trace_analyzer/pipeline
-  2)  implement your processing function and corresponding context (derive from existing contexts or AbstractContext)
+  2)  implement your processing function and corresponding context
+      (derive from existing contexts or AbstractContext)
   3)  add import lines below for your new context and function(s)
-  4)  integrate to acelyzer.py as needed (watch the order of registered functions, because they're almost never independent)
+  4)  integrate to acelyzer.py as needed (watch the order of registered functions,
+      because they're almost never independent)
   5)  add the new callback function names to any personalities/profiles in matching order
 
   Simple example to get started could be TIDMappingContext and map_tid_to_range in tid_mapping.py
@@ -54,7 +56,11 @@ from aiu_trace_analyzer.pipeline.flex_job_offset import FlexJobOffsetContext
 from aiu_trace_analyzer.pipeline.mappings import map_complete_to_duration, remove_ids_from_name
 from aiu_trace_analyzer.pipeline.normalize import normalize_phase1, normalize_phase2
 from aiu_trace_analyzer.pipeline.correctness import event_sanity_checks
-from aiu_trace_analyzer.pipeline.overlap import detect_partial_overlap_events, assert_ts_sequence, assert_global_ts_sequence, recombine_cpu_events
+from aiu_trace_analyzer.pipeline.overlap import (
+    detect_partial_overlap_events,
+    assert_ts_sequence,
+    assert_global_ts_sequence,
+    recombine_cpu_events)
 from aiu_trace_analyzer.pipeline.inverse_ts import drop_timestamp_reversed_events
 from aiu_trace_analyzer.pipeline.sort import sort_events
 from aiu_trace_analyzer.pipeline.make_slice import create_slice_from_BE
@@ -62,8 +68,13 @@ from aiu_trace_analyzer.pipeline.power import extract_power_event, check_power_t
 from aiu_trace_analyzer.pipeline.filter import processing_filter
 from aiu_trace_analyzer.pipeline.tid_mapping import map_tid_to_range
 from aiu_trace_analyzer.pipeline.tripple_event import tripple_phased_events
-from aiu_trace_analyzer.pipeline.timesync import cycle_count_to_wallclock, cycle_count_conversion_cleanup, realign_dts_to_hts, \
-                                          tighten_hts_by_instr_type, get_opIds_from_event, cleanup_copy_of_device_ts
+from aiu_trace_analyzer.pipeline.timesync import (
+    cycle_count_to_wallclock,
+    cycle_count_conversion_cleanup,
+    realign_dts_to_hts,
+    tighten_hts_by_instr_type,
+    get_opIds_from_event,
+    cleanup_copy_of_device_ts)
 from aiu_trace_analyzer.pipeline.dma import extract_data_transfer_event, compute_bandwidth
 from aiu_trace_analyzer.pipeline.stats import calculate_stats
 from aiu_trace_analyzer.pipeline.stats_v2 import calculate_stats_v2
@@ -74,7 +85,12 @@ from aiu_trace_analyzer.pipeline.mp_sync import mp_ts_calibration
 from aiu_trace_analyzer.pipeline.mp_sync_v2 import mp_ts_calibration_v2
 from aiu_trace_analyzer.pipeline.mp_sync_tight import mp_sync_tight_v1
 from aiu_trace_analyzer.pipeline.drop_global_event import drop_global_events
-from aiu_trace_analyzer.pipeline.coll_group import flow_prepare_event_data, flow_extraction, flow_data_cleanup, communication_event_collection, communication_event_apply
+from aiu_trace_analyzer.pipeline.coll_group import (
+    flow_prepare_event_data,
+    flow_extraction,
+    flow_data_cleanup,
+    communication_event_collection,
+    communication_event_apply)
 
 from aiu_trace_analyzer.pipeline.cmpt_collection import queueing_counter
 from aiu_trace_analyzer.pipeline.rcu_utilization import compute_utilization, compute_utilization_fingerprints

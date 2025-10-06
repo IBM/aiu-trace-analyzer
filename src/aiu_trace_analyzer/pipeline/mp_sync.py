@@ -1,10 +1,11 @@
 # Copyright 2024-2025 IBM Corporation
 
-import aiu_trace_analyzer.logger as aiulog
 import copy
+
 from aiu_trace_analyzer.types import TraceEvent
-from aiu_trace_analyzer.pipeline import AbstractContext,EventPairDetectionContext
+from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionContext
 import aiu_trace_analyzer.logger as aiulog
+
 
 class MpTsCalibContext(EventPairDetectionContext):
     '''
@@ -36,34 +37,36 @@ class MpTsCalibContext(EventPairDetectionContext):
 
     def __init__(self, window_size=None) -> None:
         super().__init__()
-        self.all_events   = []    # gather all events into a buffer
-        self.proc_ids     = {}
-        self.coll_groups  = {}
-        self.ts_calibs    = {}
+        self.all_events = []    # gather all events into a buffer
+        self.proc_ids = {}
+        self.coll_groups = {}
+        self.ts_calibs = {}
         self.ts_calibs_host_device = {}
-        self.SYNC_TO_DEV  = True
+        self.SYNC_TO_DEV = True
 
-    def mp_gather_events( self, event: TraceEvent ) -> list[TraceEvent]:
+    def mp_gather_events(self, event: TraceEvent) -> list[TraceEvent]:
 
         self.all_events.append(copy.deepcopy(event))
-        idx = len( self.all_events ) -1
+        idx = len(self.all_events) - 1
 
         if event["ph"] in ["X", "b"] and "args" in event and "CollGroup" in event["args"]:
             aiulog.log(aiulog.TRACE, "mp_gather_events 3: ", event)
             pid = event["pid"]
             cg_name = event["args"]["CollGroup"]
 
-            self.proc_ids[ pid ] = 1
-            self.coll_groups[ cg_name ] = 1
+            self.proc_ids[pid] = 1
+            self.coll_groups[cg_name] = 1
 
-            queue_id = self.queue_hash( pid, cg_name )
+            queue_id = self.queue_hash(pid, cg_name)
             aiulog.log(aiulog.TRACE, "mp_gather_events 3: ", queue_id)
-            if queue_id in self.queues: self.queues[ queue_id ].append( idx )
-            else: self.queues[ queue_id ] = [idx]
+            if queue_id in self.queues:
+                self.queues[queue_id].append(idx)
+            else:
+                self.queues[queue_id] = [idx]
 
         return []
 
-    def mp_calibrate_ts( self ) -> None:
+    def mp_calibrate_ts(self) -> None:
 
         '''
         Scan the stored events in collective-call-group (with arg CollGroup) and
@@ -78,29 +81,33 @@ class MpTsCalibContext(EventPairDetectionContext):
         for pid in self.proc_ids:
             for cg_name in self.coll_groups:
 
-                queue_id = self.queue_hash( pid, cg_name )
-                cg_events = self.queues[ queue_id ]
+                queue_id = self.queue_hash(pid, cg_name)
+                cg_events = self.queues[queue_id]
 
                 timestamps = []
                 ts_delta_host_device[queue_id] = 10**14
 
                 for event_idx in cg_events:
 
-                    assert( event_idx >= 0 and event_idx < len(self.all_events) )
-                    event = self.all_events[ event_idx ]
-                    assert( "ts" in event )
+                    assert event_idx >= 0 and event_idx < len(self.all_events)
+                    event = self.all_events[event_idx]
+                    assert "ts" in event
 
                     # It has shown that TS5 from Firmware side is more reliable than the TS captured on the host side.
                     if "TS5" in event["args"]:
-                        t5_event = int(event["args"]["ts_dev"][4]) if self.SYNC_TO_DEV else int(event["args"]["ts_all"][4])
-                        timestamps.append( t5_event )
-                        ts_delta_host_device[queue_id] = min( event["ts"] - t5_event, ts_delta_host_device[queue_id] )
-                        aiulog.log(aiulog.INFO, "MP_SYNC: different gaps: ", pid, event["ts"], t5_event, ts_delta_host_device[queue_id], timestamps, cg_name, event["name"])
+                        t5_event = int(event["args"]["ts_dev"][4]) \
+                            if self.SYNC_TO_DEV else int(event["args"]["ts_all"][4])
+                        timestamps.append(t5_event)
+                        ts_delta_host_device[queue_id] = min(event["ts"] - t5_event, ts_delta_host_device[queue_id])
+                        aiulog.log(aiulog.INFO,
+                                   "MP_SYNC: different gaps: ",
+                                   pid, event["ts"], t5_event,
+                                   ts_delta_host_device[queue_id], timestamps, cg_name, event["name"])
 
                 timestamps.sort()
                 aiulog.log(aiulog.INFO, "MP_SYNC: ts sorted: ", pid, timestamps, cg_name)
 
-                assert( len(timestamps) > 0 )
+                assert len(timestamps) > 0
                 ts_ranges[queue_id] = (timestamps[0], timestamps[-1])
 
         '''
@@ -112,39 +119,38 @@ class MpTsCalibContext(EventPairDetectionContext):
         for pid in self.proc_ids:
             max_stamps[pid] = []
             for cg_name in self.coll_groups:
-                ts_range = ts_ranges[ self.queue_hash( pid, cg_name ) ]
-                assert( len(ts_range) == 2 )
-                max_stamps[pid].append( ( ts_range[-1], cg_name, ts_range[-1]-ts_range[0] ) )
+                ts_range = ts_ranges[self.queue_hash(pid, cg_name)]
+                assert len(ts_range) == 2
+                max_stamps[pid].append((ts_range[-1], cg_name, ts_range[-1]-ts_range[0]))
 
         aiulog.log(aiulog.TRACE, "mp_gather_events max_stamps: ", max_stamps)
 
         for pid in self.proc_ids:
-            assert( 0 in max_stamps and pid in max_stamps )
+            assert 0 in max_stamps and pid in max_stamps
             # a/b[0:2],
             #   0: maximal-TS5 of all events in a given collection-call group
             #   1: name of the callGroup
             #   2: delta( min_TS5, max_TS5 ) of all events in a given collection-call group
-            delta_stamps = [ (b[0]-a[0], b[1], (b[0]-a[0])/a[2]) for a,b in zip( max_stamps[0], max_stamps[pid] ) ]
-            assert( len(delta_stamps) > 0 )
+            delta_stamps = [(b[0]-a[0], b[1], (b[0]-a[0])/a[2]) for a, b in zip(max_stamps[0], max_stamps[pid])]
+            assert len(delta_stamps) > 0
 
             # The best reference collGroup for PID "pid" is the one with the smallest factor defined as:
             #   (TS_last[collGroup][pid] - TS_last[collGroup][0]) / TS_span[collGroup][0]
-            delta_stamps.sort( key = lambda x: x[2] )
+            delta_stamps.sort(key=lambda x: x[2])
             self.ts_calibs[pid] = delta_stamps[-1][0]
 
             aiulog.log(aiulog.TRACE, "mp_gather_events cross devices: ", self.ts_calibs)
 
-            def get_ts_delta( pid, cg_name ):
-                _queue_id = self.queue_hash( pid, cg_name )
+            def get_ts_delta(pid, cg_name):
+                _queue_id = self.queue_hash(pid, cg_name)
                 return ts_delta_host_device[_queue_id]
 
-            self.ts_calibs_host_device[pid] = get_ts_delta( pid, delta_stamps[0][1] )
+            self.ts_calibs_host_device[pid] = get_ts_delta(pid, delta_stamps[0][1])
             aiulog.log(aiulog.INFO, "MP_SYNC: shift and name ", self.ts_calibs_host_device[pid], delta_stamps[0][1])
 
         aiulog.log(aiulog.TRACE, "mp_gather_events host   device: ", self.ts_calibs_host_device)
 
-
-    def mp_alter_event_ts( self ) -> None:
+    def mp_alter_event_ts(self) -> None:
 
         for e in self.all_events:
             pid = e["pid"]
@@ -179,7 +185,7 @@ def mp_ts_calibration(event: TraceEvent, context: AbstractContext) -> list[Trace
     '''
     Gather the collective events for post processing calibration
     '''
-    assert( isinstance(context, MpTsCalibContext) )
+    assert isinstance(context, MpTsCalibContext)
 
     # hook function is to gather events, computation happens in drain
-    return context.mp_gather_events( event )
+    return context.mp_gather_events(event)

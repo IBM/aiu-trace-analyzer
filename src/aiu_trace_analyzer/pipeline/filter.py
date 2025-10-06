@@ -19,12 +19,11 @@ class FilterPatternEventContext(AbstractContext):
 
     # drain function is called after the last event has been ingested
     # and is needed to make sure there are no events stuck in any potential queues that hold events back
-    # if you don't have anything to drain, then the top-level class already has an implementation that returns an empty list
+    # if you don't have anything to drain,
+    #     then the top-level class already has an implementation that returns an empty list
     # here, we just print the event counts since we haven't stored any events
     def drain(self) -> list[TraceEvent]:
         return []
-
-
 
 
 ############################################################################
@@ -43,5 +42,6 @@ def processing_filter(event: TraceEvent, context: AbstractContext, dictionary: d
     if isinstance(filter_pattern, str):
         if event["ph"] in filter_pattern:
             # and return those as a list (required b/c there can be functions that create new events)
-            return [ event ]
+            aiulog.log(aiulog.TRACE, "FLT: Unfiltered event:", event['name'])
+            return [event]
     return []

@@ -5,6 +5,7 @@ import importlib
 
 from aiu_trace_analyzer.ingest.ingestion import JsonFileEventTraceIngest
 from aiu_trace_analyzer.pipeline import AbstractHashQueueContext
+import aiu_trace_analyzer.pipeline.coll_group as cgr
 
 
 @pytest.fixture
@@ -39,19 +40,19 @@ def test_filename(shared_tmp_path, get_intermediate_filename, load_variables):
             assert "args" not in event
 
             # Check name format
-            assert not _unify_recv.search(event["name"])
-            assert not _unify_rdma.search(event["name"])
+            assert not cgr._unify_recv.search(event["name"])
+            assert not cgr._unify_rdma.search(event["name"])
 
             # Check if has Peers
-            assert len(event[_KEY_PEER]) > 0 or event[_KEY_TYPE] == _TYPE_MCAST
+            assert len(event[cgr._KEY_PEER]) > 0 or event[cgr._KEY_TYPE] == cgr._TYPE_MCAST
 
-            if _FLOW_STEP in event:
-                assert event[_FLOW_STEP] == _STEP_DONE
-                assert event[_KEY_TYPE] == _TYPE_DONE
+            if cgr._FLOW_STEP in event:
+                assert event[cgr._FLOW_STEP] == cgr._STEP_DONE
+                assert event[cgr._KEY_TYPE] == cgr._TYPE_DONE
             else:
-                assert event[_KEY_TYPE] in {_TYPE_SEND, _TYPE_BCLIST, _TYPE_MCAST}
+                assert event[cgr._KEY_TYPE] in {cgr._TYPE_SEND, cgr._TYPE_BCLIST, cgr._TYPE_MCAST}
 
-            if _FLOW_IO in event:
-                assert event[_FLOW_IO] == _IO_TYPE_DMAO
+            if cgr._FLOW_IO in event:
+                assert event[cgr._FLOW_IO] == cgr._IO_TYPE_DMAO
 
-            assert event[_FLOW_SYNC] in event["name"]
+            assert event[cgr._FLOW_SYNC] in event["name"]

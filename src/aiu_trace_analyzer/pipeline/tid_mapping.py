@@ -5,6 +5,7 @@ from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.pipeline import AbstractContext
 from aiu_trace_analyzer.types import GlobalIngestData
 
+
 class TIDMappingContext(AbstractContext):
     '''
     keep track of existing TID mappings in original and remap lists
@@ -17,15 +18,14 @@ class TIDMappingContext(AbstractContext):
 
         # TODO this could be made more flexible without a pre-defined/limited list of available mappings
         # Let's initialize the tid_remap list
-        for rid in range(remap_size) :
+        for rid in range(remap_size):
             # remapped tid = remap_start + rid*remap_step
-            self.tid_remap.append(remap_start + (rid*remap_step))
-
+            self.tid_remap.append(remap_start + (rid * remap_step))
 
 
 # maps TIDs to a pre-configured range based on the TIDMappingContext
 def map_tid_to_range(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
-    assert( isinstance( context, TIDMappingContext) )
+    assert isinstance(context, TIDMappingContext)
 
     # ignore anything that has no tid
     if event["ph"] != "X" or "tid" not in event:
@@ -62,4 +62,4 @@ def map_tid_to_range(event: TraceEvent, context: AbstractContext) -> list[TraceE
     # change the value of 'tid' to 'new-tid' in the dictionary
     event['tid'] = tid_new
 
-    return [ event ]
+    return [event]

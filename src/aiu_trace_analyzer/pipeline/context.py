@@ -17,7 +17,8 @@ class AbstractContext:
     E.g. if there's a need to keep track of things like event counts, latest timestamp, mapping tables,
     or if there's a need to hold back any event until a different event appears in the stream: contexts are your friend
 
-    Contexts are attached to processing functions at the time of registration. So they're specific to a processing function as of now.
+    Contexts are attached to processing functions at the time of registration.
+    So they're specific to a processing function as of now.
 
     TODO: Might have to be extended should the need arise to assign contexts to events or other components.
     '''

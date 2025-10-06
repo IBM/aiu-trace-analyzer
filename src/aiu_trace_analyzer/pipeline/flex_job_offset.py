@@ -20,8 +20,8 @@ class FlexJobStats():
         self.jobhash = jobhash
         self.cpu = (1.0e99, 0)
         self.aiu = (1.0e99, 0)
-        self.first_cycl = {"ts":1.0e99, "cycle": 0}
-        self.last_cycl = {"ts":0, "cycle": 0}
+        self.first_cycl = {"ts": 1.0e99, "cycle": 0}
+        self.last_cycl = {"ts": 0, "cycle": 0}
         self.job_offset = 0.0
 
     def update(self, event: TraceEvent) -> None:
@@ -37,9 +37,9 @@ class FlexJobStats():
             self.cpu = (min(self.cpu[0], ts_b), max(self.cpu[1], ts_e))
         else:
             self.aiu = (min(self.aiu[0], ts_b), max(self.cpu[1], ts_e))
-        if cycl_b != None and cycl_e != None:
+        if cycl_b is not None and cycl_e is not None:
             if cycl_e < cycl_b:
-                cycl_b += (1<<32)
+                cycl_b += (1 << 32)
             if ts_b < self.first_cycl["ts"]:
                 self.first_cycl = {"ts": ts_b, "cycl": cycl_b}
             if ts_e > self.last_cycl["ts"]:
@@ -70,7 +70,9 @@ class FlexJobOffsetContext(TwoPhaseWithBarrierContext):
             if not range_match:
                 jdata.job_offset = jdata.cpu[0] - jdata.aiu[0]
                 if (jdata.cpu[1] - jdata.cpu[0] < jdata.aiu[1] - jdata.aiu[0]):
-                    aiulog.log(aiulog.WARN, f"FREQ: aiu event range of {jdata.jobname} is wider than cpu range. Will not attempt to adjust timestamps.")
+                    aiulog.log(aiulog.WARN,
+                               f"FREQ: aiu event range of {jdata.jobname} is wider than cpu range."
+                               " Will not attempt to adjust timestamps.")
                     jdata.job_offset = None
             if not range_match and valid:  # remember the first job that fails the range test
                 self.out_of_bounds_job = (jdata.jobname, jdata.job_offset)
@@ -81,7 +83,8 @@ class FlexJobOffsetContext(TwoPhaseWithBarrierContext):
         valid = True
         for ref_jid, ref_jdata in self.queues.items():
             for jid, jdata in self.queues.items():
-                if ref_jid == jid: continue
+                if ref_jid == jid:
+                    continue
                 if ref_jdata.cpu[0] < jdata.cpu[0]:
                     valid &= (ref_jdata.cpu[1] < jdata.cpu[0])
                     valid &= (ref_jdata.first_cycl["ts"] < jdata.first_cycl["ts"])
@@ -89,7 +92,7 @@ class FlexJobOffsetContext(TwoPhaseWithBarrierContext):
                 else:
                     continue  # no need to check both directions
                 if not valid:
-                    self.out_of_bounds_job = (ref_jdata.jobname,jdata.jobname)
+                    self.out_of_bounds_job = (ref_jdata.jobname, jdata.jobname)
                     break
         return not valid
 
@@ -97,9 +100,10 @@ class FlexJobOffsetContext(TwoPhaseWithBarrierContext):
         if not _is_cpu_event(event):
             jid = event["args"]["jobhash"]
             jdata = self.queues[jid]
-            apply_new_ts = (jdata.job_offset != None and not isclose(jdata.job_offset, 0.0, abs_tol=1e-9))
-#            new_end = new_ts + event["dur"]
-            #apply_new_ts &= event["ts"] < jdata.job_offset and new_ts > self.queues[jid].cpu[0]   # was the event too early and updating would bring it into the range (negative offset)?
+            apply_new_ts = (jdata.job_offset is not None and not isclose(jdata.job_offset, 0.0, abs_tol=1e-9))
+            # new_end = new_ts + event["dur"]
+            # was the event too early and updating would bring it into the range (negative offset)?
+            # apply_new_ts &= event["ts"] < jdata.job_offset and new_ts > self.queues[jid].cpu[0]
 
             if apply_new_ts:
                 new_ts = event["ts"] + jdata.job_offset
@@ -112,15 +116,19 @@ class FlexJobOffsetContext(TwoPhaseWithBarrierContext):
     def drain(self) -> list[TraceEvent]:
         if self.collection_phase():
             if self.detect_cpu_aiu_range_mismatch():
-                aiulog.log(aiulog.WARN, "FREQ: job:", self.out_of_bounds_job, "has AIU events outside of corresponding CPU range. Attempting to fix might cause unreliable data.")
+                aiulog.log(aiulog.WARN,
+                           "FREQ: job:", self.out_of_bounds_job,
+                           "has AIU events outside of corresponding CPU range."
+                           " Attempting to fix might cause unreliable data.")
             if self.detect_job_overlap():
-                aiulog.log(aiulog.WARN, "FREQ: Detected a job timestamp overlap in the input data:", self.out_of_bounds_job, "Possible cause is a frequency mismatch or input data misalignment.")
-            for _,queue in self.queues.items():
+                aiulog.log(aiulog.WARN,
+                           "FREQ: Detected a job timestamp overlap in the input data:", self.out_of_bounds_job,
+                           "Possible cause is a frequency mismatch or input data misalignment.")
+            for _, queue in self.queues.items():
                 queue.compute_frequency()
         else:
             pass
         return super().drain()  # parent class flips the phases
-
 
 
 def frequency_align_collect(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:

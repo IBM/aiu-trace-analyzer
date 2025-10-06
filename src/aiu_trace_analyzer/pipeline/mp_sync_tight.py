@@ -1,13 +1,14 @@
 # Copyright 2024-2025 IBM Corporation
 
-import aiu_trace_analyzer.logger as aiulog
 import copy
 import sys
 import numpy as np
+
 from aiu_trace_analyzer.types import TraceEvent
-from aiu_trace_analyzer.pipeline import AbstractContext,EventPairDetectionContext
+from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionContext
 from aiu_trace_analyzer.pipeline.timesync import get_opIds_from_event
 import aiu_trace_analyzer.logger as aiulog
+
 
 class MpSyncTightContext(EventPairDetectionContext):
     '''
@@ -63,173 +64,179 @@ class MpSyncTightContext(EventPairDetectionContext):
         super().__init__()
         self.MIN_ALLREDUCE_NEEDED = 1
 
-        self.only_allreduce  = True     # non constant
-        self.TP_tree_reduce  = True     # non constant
-        self.NP              = 1        # non constant
+        self.only_allreduce = True     # non constant
+        self.TP_tree_reduce = True     # non constant
+        self.NP = 1                    # non constant
 
-        self.all_events   = []      # gather all events into a buffer
+        self.all_events = []           # gather all events into a buffer
 
-        self.proc_ids     = {}      # index variables for loop-nest to traverse collective events (organized in 2D)
-        self.coll_groups  = []
+        self.proc_ids = {}             # index variables for loop-nest to traverse collective events (organized in 2D)
+        self.coll_groups = []
 
         self.dts_2_hts_ref_offset = 0
-        self.dts_2_hts  = []
+        self.dts_2_hts = []
         self.dts_shifts = []
 
-
-    def _mp_trace_sanity_check( self ):
+    def _mp_trace_sanity_check(self):
 
         assert len(self.proc_ids) > 1, "MP_SYNC, must be multi AIU trace"
         assert len(self.coll_groups) > 0, "MP_SYNC, must have at least 2 all reduce calls"
 
-    def _rank_contain_reduce_op( self, pid ):
+    def _rank_contain_reduce_op(self, pid):
         cg = self.coll_groups[0]
-        queue = self.queues[ self.queue_hash( pid, cg ) ]
-        return any( ("AllReduce_all_reduce" in self.all_events[idx]["name"]) for idx in queue )
+        queue = self.queues[self.queue_hash(pid, cg)]
+        return any(("AllReduce_all_reduce" in self.all_events[idx]["name"]) for idx in queue)
 
-    def _mp_gather_info( self ):
+    def _mp_gather_info(self):
         self.NP = len(self.proc_ids)
-        self.dts_shifts = [0] *self.NP
+        self.dts_shifts = [0] * self.NP
 
         # find out Number-of-Procs (NP) and All-Reduce algorithm (Chain or Tree)
 
         # TP-chain : proc_0      has no "AllReduce_all_reduce" event
         # TP-tree  : proc_(NP-1) has no "AllReduce_all_reduce" event
-        self.TP_tree_reduce  = self._rank_contain_reduce_op( 0 )
+        self.TP_tree_reduce = self._rank_contain_reduce_op(0)
 
-    def mp_gather_events( self, event: TraceEvent ) -> list[TraceEvent]:
+    def mp_gather_events(self, event: TraceEvent) -> list[TraceEvent]:
 
         self.all_events.append(copy.deepcopy(event))
-        idx = len( self.all_events ) -1
+        idx = len(self.all_events) - 1
 
         # assuming the collective-call groups across ranks are same
-        # if event["ph"] in ["X", "b"] and "args" in event and "CollGroup" in event["args"] and "AllReduce" in event["args"]["CollGroup"]:
+        # if event["ph"] in ["X", "b"] and "args" in event and "CollGroup" in event["args"] \
+        #      and "AllReduce" in event["args"]["CollGroup"]:
         if event["ph"] in ["X", "b"] and "args" in event and "CollGroup" in event["args"]:
             pid = event["pid"]
             cg_name = event["args"]["CollGroup"]
 
-            self.proc_ids[ pid ] = 1
+            self.proc_ids[pid] = 1
 
             # keep coll-groups in order with the traces from rank-0
-            if pid == 0 and not cg_name in self.coll_groups:
-                self.coll_groups.append( cg_name )
+            if pid == 0 and cg_name not in self.coll_groups:
+                self.coll_groups.append(cg_name)
 
-            queueID = self.queue_hash( pid, cg_name )
+            queueID = self.queue_hash(pid, cg_name)
 
-            if queueID in self.queues: self.queues[ queueID ].append( idx )
-            else: self.queues[ queueID ] = [idx]
+            if queueID in self.queues:
+                self.queues[queueID].append(idx)
+            else:
+                self.queues[queueID] = [idx]
 
         return []
 
-    def _has_many_allreduce_cgs( self ):
-        cg_allreduce_map = [ int("AllReduce" in a) for a in self.coll_groups ]
-        n_allreduce_cgs = sum( cg_allreduce_map )
+    def _has_many_allreduce_cgs(self):
+        cg_allreduce_map = [int("AllReduce" in a) for a in self.coll_groups]
+        n_allreduce_cgs = sum(cg_allreduce_map)
         has_enough_allreduce = True if n_allreduce_cgs >= self.MIN_ALLREDUCE_NEEDED else False
         return has_enough_allreduce
 
-    def _remove_allgather_cgs( self ):
-        cg_allreduce_map = [ int("AllReduce" not in a) for a in self.coll_groups ]
-        idx_of_cgs_not_allreduce = [ i for i, a in enumerate(cg_allreduce_map) if a == 1 ]
-        for i in reversed( idx_of_cgs_not_allreduce ):
-            self.coll_groups.pop( i )
+    def _remove_allgather_cgs(self):
+        cg_allreduce_map = [int("AllReduce" not in a) for a in self.coll_groups]
+        idx_of_cgs_not_allreduce = [i for i, a in enumerate(cg_allreduce_map) if a == 1]
+        for i in reversed(idx_of_cgs_not_allreduce):
+            self.coll_groups.pop(i)
 
     # the events in the first allgather are badly sync'd, not a good candidate to enter
     # the selection for the mostly sync'd coll-group
-    def _ignore_allgather_when_possible( self ):
+    def _ignore_allgather_when_possible(self):
         if self._has_many_allreduce_cgs():
             self._remove_allgather_cgs()
         else:
             self.only_allreduce = False
 
-    def _get_list_DTS_end_of_coll( self, pid, dts_idx ):
+    def _get_list_DTS_end_of_coll(self, pid, dts_idx):
         list_dts_cg_end = []
         for cg in self.coll_groups:
             try:
-                queue = self.queues[ self.queue_hash( pid, cg ) ]
+                queue = self.queues[self.queue_hash(pid, cg)]
             except KeyError:
-                aiulog.log(aiulog.ERROR, "Detected an event/process that has no contribution to collective op. Unable to sync based on collectives. Use -M option to skip alignment.")
+                aiulog.log(aiulog.ERROR,
+                           "Detected an event/process that has no contribution to collective op."
+                           " Unable to sync based on collectives. Use -M option to skip alignment.")
                 sys.exit(1)
 
-            dts_list = [ self.all_events[idx]["args"]["ts_dev"][dts_idx] for idx in queue ]
+            dts_list = [self.all_events[idx]["args"]["ts_dev"][dts_idx] for idx in queue]
             dts_list.sort()
             list_dts_cg_end.append(dts_list[-1])
         return list_dts_cg_end
 
-    def _get_last_event_in_cg( self, pid, idx_cg, dts_idx ) -> TraceEvent:
+    def _get_last_event_in_cg(self, pid, idx_cg, dts_idx) -> TraceEvent:
         cg = self.coll_groups[idx_cg]
-        queue = self.queues[ self.queue_hash( pid, cg ) ]
-        event_list = [ self.all_events[idx] for idx in queue ]
-        dts_list   = [ self.all_events[idx]["args"]["ts_dev"][dts_idx] for idx in queue ]
-        list_dts_event = list( zip( dts_list, event_list ) )
-        list_dts_event.sort( key = lambda x: x[0] )
+        queue = self.queues[self.queue_hash(pid, cg)]
+        event_list = [self.all_events[idx] for idx in queue]
+        dts_list = [self.all_events[idx]["args"]["ts_dev"][dts_idx] for idx in queue]
+        list_dts_event = list(zip(dts_list, event_list))
+        list_dts_event.sort(key=lambda x: x[0])
 
         return list_dts_event[-1][1]    # event with the greatest ending dts in the coll-group
 
-    def _sync_mb_recv( self, P_map ):
+    def _sync_mb_recv(self, P_map):
 
         TS2_last_recv = []
-        for ppid in range( 1,self.NP ):
-            pid = P_map[ ppid ]
-            TS2_last_recv.append( self._get_list_DTS_end_of_coll( pid, 1 ) )
+        for ppid in range(1, self.NP):
+            pid = P_map[ppid]
+            TS2_last_recv.append(self._get_list_DTS_end_of_coll(pid, 1))
 
-        ndarr_DTS_last_recv = np.array( TS2_last_recv )
-        mean_DTS_last_recv  = ndarr_DTS_last_recv.mean( axis = 0 )
-        mse_DTS_last_recv   = np.square( np.subtract( ndarr_DTS_last_recv, mean_DTS_last_recv ) ).mean()
-        idx_last_recv_w_min_mse = np.argmin( mse_DTS_last_recv )
+        ndarr_DTS_last_recv = np.array(TS2_last_recv)
+        mean_DTS_last_recv = ndarr_DTS_last_recv.mean(axis=0)
+        mse_DTS_last_recv = np.square(np.subtract(ndarr_DTS_last_recv, mean_DTS_last_recv)).mean()
+        idx_last_recv_w_min_mse = np.argmin(mse_DTS_last_recv)
 
-        for ppid in range( 2,self.NP ):
-            dts_shift = ( ndarr_DTS_last_recv[ ppid - 1 ][ idx_last_recv_w_min_mse ] -
-                          ndarr_DTS_last_recv[ 0 ][ idx_last_recv_w_min_mse ] )
-            self.dts_shifts[ P_map[ppid] ] -= dts_shift
+        for ppid in range(2, self.NP):
+            dts_shift = (ndarr_DTS_last_recv[ppid - 1][idx_last_recv_w_min_mse] -
+                         ndarr_DTS_last_recv[0][idx_last_recv_w_min_mse])
+            self.dts_shifts[P_map[ppid]] -= dts_shift
 
-    def sync_last_send_recv( self, P_map ):
+    def sync_last_send_recv(self, P_map):
 
         self.dts_shifts = [0] * self.NP
 
         if self.NP > 2:
-            self._sync_mb_recv( P_map )
+            self._sync_mb_recv(P_map)
 
         # Now only consider P_map[0] (sender) and P_map[1] (receiver)
         pid_send = P_map[0]
         pid_recv = P_map[1]
 
         # Like the non-numpy stuff better.
-        list_TS5_last_send = self._get_list_DTS_end_of_coll( pid_send, 4 )    # index: 0-4
-        list_TS2_last_recv = self._get_list_DTS_end_of_coll( pid_recv, 1 )
+        list_TS5_last_send = self._get_list_DTS_end_of_coll(pid_send, 4)    # index: 0-4
+        list_TS2_last_recv = self._get_list_DTS_end_of_coll(pid_recv, 1)
 
         assert len(list_TS5_last_send) == len(list_TS2_last_recv), \
-                "MP_SYNC, different number of last-senders and last-receivers for a job"
+            "MP_SYNC, different number of last-senders and last-receivers for a job"
 
-        np_dts_last_send = np.array( list_TS5_last_send )
-        np_dts_last_recv = np.array( list_TS2_last_recv )
+        np_dts_last_send = np.array(list_TS5_last_send)
+        np_dts_last_recv = np.array(list_TS2_last_recv)
         np_dts_diff = np_dts_last_recv - np_dts_last_send
 
-        idx_min_dts_diff = np.argmin( np_dts_diff )
-        receiver_dts_shift_in_cycle = np_dts_diff[ idx_min_dts_diff ]
+        idx_min_dts_diff = np.argmin(np_dts_diff)
+        receiver_dts_shift_in_cycle = np_dts_diff[idx_min_dts_diff]
 
         if self.TP_tree_reduce:
             # shift (multi) receivers for tree for proc-0 is the sender.
-            for p in range(1,self.NP):
-                self.dts_shifts[ P_map[p] ] -= receiver_dts_shift_in_cycle
+            for p in range(1, self.NP):
+                self.dts_shifts[P_map[p]] -= receiver_dts_shift_in_cycle
         else:
             # shift (single) sender
-            self.dts_shifts[ P_map[0] ] += receiver_dts_shift_in_cycle
+            self.dts_shifts[P_map[0]] += receiver_dts_shift_in_cycle
 
         dts_id_rank0_ref_event = 4 if self.TP_tree_reduce else 1
-        dts_2_hts_ref_event = self._get_last_event_in_cg( 0, idx_min_dts_diff, dts_id_rank0_ref_event )
-        self.dts_2_hts_ref_offset = dts_2_hts_ref_event["ts"] + dts_2_hts_ref_event["dur"] - dts_2_hts_ref_event["args"]["ts_dev"][dts_id_rank0_ref_event]
-        self.dts_2_hts = [ self.dts_shifts[pid] + self.dts_2_hts_ref_offset for pid in range( self.NP ) ]
+        dts_2_hts_ref_event = self._get_last_event_in_cg(0, idx_min_dts_diff, dts_id_rank0_ref_event)
+        self.dts_2_hts_ref_offset = dts_2_hts_ref_event["ts"] \
+            + dts_2_hts_ref_event["dur"] \
+            - dts_2_hts_ref_event["args"]["ts_dev"][dts_id_rank0_ref_event]
+
+        self.dts_2_hts = [self.dts_shifts[pid] + self.dts_2_hts_ref_offset for pid in range(self.NP)]
 
         aiulog.log(aiulog.INFO, "MP_SYNC_V2 delta_t5, dts_2_hts_ref_event:  ", dts_2_hts_ref_event)
         aiulog.log(aiulog.INFO, "MP_SYNC_V2 delta_t5, dts_2_hts_ref_offset: ", self.dts_2_hts_ref_offset)
         aiulog.log(aiulog.INFO, "MP_SYNC_V2 delta_t5, dts_shifts:           ", self.dts_shifts)
         aiulog.log(aiulog.INFO, "MP_SYNC_V2 delta_t5, dts_2_hts:            ", self.dts_2_hts)
 
-
     # Assumption: There is no device timer dilation, only with different EPOCH (starting time) across devices
     # Outcome: shifts (in cycle-count) for rank 1 to NP-1.
     # Side effect: None
-    def mp_calibrate_dts( self ) -> None:
+    def mp_calibrate_dts(self) -> None:
 
         # Premises:
         #   1 RDMA send receive, when the sender side reaches the coherence point, the data should have been
@@ -243,29 +250,30 @@ class MpSyncTightContext(EventPairDetectionContext):
 
         # Steps:
         #   1 Permute procs according to algorithms.
-        #       - After permutation, let P0 be the sender, P[np-1] be the (last) receiver. [natural oder for tree reduce]
+        #       - After permutation, let P0 be the sender, P[np-1] be the (last) receiver.
+        #         [natural oder for tree reduce]
         #   2 For TP-4 case, have all receivers (remapped to 1-3) sync to P_3
-        P_map = list( range( self.NP ) ) if self.TP_tree_reduce else list( reversed( range( self.NP ) ) )
-        self.sync_last_send_recv( P_map )
+        P_map = list(range(self.NP)) if self.TP_tree_reduce else list(reversed(range(self.NP)))
+        self.sync_last_send_recv(P_map)
 
-    def _calib_dev_ts( self, pid, event: TraceEvent ):
-        event["args"]["ts_dev"] = [ a + self.dts_shifts[pid]      for a in event["args"]["ts_dev"] ]
-        event["args"]["ts_all"] = [ a + self.dts_2_hts_ref_offset for a in event["args"]["ts_dev"] ]
+    def _calib_dev_ts(self, pid, event: TraceEvent):
+        event["args"]["ts_dev"] = [a + self.dts_shifts[pid] for a in event["args"]["ts_dev"]]
+        event["args"]["ts_all"] = [a + self.dts_2_hts_ref_offset for a in event["args"]["ts_dev"]]
 
-    def mp_alter_event_ts( self ) -> None:
+    def mp_alter_event_ts(self) -> None:
         for e in self.all_events:
             pid = e["pid"]
             if "TS5" in e["args"]:
                 # e["dur"] has been calibrated correctly in previous pass
-                self._calib_dev_ts( pid, e )
-                op_id = get_opIds_from_event( e )
+                self._calib_dev_ts(pid, e)
+                op_id = get_opIds_from_event(e)
                 e["ts"] = e["args"]["ts_all"][op_id]
 
     def drain(self) -> list[TraceEvent]:
         aiulog.log(aiulog.TRACE, "mp_gather_events drain: ")
         revents = super().drain()
 
-        if len( self.coll_groups ) <= 0 or len( self.proc_ids ) <= 1:
+        if len(self.coll_groups) <= 0 or len(self.proc_ids) <= 1:
             aiulog.log(aiulog.INFO, "MP SYNC: no collective group detected or single process, no action")
         else:
             self._ignore_allgather_when_possible()
@@ -283,8 +291,8 @@ class MpSyncTightContext(EventPairDetectionContext):
             revents += [e]
         aiulog.log(aiulog.TRACE, "mp_gather_events drain: ", revents)
 
-        # revents.sort( key = lambda x: x["tsE"] )
-        revents.sort( key = lambda x: x["ts"] )
+        # revents.sort(key=lambda x: x["tsE"])
+        revents.sort(key=lambda x: x["ts"])
 
         return revents
 
@@ -293,7 +301,7 @@ def mp_sync_tight_v1(event: TraceEvent, context: AbstractContext) -> list[TraceE
     '''
     Gather the collective events for post processing calibration
     '''
-    assert( isinstance(context, MpSyncTightContext) )
+    assert isinstance(context, MpSyncTightContext)
 
     # hook function is to gather events, computation happens in drain
-    return context.mp_gather_events( event )
+    return context.mp_gather_events(event)

@@ -7,6 +7,7 @@ from copy import deepcopy
 
 import aiu_trace_analyzer.logger as aiulog
 
+
 class StageProfile:
     _everything_profile = os.path.join(os.path.dirname(__file__), "../profiles/everything.json")
 
@@ -40,7 +41,8 @@ class StageProfile:
                 aiulog.log(aiulog.WARN, "STP: all-stages profile has unexpectedly disabled stage: ", stage)
             if next_stage == stage:
                 profile.append((stage, next_enabled))
-                next_stage, next_enabled = profile_data['stages'].pop(0).popitem() if len(profile_data['stages']) > 0 else ("nothing", False)
+                next_stage, next_enabled = profile_data['stages'].pop(0).popitem() \
+                    if len(profile_data['stages']) > 0 else ("nothing", False)
             else:
                 profile.append((stage, False))
             aiulog.log(aiulog.DEBUG, "PRF:", stage, profile[-1][1])

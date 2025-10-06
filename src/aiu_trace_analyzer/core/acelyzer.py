@@ -166,37 +166,117 @@ class Acelyzer:
         parser = argparse.ArgumentParser(prog="acelyzer", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         parser.add_argument("-C", "--counter", type=str, nargs='*', default=self.defaults["counter"],
                             choices=["power_ts4", "power_ts3", "coll_bw", "bandwidth", "prep_queue", "rcu_util"],
-                            help="Space-separated list of counters to extract/display. Note: power_ts4 and power_ts3 are mutually exclusive.")
-        parser.add_argument("-c", "--compiler_log", type=str, default=None, help="(Comma-separated list of per-rank) Path/Filename of compiler log to ingest compile-time data references. Required e.g. for rcu_util counters. Multi-AIU rank outputs need to be sorted by rank.")
-        parser.add_argument("-D", "--loglevel", type=int, default=self.defaults["loglevel"], choices=range(0, 5), help="Logging level 0(ERROR)..4(TRACE)")
-        parser.add_argument("-F", "--filter", type=str, default=self.defaults["filter"], help="List of event types to keep. E.g. 'C' to just keep counters.")
-        parser.add_argument("-f", "--format", type=str, default=self.defaults["format"], help="Type of output format (json, protobuf)")
-        parser.add_argument("--freq", type=str, default=':'.join([str(self.defaults["freq"]), str(self.defaults["ideal_freq"])]), help="Frequency spec for <SoC_freq>[:<core_freq>] in MHz")
-        parser.add_argument("--flow", dest="flow", action="store_true", default=self.defaults["flow"], help="Enable flow detection/visualization")
-        parser.add_argument("--freq_scaling", type=float, default=self.defaults["ideal_scale_factor"], help="(oblolete by --freq)")
-        parser.add_argument("-i", "--input", type=str, required=True, help="Comma-separated list of input files. Or file pattern (requires quotes)")
-        parser.add_argument("-I", "--intermediate", dest='intermediate', action='store_true', default=self.defaults["intermediate"], help="Enable export of intermediate results after each processing step.")
-        parser.add_argument("-k", "--skip_events", dest="skip_events", action='store_true', default=self.defaults["skip_events"], help="skip certain events when calculating the power")
-        parser.add_argument("--drop_globals", dest="drop_globals", action='store_true', default=self.defaults["drop_globals"], help="drop throw-away events like Prep, etc.")
-        parser.add_argument("-M", "--no_mp_sync", dest="skip_mpsync", action='store_true', default=self.defaults["skip_mpsync"], help="Do not attempt to sync multi-AIU streams based on AIU timestamps, e.g. if torch profile input aligns those already.")
-        parser.add_argument("-O", "--overlap", type=str, default=self.defaults["overlap"], choices=["drop", "tid", "async", "warn", "shift"], help="How to resolve overlapping/non-displayable events )")
-        parser.add_argument("-P", "--profile", type=str, default=self.defaults["stage_profile"], help="Name of a processing profile json that lists the active processing stages to run")
+                            help="Space-separated list of counters to extract/display."
+                            " Note: power_ts4 and power_ts3 are mutually exclusive.")
+
+        parser.add_argument("-c", "--compiler_log", type=str, default=None,
+                            help="(Comma-separated list of per-rank) Path/Filename of compiler log to ingest"
+                            " compile-time data references. Required e.g. for rcu_util counters."
+                            " Multi-AIU rank outputs need to be sorted by rank.")
+
+        parser.add_argument("-D", "--loglevel", type=int, default=self.defaults["loglevel"],
+                            choices=range(0, 5), help="Logging level 0(ERROR)..4(TRACE)")
+
+        parser.add_argument("-F", "--filter", type=str, default=self.defaults["filter"],
+                            help="List of event types to keep. E.g. 'C' to just keep counters.")
+
+        parser.add_argument("-f", "--format", type=str, default=self.defaults["format"],
+                            help="Type of output format (json, protobuf)")
+
+        parser.add_argument("--freq", type=str, default=':'.join([str(self.defaults["freq"]),
+                                                                  str(self.defaults["ideal_freq"])]),
+                            help="Frequency spec for <SoC_freq>[:<core_freq>] in MHz")
+
+        parser.add_argument("--flow", dest="flow", action="store_true", default=self.defaults["flow"],
+                            help="Enable flow detection/visualization")
+
+        parser.add_argument("--freq_scaling", type=float, default=self.defaults["ideal_scale_factor"],
+                            help="(oblolete by --freq)")
+
+        parser.add_argument("-i", "--input", type=str, required=True,
+                            help="Comma-separated list of input files. Or file pattern (requires quotes)")
+
+        parser.add_argument("-I", "--intermediate", dest='intermediate', action='store_true',
+                            default=self.defaults["intermediate"],
+                            help="Enable export of intermediate results after each processing step.")
+
+        parser.add_argument("-k", "--skip_events", dest="skip_events", action='store_true',
+                            default=self.defaults["skip_events"],
+                            help="skip certain events when calculating the power")
+
+        parser.add_argument("--drop_globals", dest="drop_globals", action='store_true',
+                            default=self.defaults["drop_globals"],
+                            help="drop throw-away events like Prep, etc.")
+
+        parser.add_argument("-M", "--no_mp_sync", dest="skip_mpsync", action='store_true',
+                            default=self.defaults["skip_mpsync"],
+                            help="Do not attempt to sync multi-AIU streams based on AIU timestamps,"
+                            " e.g. if torch profile input aligns those already.")
+
+        parser.add_argument("-O", "--overlap", type=str, default=self.defaults["overlap"],
+                            choices=["drop", "tid", "async", "warn", "shift"],
+                            help="How to resolve overlapping/non-displayable events )")
+
+        parser.add_argument("-P", "--profile", type=str, default=self.defaults["stage_profile"],
+                            help="Name of a processing profile json that lists"
+                            " the active processing stages to run")
+
         parser.add_argument("-o", "--output", type=str, default=None, help="Output file name.")
-        parser.add_argument("-R", "--build_coll_event", dest="build_coll_event", action="store_true", default=self.defaults["build_coll_event"], help="Enable collective event detection/visualization. Note: The --flow option must be enabled first for this feature to work.")
-        parser.add_argument("-S", "--use_mp_sync_v2", dest='mp_sync_v2', action='store_true', default=self.defaults["mp_sync_v2"], help="Use the newer version of multi-AIU time alignment (v2).")
-        parser.add_argument("-s", "--split_events", dest='split_events', action='store_const', const=True, default=self.defaults["split_events"], help="(Obsolete) When set, split events into DmaI, Cmpt, DmaO based on TS1-5")
-        parser.add_argument("-t", "--no_stats", dest="stats", action='store_false', default=self.defaults["stats"], help="When set, disable export of statistics to <output_file.csv>")
-        parser.add_argument("-T", "--sync_to_dev", dest='sync_to_dev', action='store_const', const=True, default=self.defaults["sync_to_dev"], help="When set, use epoch from device timers")
-        parser.add_argument("--autopilot_data", type=str, default=self.defaults["autopilot_db"], help="(Not yet implemented) Where to look for kernel category data from runs with 'autopilot=0'.")
-        parser.add_argument("--keep_prep", dest="keep_prep", action="store_true", default=False, help="Prep-events are counted and the dropped. Use this option to keep them.")
-        parser.add_argument("--keep_names", dest="keep_names", action="store_true", default=False, help="Keep original event names when using the --tb option. By default most numbers are removed from name for aggregation purposes.")
-        parser.add_argument("--disable_tb", dest="tb_refinement", action="store_false", default=self.defaults["tb_refinement"], help="To use Chrome-trace to render timeline, disable TB refinement")
-        parser.add_argument("--tb", dest="tb", action="store_true", default=self.defaults["tb"], help="Enable output files for tensorboard.")
-        parser.add_argument("--disable_file", dest="save_to_file", action="store_false", default=True, help="Disable output to file (primarily for TensorBoard integration). Prevents output file creation for integrated mode.")
-        parser.add_argument("--flex_ts_fix", dest="flex_ts_fix", action="store_true", default=self.defaults["flex_ts_fix"], help="Enable an experimental per-job time-stamp adjustment.")
-        parser.add_argument("--disable_input_warnings", action="store_true", default=True, help="Disable warnings encountered while ingesting data.")
-        parser.add_argument("--comm_summarize_seq", action="store_true", default=self.defaults["comm_summ"], help="Combine each sequence of communication events into a single send/recv.")
-        parser.add_argument("--time_unit", default=self.defaults["time_unit"], choices=["ms", "ns"], help="Display Time Unit of the resulting json.")
+        parser.add_argument("-R", "--build_coll_event", dest="build_coll_event", action="store_true",
+                            default=self.defaults["build_coll_event"],
+                            help="Enable collective event detection/visualization."
+                            " Note: The --flow option must be enabled first for this feature to work.")
+
+        parser.add_argument("-S", "--use_mp_sync_v2", dest='mp_sync_v2', action='store_true',
+                            default=self.defaults["mp_sync_v2"],
+                            help="Use the newer version of multi-AIU time alignment (v2).")
+
+        parser.add_argument("-s", "--split_events", dest='split_events', action='store_const',
+                            const=True, default=self.defaults["split_events"],
+                            help="(Obsolete) When set, split events into DmaI, Cmpt, DmaO based on TS1-5")
+        parser.add_argument("-t", "--no_stats", dest="stats", action='store_false',
+                            default=self.defaults["stats"],
+                            help="When set, disable export of statistics to <output_file.csv>")
+
+        parser.add_argument("-T", "--sync_to_dev", dest='sync_to_dev', action='store_const', const=True,
+                            default=self.defaults["sync_to_dev"],
+                            help="When set, use epoch from device timers")
+
+        parser.add_argument("--autopilot_data", type=str, default=self.defaults["autopilot_db"],
+                            help="(Not yet implemented) Where to look for kernel category data"
+                            " from runs with 'autopilot=0'.")
+
+        parser.add_argument("--keep_prep", dest="keep_prep", action="store_true", default=False,
+                            help="Prep-events are counted and the dropped. Use this option to keep them.")
+        parser.add_argument("--keep_names", dest="keep_names", action="store_true", default=False,
+                            help="Keep original event names when using the --tb option."
+                            " By default most numbers are removed from name for aggregation purposes.")
+
+        parser.add_argument("--disable_tb", dest="tb_refinement", action="store_false",
+                            default=self.defaults["tb_refinement"],
+                            help="To use Chrome-trace to render timeline, disable TB refinement")
+
+        parser.add_argument("--tb", dest="tb", action="store_true", default=self.defaults["tb"],
+                            help="Enable output files for tensorboard.")
+
+        parser.add_argument("--disable_file", dest="save_to_file", action="store_false", default=True,
+                            help="Disable output to file (primarily for TensorBoard integration)."
+                            " Prevents output file creation for integrated mode.")
+
+        parser.add_argument("--flex_ts_fix", dest="flex_ts_fix", action="store_true",
+                            default=self.defaults["flex_ts_fix"],
+                            help="Enable an experimental per-job time-stamp adjustment.")
+
+        parser.add_argument("--disable_input_warnings", action="store_true", default=True,
+                            help="Disable warnings encountered while ingesting data.")
+
+        parser.add_argument("--comm_summarize_seq", action="store_true",
+                            default=self.defaults["comm_summ"],
+                            help="Combine each sequence of communication events into a single send/recv.")
+
+        parser.add_argument("--time_unit", default=self.defaults["time_unit"], choices=["ms", "ns"],
+                            help="Display Time Unit of the resulting json.")
+
         parsed_args = parser.parse_args(args)
         if parsed_args.output is None:
             if parsed_args.tb_refinement:
@@ -212,7 +292,9 @@ class Acelyzer:
                 print('ERROR: Frequency setting requires float values.')
                 sys.exit(1)
         else:
-            print(f'HINT: --freq only specified SoC freqency {parsed_args.freq}. Using default core freq {self.defaults["ideal_freq"]}. You may specify both by using: --freq=<soc>:<core>')
+            print(f'HINT: --freq only specified SoC freqency {parsed_args.freq}.'
+                  f' Using default core freq {self.defaults["ideal_freq"]}.'
+                  ' You may specify both by using: --freq=<soc>:<core>')
             try:
                 parsed_args.freq = [float(parsed_args.freq), self.defaults["ideal_freq"]]
             except ValueError:
@@ -227,14 +309,18 @@ class Acelyzer:
             return "Only supported for TensorBoard exporter."
 
     def _args_sanity_check(self, args) -> bool:
-        assert math.isclose(args.freq_scaling, 0.0, abs_tol=1e-9), "ERROR: Use of obsolete cmdline '--freq_scaling'. Use '--freq=<soc>:<core>' instead!"
-        assert args.freq[0] > 0.0 and args.freq[1] > 0.0, "Frequency settings are required to be a positive non-zero float value."
+        assert math.isclose(args.freq_scaling, 0.0, abs_tol=1e-9), \
+            "ERROR: Use of obsolete cmdline '--freq_scaling'." \
+            " Use '--freq=<soc>:<core>' instead!"
+        assert args.freq[0] > 0.0 and args.freq[1] > 0.0, \
+            "Frequency settings are required to be a positive non-zero float value."
         if "power_ts3" in args.counter and "power_ts4" in args.counter:
             aiulog.log(aiulog.ERROR, "power_ts3 and power_ts4 are mutually exclusive")
             return False
 
         if "rcu_util" in args.counter and args.compiler_log is None:
-            aiulog.log(aiulog.WARN, "rcu_util counter requested but no compiler log provided. No utilization will be plotted.")
+            aiulog.log(aiulog.WARN, "rcu_util counter requested but no compiler log provided."
+                       " No utilization will be plotted.")
 
         return True
 
@@ -313,9 +399,11 @@ class Acelyzer:
 
         if not args.skip_mpsync:
             if not args.mp_sync_v2:
-                process.register_stage(callback=event_pipe.mp_sync_tight_v1, context=event_pipe.MpSyncTightContext())
+                process.register_stage(callback=event_pipe.mp_sync_tight_v1,
+                                       context=event_pipe.MpSyncTightContext())
             else:
-                process.register_stage(callback=event_pipe.mp_ts_calibration_v2, context=event_pipe.MpTsCalibV2Context())
+                process.register_stage(callback=event_pipe.mp_ts_calibration_v2,
+                                       context=event_pipe.MpTsCalibV2Context())
 
         # process.registerPreProcess(callback=event_pipe.cycle_count_conversion_cleanup)
         # process.registerPreProcess(callback=event_pipe.cycle_count_to_wallclock)
@@ -353,7 +441,8 @@ class Acelyzer:
         monotonic_ts_ctx_b = event_pipe.TSSequenceContext(ts3check=True)
         process.register_stage(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_b)
 
-        process.register_stage(callback=event_pipe.collect_iteration_stats, context=event_pipe.IterationDectectContext())
+        process.register_stage(callback=event_pipe.collect_iteration_stats,
+                               context=event_pipe.IterationDectectContext())
 
         ##############################################################
         # dealing with power counter data

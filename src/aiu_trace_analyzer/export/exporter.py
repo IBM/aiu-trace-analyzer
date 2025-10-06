@@ -7,20 +7,22 @@ from collections import defaultdict
 import aiu_trace_analyzer.logger as aiulog
 import aiu_trace_analyzer.trace_view as tv
 
-'''
-Abstract exporter class
 
-Defines required functions:
+class AbstractTraceExporter:
+    '''
+    Abstract exporter class
 
-  export()
+    Defines required functions:
+
+    export()
     * input list of AbstractEventType for export to whatever format
     * may also just buffer the exported events
 
-  flush()
+    flush()
     * flush any accumulated buffer (if any)
     * if export() is directly writing to target output, this can be a noop
-'''
-class AbstractTraceExporter:
+    '''
+
     def __init__(self, target_uri, settings={}) -> None:
         self.target_uri = target_uri
         self.meta = {}
@@ -28,17 +30,17 @@ class AbstractTraceExporter:
         self.meta["CmdLine"] = " ".join(sys.argv)
         if not settings:
             # basic setting of output needed for traceView
-            self.meta["Settings"] = {"output":target_uri}
+            self.meta["Settings"] = {"output": target_uri}
         else:
             self.meta["Settings"] = settings
         self.device_data = []
 
     def add_device(self, id, data: dict):
-        devdata = { "id": id }
-        for k,v in data.items():
+        devdata = {"id": id}
+        for k, v in data.items():
             devdata[k] = v
         self.device_data.append(devdata)
-        assert( isinstance( self.device_data, list))
+        assert isinstance(self.device_data, list)
 
     # export (a list) of events to the configured target
     def export(self, _data: list[tv.AbstractEventType]):
@@ -48,11 +50,11 @@ class AbstractTraceExporter:
         raise NotImplementedError("Class %s doesn't implement flush()" % (self.__class__.__name__))
 
 
-'''
-Export events as json trace events for vizualization in chrome tracing or perfetto
-Accumulates exported events into TraceView object which is then dumped as json on flush()
-'''
 class JsonFileTraceExporter(AbstractTraceExporter):
+    '''
+    Export events as json trace events for vizualization in chrome tracing or perfetto
+    Accumulates exported events into TraceView object which is then dumped as json on flush()
+    '''
     def __init__(self, target_uri, timescale="ms", settings={}) -> None:
         super().__init__(target_uri, settings=settings)
         self.traceview = tv.TraceView(display_time_unit=timescale, other_data=self.meta)
@@ -68,16 +70,16 @@ class JsonFileTraceExporter(AbstractTraceExporter):
 
     # write the traceview to file
     def flush(self):
-        assert( isinstance( self.device_data, list) )
+        assert isinstance(self.device_data, list)
         self.traceview.add_device_data(self.device_data)
         with open(self.target_uri, 'w') as json_new_pids_file:
             self.traceview.dump(fp=json_new_pids_file)
 
 
-'''
-TBD: Placeholder for potential future export as protobuf format for perfetto
-'''
 class ProtobufTraceExporter(AbstractTraceExporter):
+    '''
+    TBD: Placeholder for potential future export as protobuf format for perfetto
+    '''
     def __init__(self, target_uri, settings={}) -> None:
         super().__init__(target_uri, settings)
         # TODO: open channel to trace processing
@@ -92,7 +94,7 @@ class ProtobufTraceExporter(AbstractTraceExporter):
 class TensorBoardFileTraceExporter(JsonFileTraceExporter):
     def __init__(self, target_uri, timescale="ms", settings={}) -> None:
         super().__init__(target_uri, timescale=timescale, settings=settings)
-        self.timescale="ms"
+        self.timescale = "ms"
         self.default_extension = '.pt.trace.json'
         self.rank_cnt = 0
         self.traceview_by_rank = dict()
@@ -103,9 +105,9 @@ class TensorBoardFileTraceExporter(JsonFileTraceExporter):
         # for trace events and get rank cnt
         events_by_id = self._parse_by_rank_id('pid', self.traceview.trace_events)
         if len(events_by_id) > 1:
-            self.rank_cnt = len(events_by_id)-1 # Remove key=-1 which is for CollBandwidth
+            self.rank_cnt = len(events_by_id) - 1  # Remove key=-1 which is for CollBandwidth
         else:
-            self.rank_cnt = len(events_by_id) # Single AIU case
+            self.rank_cnt = len(events_by_id)  # Single AIU case
         self._update_traceview_value_by_rank("trace_events", self.rank_cnt, events_by_id)
 
         # for display_time_unit
@@ -132,12 +134,11 @@ class TensorBoardFileTraceExporter(JsonFileTraceExporter):
 
         return events_by_id
 
-
     # Update traceview attr value based on given variable name
     def _update_traceview_value_by_rank(self, var_name, rank_cnt, value) -> None:
         for rid in range(0, rank_cnt):
             if rid not in self.traceview_by_rank:
-                self.traceview_by_rank[rid]  = tv.TraceView(display_time_unit=self.timescale, other_data=self.meta)
+                self.traceview_by_rank[rid] = tv.TraceView(display_time_unit=self.timescale, other_data=self.meta)
 
             traceview_by_rank = self.traceview_by_rank[rid]
             if hasattr(traceview_by_rank, var_name):
@@ -146,9 +147,9 @@ class TensorBoardFileTraceExporter(JsonFileTraceExporter):
                 else:
                     setattr(self.traceview_by_rank[rid], var_name, value[rid])
             else:
-                aiulog.log(aiulog.WARN, f"TB_EXPORTER:  no attribute '{var_name}' for traceview when preparing distributed view for TB")
-
-
+                aiulog.log(aiulog.WARN,
+                           f"TB_EXPORTER:  no attribute '{var_name}'"
+                           " for traceview when preparing distributed view for TB")
 
     def _save_overall_trace(self) -> None:
         # TODO: support other file formats not end with .json
@@ -185,7 +186,7 @@ class TensorBoardFileTraceExporter(JsonFileTraceExporter):
 
     # write the traceview to file
     def flush(self):
-        assert( isinstance( self.device_data, list) )
+        assert isinstance(self.device_data, list)
         self.traceview.add_device_data(self.device_data)
 
         self._parse_events_by_id()
