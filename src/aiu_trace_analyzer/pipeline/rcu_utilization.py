@@ -193,6 +193,11 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                         category = "NotAvailable"
                 else:
                     category = "Total"
+
+                # The last row of the ideal table, starting with "Total", is not a kernel name.
+                if kernel_and_cat[0] == "Total": 
+                    continue
+
                 kernel = kernel_and_cat[0]+" Cmpt Exec"
                 fprint.add(kernel)
 
@@ -264,6 +269,12 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         df = pd.DataFrame(list_of_list, columns=title_row)
         sorted_df = df.sort_values([title_row[0], title_row[2]], kind='stable', inplace=False, ignore_index=True)
 
+        # for traces with a single category, the Total row may not appear to the last: extract, drop, concat
+        total_row_idx = sorted_df.index[ sorted_df['Category'] == "Total" ].tolist()[0]
+        total_row     = sorted_df.loc[[ total_row_idx ]]
+        df_drop_total = sorted_df.drop( total_row_idx )
+        sorted_df = pd.concat( [df_drop_total, total_row] )
+
         sorted_df.to_csv(self.csv_fname, index=False, header=True)                   # dump to CSV file
         print(sorted_df.to_string(index=False), file=open(self.tab_fname, 'w'))    # dump to TXT file
 
@@ -284,7 +295,15 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
     def get_cycles(self, kernel: str, fprint: int) -> int:
         if len(self.kernel_cycles):
-            rval = self.kernel_cycles[fprint].get(kernel, 0)
+            # For the TTFT jobs in long-context granite traces, the ideal-table contains up to 80K entries, 
+            #   the existing approach offingerprint.get, hash of a concatenated string from a list of 
+            #   kernel names in the order as listed in the ideal table, should need remedy. 
+            # Meanwhile, to allow the RCU-UTL processing with single job file and tailered ideal-table text, 
+            #   the update here bypass the fingerprint matching when one ideal-table was ingested.
+            key = fprint
+            if ( len( self.kernel_cycles.keys() ) == 1 ): 
+                key = list(self.kernel_cycles.keys())[0]
+            rval = self.kernel_cycles[key].get(kernel, 0)
             return rval
         else:
             return 0

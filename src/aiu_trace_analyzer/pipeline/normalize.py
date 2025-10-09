@@ -111,7 +111,7 @@ class NormalizationContext(AbstractHashQueueContext):
                 curr = int(args[ts], 0)
                 curr += (ovc * 1 << 32)
                 if curr < prev:
-                    raise RuntimeError("attempt of local_correction fix has missed a spot in TS-sequence.")
+                    aiulog.log(aiulog.ERROR, "attempt of local_correction fix has missed a spot in TS-sequence.")
                 args[ts] = str(curr)
                 prev = curr
             args["OVC"] = ovc
