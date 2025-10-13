@@ -23,7 +23,7 @@ class AbstractTraceExporter:
     * if export() is directly writing to target output, this can be a noop
     '''
 
-    def __init__(self, target_uri, settings={}) -> None:
+    def __init__(self, target_uri, settings=None) -> None:
         self.target_uri = target_uri
         self.meta = {}
         self.meta["Application"] = "Acelyzer: Trace Post-Processing Tool"
