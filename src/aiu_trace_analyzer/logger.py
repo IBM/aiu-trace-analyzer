@@ -46,7 +46,7 @@ def string_to_loglevel(loglevel_str):
     elif loglevel_str == "TRACE":
         return _TRACE()
     else:
-        raise Exception("Un expected log level: %s" % (loglevel_str))
+        raise ValueError("Un expected log level: %s" % (loglevel_str))
 
 
 def int_to_loglevel(loglevel_int):
@@ -61,7 +61,7 @@ def int_to_loglevel(loglevel_int):
     elif loglevel_int == 4:
         return _TRACE()
     else:
-        raise Exception("Un expected log level: %s" % (loglevel_int))
+        raise ValueError("Un expected log level: %s" % (loglevel_int))
 
 
 # log-level definitions as ints

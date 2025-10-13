@@ -26,8 +26,9 @@ class EventPairDetectionContext(AbstractHashQueueContext):
         return hash((pid, tid))
 
     def insert(self, event: TraceEvent, queue_id=None) -> int:
+        tid = event["tid"] if "tid" in event else 0
         _queue_id = queue_id if queue_id else self.queue_hash(event["pid"],
-                                                              event["tid"] if "tid" in event else 0)
+                                                              tid)
         aiulog.log(aiulog.TRACE, "PAIR INSERT:", _queue_id, event)
         if _queue_id in self.queues:
             self.queues[_queue_id].append(event)
@@ -51,7 +52,7 @@ class EventPairDetectionContext(AbstractHashQueueContext):
     def find_slice_close_event_partner(self, event: TraceEvent,
                                        queue: list[TraceEvent],
                                        mixed_queue: bool = False) -> tuple[TraceEvent, int]:
-        if not event["ph"] in self.OPENING_EVENTS:
+        if event["ph"] not in self.OPENING_EVENTS:
             return None, None
 
         # reference event hash and list of entries to strip from event before making pair match hash

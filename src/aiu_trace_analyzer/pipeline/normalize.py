@@ -26,13 +26,13 @@ class NormalizationContext(AbstractHashQueueContext):
         if ma-mi > mean * 0.2:
             aiulog.log(aiulog.WARN,
                        "FREQ: Min/Max of detected correct frequency is >20% of mean"
-                       f" ({round(mi,3)},{round(ma,3)})."
+                       f" ({round(mi, 3)},{round(ma, 3)})."
                        " This indicates some events might have been assigned to the wrong TSx epoch.")
         elif abs(mean - self.soc_frequency) > 0.1:
             aiulog.log(aiulog.WARN,
                        "FREQ: Recommendation: to minimize event time drift"
                        f" (max: {madr}us) between CPU and Accelerator, use:"
-                       f" --freq={round(mean,3)}")
+                       f" --freq={round(mean, 3)}")
 
     def queue_hash(self, event: TraceEvent) -> int:
         return hash(event["pid"])

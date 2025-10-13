@@ -1,6 +1,6 @@
 [flake8]
 max-line-length = 120
-exclude = docs/*
+exclude = docs/* build/*
 
 per-file-ignores =
     src/aiu_trace_analyzer/pipeline/__init__.py:F401

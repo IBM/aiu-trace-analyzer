@@ -205,7 +205,7 @@ class CompleteEvents(AbstractEventType):
     the size of the trace to about half.
     """
 
-    def __init__(self, name, cat, ts, dur, pid, tid, args={}):
+    def __init__(self, name, cat, ts, dur, pid, tid, args=None):
         self.name = name
         self.cat = cat
         self.ph = "X"
@@ -213,7 +213,7 @@ class CompleteEvents(AbstractEventType):
         self.dur = dur
         self.pid = pid
         self.tid = tid
-        self.args = args
+        self.args = args if args is not None else {}
 
     def json(self):
         return self.__dict__
@@ -229,7 +229,7 @@ class InstantEvents(AbstractEventType):
     {"name": "OutOfMemory", "ph": "i", "ts": 1234523.3, "pid": 2343, "tid": 2347, "s": "g"}
     """
 
-    def __init__(self, name, cat, ts, pid, tid, s="g", args={}):
+    def __init__(self, name, cat, ts, pid, tid, s="g", args=None):
         """
         name: name of event
         ph: phase
@@ -244,7 +244,7 @@ class InstantEvents(AbstractEventType):
         self.pid = pid
         self.tid = tid
         self.s = s
-        self.args = args
+        self.args = args if args is not None else {}
 
 
 class CounterEvents(AbstractEventType):
@@ -308,7 +308,7 @@ class AsyncEvents(AbstractEventType):
     {"cat": "foo", "name": "async_read", "id": 0x100, "ph": "e"}
     """
 
-    def __init__(self, ph, ts, pid, tid, name, id, cat=None, args={}):
+    def __init__(self, ph, ts, pid, tid, name, id, cat=None, args=None):
         self.name = name
         self.ts = ts
         self.pid = pid
@@ -321,7 +321,7 @@ class AsyncEvents(AbstractEventType):
         # - e: nested end
         assert ph in ["b", "n", "e"]
         self.ph = ph
-        self.args = args
+        self.args = args if args is not None else {}
 
 
 class FlowEvents(AbstractEventType):
@@ -430,11 +430,11 @@ class MemoryDumpEvents(AbstractEventType):
     usage (e.g. total allocated memory), are denoted by the v phase type.
     """
 
-    def __init__(self, name, ts, args={}, pid=None):
+    def __init__(self, name, ts, args=None, pid=None):
         self.name = name  # memory dump name
         self.ts = ts
         self.ph = "V"
-        self.args = args
+        self.args = args if args is not None else {}
         self.pid = pid
 
     def json(self):

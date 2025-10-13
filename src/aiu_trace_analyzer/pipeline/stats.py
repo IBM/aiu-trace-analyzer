@@ -34,7 +34,7 @@ class StatsExtractionContext(EventPairDetectionContext, PipelineContextTool):
             total = tot_matmul + tot_other
             total_pt_util = mean_pt_util*(tot_matmul/(tot_matmul+tot_other))
             aiulog.log(aiulog.INFO, f'UTL: pid={pid}: avg_mm_util={round(mean_pt_util, 3)},'
-                       f' avg_util={round(total_pt_util,3)}, t_mm={tot_matmul}, t_sf={tot_other},'
+                       f' avg_util={round(total_pt_util, 3)}, t_mm={tot_matmul}, t_sf={tot_other},'
                        f' ratio_mm/sf={round(tot_matmul/total*100.0, 2)}:{round(tot_other/total*100.0, 2)}')
 
     def update_min_ts(self, pid, ts):
