@@ -86,9 +86,9 @@ list_of_cycles_tests = [
     ("addmm_MatMul-BMM_1 Cmpt Exec", 0, 27648),
     ("", 1, 0),
     ("blabla Cmpt Exec", 0, 0),
+    ("Total", 0, 0),     # not a kernel
     ("bmm-BMM_1 Cmpt Exec", 0, 12288)
 ]
-
 
 
 @pytest.mark.parametrize("input,pid,expected", list_of_cycles_tests)

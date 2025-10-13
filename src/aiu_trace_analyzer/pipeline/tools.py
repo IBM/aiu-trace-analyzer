@@ -100,8 +100,11 @@ class PipelineContextTool:
 
 
 class AutopilotDetail:
-    def __init__(self, kernelmap: dict = {}) -> None:
-        self.kernelmap = copy.deepcopy(kernelmap)
+    def __init__(self, kernelmap: dict[str, int] = None) -> None:
+        if kernelmap is not None:
+            self.kernelmap = copy.deepcopy(kernelmap)
+        else:
+            self.kernelmap = {}
 
     def hash(self, input) -> int:
         return hashlib.shake_256(input).digest()
