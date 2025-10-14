@@ -37,9 +37,11 @@ def normalization_ctx():
 
 
 ts_seq_test_events = [
-    ({'name': 'testevent', 'ph': 'X', 'ts': 3.141, 'args': {'TS1': '1', 'TS2': '2', 'TS3': '2', 'TS4': '3', 'TS5': '5', 'jobhash': 0}},
+    ({'name': 'testevent', 'ph': 'X', 'ts': 3.141,
+      'args': {'TS1': '1', 'TS2': '2', 'TS3': '2', 'TS4': '3', 'TS5': '5', 'jobhash': 0}},
      {'TS1': '1', 'TS2': '2', 'TS3': '2', 'TS4': '3', 'TS5': '5', 'jobhash': 0, 'OVC': 0}),
-    ({'name': 'testevent', 'ph': 'X', 'ts': 3.141, 'args': {'TS1': '1', 'TS2': '2', 'TS3': '1', 'TS4': '3', 'TS5': '5', 'jobhash': 0}},
+    ({'name': 'testevent', 'ph': 'X', 'ts': 3.141,
+      'args': {'TS1': '1', 'TS2': '2', 'TS3': '1', 'TS4': '3', 'TS5': '5', 'jobhash': 0}},
      None),
 ]
 
@@ -62,9 +64,11 @@ def normalization_ctx_ign_crit():
 
 
 ts_seq_ign_err_test_events = [
-    ({'name': 'testevent', 'ph': 'X', 'ts': 3.141, 'args': {'TS1': '1', 'TS2': '2', 'TS3': '2', 'TS4': '3', 'TS5': '5', 'jobhash': 0}},
+    ({'name': 'testevent', 'ph': 'X', 'ts': 3.141,
+      'args': {'TS1': '1', 'TS2': '2', 'TS3': '2', 'TS4': '3', 'TS5': '5', 'jobhash': 0}},
      {'TS1': '1', 'TS2': '2', 'TS3': '2', 'TS4': '3', 'TS5': '5', 'jobhash': 0, 'OVC': 0}),
-    ({'name': 'testevent', 'ph': 'X', 'ts': 3.141, 'args': {'TS1': '1', 'TS2': '2', 'TS3': '1', 'TS4': '3', 'TS5': '5', 'jobhash': 0}},
+    ({'name': 'testevent', 'ph': 'X', 'ts': 3.141,
+      'args': {'TS1': '1', 'TS2': '2', 'TS3': '1', 'TS4': '3', 'TS5': '5', 'jobhash': 0}},
      {'TS1': '1', 'TS2': '2', 'TS3': '1', 'TS4': '3', 'TS5': '5', 'jobhash': 0, 'OVC': 0}),
 ]
 
