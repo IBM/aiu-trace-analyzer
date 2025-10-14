@@ -12,12 +12,13 @@ from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
 
 class NormalizationContext(AbstractHashQueueContext):
 
-    def __init__(self, soc_frequency: float) -> None:
+    def __init__(self, soc_frequency: float, ignore_crit: bool = False) -> None:
         super().__init__()
         self.soc_frequency = soc_frequency
         self.frequency_minmax = (1e99, 0.0, 0, 0.0, 0.0)
         self.OVERFLOW_TIME_SPAN_US = float(1 << 32) / self.soc_frequency
         self.OVERFLOW_TIME_TOLERANCE = self.OVERFLOW_TIME_SPAN_US * 0.05  # allow for some tolerance
+        self.ignore_crit = ignore_crit
 
     def __del__(self) -> None:
         mi, ma, _, mean, madr = self.frequency_minmax
@@ -76,7 +77,7 @@ class NormalizationContext(AbstractHashQueueContext):
 
         return elapsed_epochs, drift, actual_freq
 
-    def tsx_32bit_local_correction(self, qid, event: TraceEvent) -> dict:
+    def tsx_32bit_local_correction(self, event: TraceEvent) -> dict:
         if "TS1" in event["args"]:
             args = event["args"]
             prev = -(1 << 48)  # set something very small to cover for some negative overflow epochs to happen
@@ -112,6 +113,8 @@ class NormalizationContext(AbstractHashQueueContext):
                 curr += (ovc * 1 << 32)
                 if curr < prev:
                     aiulog.log(aiulog.ERROR, "attempt of local_correction fix has missed a spot in TS-sequence.")
+                    if not self.ignore_crit:
+                        assert curr >= prev, "local_correction of TS-sequence incomplete."
                 args[ts] = str(curr)
                 prev = curr
             args["OVC"] = ovc
@@ -174,8 +177,7 @@ def normalize_phase1(event: TraceEvent, context: AbstractContext) -> list[TraceE
     event["name"] = _name_unification(event["name"])
     event["args"]["jobname"] = _jobinfo.get_job(event["args"]["jobhash"])
     if "args" in event and "TS1" in event["args"]:
-        qid = context.queue_hash(event)
-        event["args"] = context.tsx_32bit_local_correction(qid, event)
+        event["args"] = context.tsx_32bit_local_correction(event)
 
     assert isinstance(event, dict)
     return [event]
