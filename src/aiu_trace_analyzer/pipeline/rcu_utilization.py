@@ -96,7 +96,6 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
         self.scale_cycles()
 
-        print(self.kernel_cycles)
         for n, t in self.kernel_cycles.items():
             self.autopilot_detail = AutopilotDetail(t)
             self.table_hash = self.autopilot_detail.table_hash()
