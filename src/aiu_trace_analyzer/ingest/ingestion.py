@@ -268,7 +268,7 @@ class JsonEventTraceIngest(AbstractTraceIngest):
 
             # TODO commented out until time stamp issue is clarified
             # assert  self.last_ts-self.ts_tolerance <= open_event["ts"], \
-            #    f"TimeStamp Sequence problem in {self.sourceURI}"
+            #    f"TimeStamp Sequence problem in {self.source_uri}"
             return open_event
         else:
             assert False, f'Expected to find E-event in {self.source_uri}. Found {event["ph"]}'
@@ -332,11 +332,11 @@ try:
     from perfetto.trace_processor import TraceProcessor
 
     class ProtobufIngest(AbstractTraceIngest):
-        def __init__(self, sourceURI, show_warnings: bool = True) -> None:
-            super().__init__(sourceURI, show_warnings=show_warnings)
+        def __init__(self, source_uri, show_warnings: bool = True) -> None:
+            super().__init__(source_uri, show_warnings=show_warnings)
 
             self._index = 0
-            self.tp = TraceProcessor(trace=sourceURI)
+            self.tp = TraceProcessor(trace=source_uri)
             # self.data = self.tp.query('SELECT * FROM slice')
             #
             slice_fields = "ts, dur, cat, slice.name as slice_name, slice.id as slice_id, slice.arg_set_id as aid,"

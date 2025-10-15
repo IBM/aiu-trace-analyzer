@@ -91,9 +91,11 @@ class ProtobufTraceExporter(AbstractTraceExporter):
         # TODO: open channel to trace processing
 
     def export(self, data: list[tv.AbstractEventType]):
+        # not exporting anything yet
         pass
 
     def flush(self):
+        # nothing to flush for protobuf exporter
         pass
 
 
