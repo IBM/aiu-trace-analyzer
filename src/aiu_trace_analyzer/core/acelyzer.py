@@ -277,6 +277,10 @@ class Acelyzer:
         parser.add_argument("--time_unit", default=self.defaults["time_unit"], choices=["ms", "ns"],
                             help="Display Time Unit of the resulting json.")
 
+        parser.add_argument("--ignore_crit", action="store_true",
+                            default=False,
+                            help="Attempt to force through errors without breaking and just print error msgs instead.")
+
         parsed_args = parser.parse_args(args)
         if parsed_args.output is None:
             if parsed_args.tb_refinement:
@@ -357,7 +361,8 @@ class Acelyzer:
         ##############################################################
         # frequency detection and per-job offset correction
         # and event manipulation/normalization in 2 phases
-        normalize_ctx = event_pipe.NormalizationContext(soc_frequency=args.freq[0])
+        normalize_ctx = event_pipe.NormalizationContext(soc_frequency=args.freq[0],
+                                                        ignore_crit=args.ignore_crit)
         frequency_align_ctx = event_pipe.FlexJobOffsetContext(soc_frequency=args.freq[0])
         process.register_stage(callback=event_pipe.normalize_phase1, context=normalize_ctx)
         if args.flex_ts_fix:

@@ -53,6 +53,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
     _ignore_pattern = re.compile(r'(Precompute|-LxPreload)')
     _category_splitter = re.compile(r'(\-opCat|\-NA$)')
     _autopilot_pattern = re.compile(r'DSM-AutoPilot BEGIN')
+    _non_kernel_names = ["Total"]
 
     _print_to_log = False
 
@@ -73,6 +74,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         self.kernel_db_url = kernel_db_url
         self._use_core_freq = True
         self.multi_table = -1  # assume no multitable case
+        self.use_fprint = 1  # assume to require table-fingerprinting
 
         # if scale factor is unknown, set to -1.0 to later identify cycles that need subsequent rescaling
         self.scale_factor = soc_freq/core_freq
@@ -85,6 +87,10 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             subdir, fpat = '/'.join(compiler_log.split('/')[:-1]), compiler_log.split('/')[-1]
             compiler_log_name = list(pathlib.Path(subdir).rglob(fpat))[0]
             self.extract_tables(compiler_log=compiler_log_name)
+            # with a single table, we won't need to respect any fingerprinting
+            if self.multi_table == 0:
+                self.use_fprint = 0
+                _, self.kernel_cycles[0] = self.kernel_cycles.popitem()
         except Exception as e:
             aiulog.log(aiulog.WARN, "UTL: Unable to open or parse log file.", compiler_log, e)
 
@@ -123,7 +129,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             self.print_table_as_pd(self.categories)
 
     def initialize_tables(self) -> None:
-        self.kernel_cycles = {}  # tables indexed by fingerprint
+        self.kernel_cycles: dict[int, dict[str, int]] = {}  # tables indexed by fingerprint
         self.categories = {}
         self.kernel_cat_map = {"other": "other"}
 
@@ -193,6 +199,11 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                         category = "NotAvailable"
                 else:
                     category = "Total"
+
+                # Skip anything that's not a kernel name
+                if kernel_and_cat[0] in self._non_kernel_names:
+                    continue
+
                 kernel = kernel_and_cat[0]+" Cmpt Exec"
                 fprint.add(kernel)
 
@@ -264,6 +275,12 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         df = pd.DataFrame(list_of_list, columns=title_row)
         sorted_df = df.sort_values([title_row[0], title_row[2]], kind='stable', inplace=False, ignore_index=True)
 
+        # for traces with a single category, the Total row may not appear to the last: extract, drop, concat
+        total_row_idx = sorted_df.index[sorted_df['Category'] == "Total"].tolist()[0]
+        total_row = sorted_df.loc[[total_row_idx]]
+        df_drop_total = sorted_df.drop(total_row_idx)
+        sorted_df = pd.concat([df_drop_total, total_row])
+
         sorted_df.to_csv(self.csv_fname, index=False, header=True)                   # dump to CSV file
         print(sorted_df.to_string(index=False), file=open(self.tab_fname, 'w'))    # dump to TXT file
 
@@ -284,7 +301,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
     def get_cycles(self, kernel: str, fprint: int) -> int:
         if len(self.kernel_cycles):
-            rval = self.kernel_cycles[fprint].get(kernel, 0)
+            rval = self.kernel_cycles[fprint * self.use_fprint].get(kernel, 0)
             return rval
         else:
             return 0
@@ -335,7 +352,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         self.multi_log = (len(log_list) > 1)
         self.warn_util_100 = 0
         self.warn_nomatch = 0  # count the number of events where no corresponding table/fingerprint was found
-        self.fingerprints = {}   # fingerprints per job-file
+        self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job-file
         if self.multi_log:
             aiulog.log(aiulog.INFO, "UTL: Multi-AIU logs provided. Entries:", len(log_list))
 
@@ -343,7 +360,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         # in single-log case: will turn everything into zero, otherwise use event rank
         self.rank_factor = 1 if self.multi_log else 0
 
-        self.rcuctx = {}
+        self.rcuctx: dict[int, RCUUtilizationContext] = {}
         for rank, log in enumerate(log_list):
             aiulog.log(aiulog.DEBUG, "UTL: Building kernel table for", rank)
             if self.multi_log:

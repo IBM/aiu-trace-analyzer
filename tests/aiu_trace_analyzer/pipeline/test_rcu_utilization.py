@@ -61,8 +61,7 @@ expected_vars_and_values = [
      {"somevalue":
       {'addmm_MatMul-BMM_1 Cmpt Exec': 27648,
        'addmm_1_MatMul-BMM_1 Cmpt Exec': 27648,
-       'bmm-BMM_1 Cmpt Exec': 12288,
-       'Total Cmpt Exec': 67584
+       'bmm-BMM_1 Cmpt Exec': 12288
        }
       }
      )
@@ -87,7 +86,7 @@ list_of_cycles_tests = [
     ("addmm_MatMul-BMM_1 Cmpt Exec", 0, 27648),
     ("", 1, 0),
     ("blabla Cmpt Exec", 0, 0),
-    ("Total", 100, 0),
+    ("Total", 0, 0),     # not a kernel
     ("bmm-BMM_1 Cmpt Exec", 0, 12288)
 ]
 
