@@ -20,6 +20,7 @@ class TraceView(object):
         self.stack_frames = dict(stack_frames)
         self.samples = list(samples)
         self.device_data = []
+        self.meta_data = {}
 
     def append_trace_event(self, trace_event):
 
@@ -44,6 +45,9 @@ class TraceView(object):
         for d in data:
             self.device_data.append(d)
 
+    def add_metadata(self, meta: dict):
+        self.meta_data.update(meta)
+
     def dump(self, fp=None) -> str:
         """
         trace event json format:
@@ -61,7 +65,6 @@ class TraceView(object):
            "samples": [...],
         }
         """
-
         dic = {
             "deviceProperties": self.device_data,
             "traceName": self.other_data["Settings"]["output"],
@@ -72,6 +75,7 @@ class TraceView(object):
             # "stackFrames": self.stack_frames,
             # "samples": self.samples,
         }
+        dic.update(self.meta_data)
 
         if fp:
             json.dump(dic, fp, indent=4)

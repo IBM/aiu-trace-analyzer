@@ -4,6 +4,7 @@ import json
 import re
 import pathlib  # for multifile patterns
 import math
+from copy import deepcopy
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, InputDialect, InputDialectFLEX, InputDialectTORCH
@@ -41,6 +42,7 @@ class AbstractTraceIngest:
         self.show_warnings = show_warnings
         self.warnings = {}
         self._initialized = False
+        self.other_metadata = {}
         self.jobhash = jobdata.add_job_info(source_uri, data_dialect)
         assert scale > 0.0, 'Scale parameter needs to be >0.0'
 
@@ -89,6 +91,12 @@ class AbstractTraceIngest:
     def ftype_to_str(self, ftype):
         prl = ["FTYPE_LOG", "FTYPE_JSON", "FTYPE_PFTRACE", "FTYPE_API"]
         return prl[ftype]
+
+    def combine_metadata(self, metadata):
+        self.other_metadata.update(metadata)
+
+    def get_passthrough_meta(self) -> dict:
+        return self.other_metadata
 
     # update event data with things like ts-offset or ts-scaling
     def updated_event(self, event: TraceEvent) -> TraceEvent:
@@ -155,21 +163,33 @@ class JsonEventTraceIngest(AbstractTraceIngest):
                          scale=scale,
                          show_warnings=show_warnings)
 
-        self.data = {}
-        self.last_ts = 0.0
-        self.pending_close = False
-        self.keep_processed = keep_processed
+        self.data: dict = {}
+        self.last_ts: float = 0.0
+        self.pending_close: bool = False
+        self.keep_processed: bool = keep_processed
+
+    def _initialize_status(self, datalen: int) -> None:
+        self._len = datalen
+        self._index = 0
+        self._initialized = True
 
     def _initialize_data(self, data_stream) -> None:
         self.data = data_stream
-        # removed: display-unit is only for the visualization not the input data
-        # if "displayTimeUnit" in self.data:
-        #     if self.data["displayTimeUnit"] == "ms":
-        #         self.scale = 1000
-        #     elif self.data["displayTimeUnit"] == "ns":
-        #         self.scale = 1
-        #     else:
-        #         raise NotImplementedError(f'Time Scale detection for {self.data["displayTimeUnit"]} not implemented.')
+
+        if "traceEvents" not in self.data:
+            self._initialize_status(len(self.data))
+            return
+
+        # build a dictionary of all entries that are not in use for processing
+        # this data can then be passed to an exporter without modification
+        processing_keys = ["traceEvents", "distributedInfo", "otherData"]
+        self.other_metadata = {}
+        metadata_keys = list(self.data.keys())
+        for k in metadata_keys:
+            if k in processing_keys:
+                continue
+            self.other_metadata[k] = deepcopy(self.data.pop(k))
+
         if "distributedInfo" in self.data and "rank" in self.data["distributedInfo"]:
             self.rank_pid = self.data["distributedInfo"]["rank"]
             aiulog.log(aiulog.DEBUG, "INGEST: Detected distributedInfo Rank", self.rank_pid)
@@ -184,14 +204,11 @@ class JsonEventTraceIngest(AbstractTraceIngest):
                     "Dropping ALL Events from file",
                     self.source_uri)
                 self.data["traceEvents"] = []
-            else:
-                self.data = self.data["traceEvents"]
+
         if "traceEvents" in self.data:
             self.data = self.data["traceEvents"]
 
-        self._len = len(self.data)
-        self._index = 0
-        self._initialized = True
+        self._initialize_status(len(self.data))
 
     def __iter__(self):
         assert self._initialized is True, "ERROR: Data not initialized."
@@ -406,7 +423,7 @@ class MultifileIngest(AbstractTraceIngest):
 
         self.split_pattern = re.compile(r"[,\s]")
         filelist = self.generate_filelist(source_uri)
-        self.ingesters = []
+        self.ingesters: list[AbstractTraceIngest] = []
         self.event_front = []
         self.direct_data = direct_data
 
@@ -435,6 +452,7 @@ class MultifileIngest(AbstractTraceIngest):
 
         aiulog.log(aiulog.DEBUG, "FileType:", self.ftype_to_str(self.ftype), " detected for:", ingest)
         self.ingest_map = [1] * len(self.ingesters)
+        self.combine_metadata(self.ingesters[-1].other_metadata)
         return _added_new
 
     def __iter__(self):

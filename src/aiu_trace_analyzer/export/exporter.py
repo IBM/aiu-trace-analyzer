@@ -23,12 +23,12 @@ class AbstractTraceExporter:
     * if export() is directly writing to target output, this can be a noop
     '''
 
-    def __init__(self, target_uri, settings={}) -> None:
+    def __init__(self, target_uri, settings=None) -> None:
         self.target_uri = target_uri
         self.meta = {}
         self.meta["Application"] = "Acelyzer: Trace Post-Processing Tool"
         self.meta["CmdLine"] = " ".join(sys.argv)
-        if not settings:
+        if settings is None:
             # basic setting of output needed for traceView
             self.meta["Settings"] = {"output": target_uri}
         else:
@@ -41,6 +41,9 @@ class AbstractTraceExporter:
             devdata[k] = v
         self.device_data.append(devdata)
         assert isinstance(self.device_data, list)
+
+    def export_meta(self, meta_data: dict) -> None:
+        raise NotImplementedError("Class %s doesn't implement export()" % (self.__class__.__name__))
 
     # export (a list) of events to the configured target
     def export(self, _data: list[tv.AbstractEventType]):
@@ -55,7 +58,7 @@ class JsonFileTraceExporter(AbstractTraceExporter):
     Export events as json trace events for vizualization in chrome tracing or perfetto
     Accumulates exported events into TraceView object which is then dumped as json on flush()
     '''
-    def __init__(self, target_uri, timescale="ms", settings={}) -> None:
+    def __init__(self, target_uri, timescale="ms", settings=None) -> None:
         super().__init__(target_uri, settings=settings)
         self.traceview = tv.TraceView(display_time_unit=timescale, other_data=self.meta)
 
@@ -63,6 +66,9 @@ class JsonFileTraceExporter(AbstractTraceExporter):
     def export(self, data: list[tv.AbstractEventType]):
         for event in data:
             self.traceview.append_trace_event(event.json())
+
+    def export_meta(self, meta_data):
+        self.traceview.add_metadata(meta_data)
 
     # append a raw event (dictionary as is) to the traceview
     def export_raw(self, data: dict):
@@ -80,7 +86,7 @@ class ProtobufTraceExporter(AbstractTraceExporter):
     '''
     TBD: Placeholder for potential future export as protobuf format for perfetto
     '''
-    def __init__(self, target_uri, settings={}) -> None:
+    def __init__(self, target_uri, settings=None) -> None:
         super().__init__(target_uri, settings)
         # TODO: open channel to trace processing
 
@@ -92,13 +98,13 @@ class ProtobufTraceExporter(AbstractTraceExporter):
 
 
 class TensorBoardFileTraceExporter(JsonFileTraceExporter):
-    def __init__(self, target_uri, timescale="ms", settings={}) -> None:
+    def __init__(self, target_uri, timescale="ms", settings=None) -> None:
         super().__init__(target_uri, timescale=timescale, settings=settings)
         self.timescale = "ms"
         self.default_extension = '.pt.trace.json'
         self.rank_cnt = 0
         self.traceview_by_rank = dict()
-        self.save_to_file = settings["save_to_file"] if "save_to_file" in settings else True
+        self.save_to_file = settings["save_to_file"] if settings is not None and "save_to_file" in settings else True
 
     # Save events into different files based on ID
     def _parse_events_by_id(self) -> None:

@@ -151,6 +151,7 @@ class Acelyzer:
             else:
                 self.exporter = output.ProtobufTraceExporter(target_uri=self.args.output,
                                                              settings=vars(self.args))
+        self.exporter.export_meta(importer.get_passthrough_meta())
 
         self.register_processing_functions(process, self.args, self.exporter)
 
