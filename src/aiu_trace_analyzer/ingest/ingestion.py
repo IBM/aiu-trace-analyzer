@@ -510,6 +510,6 @@ class MultifileIngest(AbstractTraceIngest):
                 continue
             subdir, fpat = '/'.join(expanded.split('/')[:-1]), expanded.split('/')[-1]
             aiulog.log(aiulog.DEBUG, "Opening path:", pathlib.Path(subdir), "Pattern:", fpat)
-            flist += [f'{x}' for x in list(pathlib.Path(subdir).rglob(fpat))]
-        aiulog.log(aiulog.INFO, "Reading files:", fpat_list)
+            flist += [f'{x}' for x in list(pathlib.Path(subdir).glob(fpat))]
+        aiulog.log(aiulog.INFO, "Reading files:", flist)
         return flist
