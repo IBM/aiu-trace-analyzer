@@ -31,17 +31,22 @@ class RCUTableFingerprint():
         self.reset()
 
     def get(self) -> int:
-        return hash(self.fprint_data)
+        return self.hash
 
     def add(self, data: str) -> None:
         if self.datalimit > self.dataitems:
             aiulog.log(aiulog.DEBUG, f"adding to FP: {data}, Hash: {hash(data)}")
             self.fprint_data += data
             self.dataitems += 1
+            self._update_hash()
+
+    def _update_hash(self) -> None:
+        self.hash = hash(self.fprint_data)
 
     def reset(self) -> None:
         self.fprint_data = self.initial_data
         self.dataitems = 0
+        self._update_hash()
 
 
 class RCUUtilizationContext(AbstractContext, PipelineContextTool):
