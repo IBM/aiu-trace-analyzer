@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aiu_trace_analyzer"
-version = "1.0.0"
+dynamic = ["version"]
 authors = [
     { name="Lars Schneidenbach et. al" },
 ]
@@ -39,3 +39,6 @@ packages = {find = {where = ["src"]}}
 
 [tool.setuptools.package-data]
 aiu_trace_analyzer = ["profiles/*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "aiu_trace_analyzer.__version__"}
