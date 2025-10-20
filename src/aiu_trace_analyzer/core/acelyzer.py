@@ -14,7 +14,7 @@ import aiu_trace_analyzer.ingest.ingestion as ingest
 import aiu_trace_analyzer.export.exporter as output
 import aiu_trace_analyzer.logger as aiulog
 import aiu_trace_analyzer.pipeline as event_pipe
-
+from aiu_trace_analyzer import __version__
 
 class Acelyzer:
 
@@ -104,6 +104,10 @@ class Acelyzer:
         self.args = self.parse_inputs(in_args)
 
         try:
+            if self.args.version is True:
+                print(__version__)
+                sys.exit(0)
+
             if not self._args_sanity_check(self.args):
                 sys.exit(1)
         except Exception as e:
@@ -165,6 +169,7 @@ class Acelyzer:
     def parse_inputs(self, args=None):
         # to include default value in --help output
         parser = argparse.ArgumentParser(prog="acelyzer", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        required_group = parser.add_mutually_exclusive_group(required=True)
         parser.add_argument("-C", "--counter", type=str, nargs='*', default=self.defaults["counter"],
                             choices=["power_ts4", "power_ts3", "coll_bw", "bandwidth", "prep_queue", "rcu_util"],
                             help="Space-separated list of counters to extract/display."
@@ -194,7 +199,7 @@ class Acelyzer:
         parser.add_argument("--freq_scaling", type=float, default=self.defaults["ideal_scale_factor"],
                             help="(oblolete by --freq)")
 
-        parser.add_argument("-i", "--input", type=str, required=True,
+        required_group.add_argument("-i", "--input", type=str,
                             help="Comma-separated list of input files. Or file pattern (requires quotes)")
 
         parser.add_argument("-I", "--intermediate", dest='intermediate', action='store_true',
@@ -281,6 +286,10 @@ class Acelyzer:
         parser.add_argument("--ignore_crit", action="store_true",
                             default=False,
                             help="Attempt to force through errors without breaking and just print error msgs instead.")
+
+        required_group.add_argument("--version", action="store_true",
+                            default=False,
+                            help="Print version and exit.")
 
         parsed_args = parser.parse_args(args)
         if parsed_args.output is None:
