@@ -244,7 +244,6 @@ class TSSequenceContext(EventPairDetectionContext):
             aiulog.log(aiulog.ERROR, "Events out of order:", self.queues[queue_id], ">", event['ts'])
 
         if self.queues[queue_id][0] == event['ts'] and 'dur' in event:
-            if event['ts'] == 143970612760.608: breakpoint()
             if self.queues[queue_id][1] < event['dur']:
                 aiulog.log(aiulog.ERROR, "Secondary key (dur) out of order",
                            self.queues[queue_id], "vs.", event['ts'], event['dur'])
