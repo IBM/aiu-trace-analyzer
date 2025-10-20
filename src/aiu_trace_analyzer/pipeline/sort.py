@@ -6,11 +6,14 @@ from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionConte
 
 
 class EventSortingContext(EventPairDetectionContext):
-    def __init__(self, event_types=None, sortkey="ts", global_sort=False) -> None:
+    def __init__(self,
+                 event_types=None,
+                 sortkey: str = "ts",
+                 global_sort: bool = False) -> None:
         super().__init__()
 
         self.event_types = event_types
-        self.sortkey = sortkey
+        self.sortkey: list[tuple[str, int]] = self._parse_sortkey(sortkey)
         self.global_sort = global_sort
         self.lastidx = {}
 
@@ -20,8 +23,25 @@ class EventSortingContext(EventPairDetectionContext):
         else:
             return super().queue_hash(pid, tid)
 
+    def _parse_sortkey(self, sortkey: str) -> list[tuple[str, int]]:
+        keys = sortkey.split(',')
+        sortkeys: list[tuple[str, int]] = []
+        for k in keys:
+            key = k.split(':')
+            reverse = 1
+            if len(key) > 1 and key[1] == 'r':
+                reverse = -1
+            sortkeys.append((key[0], reverse))
+        return sortkeys
+
+    def _check_keys(self, event: TraceEvent) -> bool:
+        for k, _ in self.sortkey:
+            if k not in event:
+                return False
+        return True
+
     def sort(self, event: TraceEvent):
-        if ((self.event_types is not None) and (event["ph"] not in self.event_types)) or (self.sortkey not in event):
+        if ((self.event_types is not None) and (event["ph"] not in self.event_types)) or not self._check_keys(event):
             return [event]
 
         tid = event["tid"] if "tid" in event else 0
@@ -36,7 +56,7 @@ class EventSortingContext(EventPairDetectionContext):
     def drain(self):
         drained_events = []
         for _, q in self.queues.items():
-            q.sort(key=lambda x: x[self.sortkey])
+            q.sort(key=lambda x: tuple([float(rev) * float(x[k]) for k, rev in self.sortkey]))
         while len(self.queues.keys()) > 0:
             queue_id = list(self.queues.keys())[0]
             drained_events += self.queues.pop(queue_id)

@@ -128,7 +128,7 @@ class MpCalcBwContext(AbstractHashQueueContext):
             e = self.all_events.pop()
             revents += [e]
 
-        revents.sort(key=lambda x: x["ts"])
+#        revents.sort(key=lambda x: x["ts"])
         return revents
 
 

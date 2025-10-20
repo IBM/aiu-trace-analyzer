@@ -62,7 +62,7 @@ class OverlapDetectionContext(EventPairDetectionContext):
         assert current_ts <= event["ts"]  # make sure ts is monotonic increasing
 
         event_ts = event["ts"]
-        event_end = event["ts"] + event["dur"]
+        event_end = round(event["ts"] + event["dur"], 4)
 
         aiulog.log(aiulog.TRACE, "POD queue before: ", queue_id, "from", event["pid"], tid, self.queues[queue_id])
         assert (blocked and len(end_ts) > 0) or (not blocked and len(end_ts) == 0)
@@ -238,12 +238,18 @@ class TSSequenceContext(EventPairDetectionContext):
             queue_id = self.queue_hash(event["pid"], event["tid"])
 
         if queue_id not in self.queues:
-            self.queues[queue_id] = 0.0
+            self.queues[queue_id] = (0.0, 1e99)
 
-        if self.queues[queue_id] > event['ts']:
+        if self.queues[queue_id][0] > event['ts']:
             aiulog.log(aiulog.ERROR, "Events out of order:", self.queues[queue_id], ">", event['ts'])
 
-        self.queues[queue_id] = event['ts']
+        if self.queues[queue_id][0] == event['ts'] and 'dur' in event:
+            if event['ts'] == 143970612760.608: breakpoint()
+            if self.queues[queue_id][1] < event['dur']:
+                aiulog.log(aiulog.ERROR, "Secondary key (dur) out of order",
+                           self.queues[queue_id], "vs.", event['ts'], event['dur'])
+
+        self.queues[queue_id] = (event['ts'], event['dur'])
 
     def ts3insert(self, event: TraceEvent, queue_id=None):
         if "Cmpt Exec" not in event["name"]:
