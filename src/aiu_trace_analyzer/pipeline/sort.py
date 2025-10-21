@@ -35,10 +35,9 @@ class EventSortingContext(EventPairDetectionContext):
         return sortkeys
 
     def _check_keys(self, event: TraceEvent) -> bool:
-        for k, _ in self.sortkey:
-            if k not in event:
-                return False
-        return True
+        # check for primary key only, any missing secondary keys will be considered zero
+        k, _ = self.sortkey[0]
+        return k in event
 
     def sort(self, event: TraceEvent):
         if ((self.event_types is not None) and (event["ph"] not in self.event_types)) or not self._check_keys(event):
@@ -56,7 +55,7 @@ class EventSortingContext(EventPairDetectionContext):
     def drain(self):
         drained_events = []
         for _, q in self.queues.items():
-            q.sort(key=lambda x: tuple([float(rev) * float(x[k]) for k, rev in self.sortkey]))
+            q.sort(key=lambda x: tuple([float(rev) * float(x[k] if k in x else 0.0) for k, rev in self.sortkey]))
         while len(self.queues.keys()) > 0:
             queue_id = list(self.queues.keys())[0]
             drained_events += self.queues.pop(queue_id)

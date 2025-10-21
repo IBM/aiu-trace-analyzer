@@ -440,7 +440,7 @@ class Acelyzer:
         ##############################################################
         # modifying/detecting things across groups of events (e.g. overlapping, sorting)
         # register pre-processing: resolve overlap conflicts caused by partially overlapping slices
-        ts_sorting_ctx = event_pipe.EventSortingContext(event_types=["X"], sortkey="ts,dur:r")
+        ts_sorting_ctx = event_pipe.EventSortingContext(event_types=None, sortkey="ts,dur:r")
         process.register_stage(callback=event_pipe.sort_events, context=ts_sorting_ctx)
 
         # check whether the inflow into overlap detection has monotonic increasing ts (per pid/tid stream)
@@ -519,7 +519,7 @@ class Acelyzer:
 
         # register callback to to the power counter sorting
         # create an event sorter for X-events with a global order across ranks required for flow detection
-        sorting_flow_ctx = event_pipe.EventSortingContext(event_types=["X"], sortkey="ts,dur:r", global_sort=True)
+        sorting_flow_ctx = event_pipe.EventSortingContext(event_types=None, sortkey="ts,dur:r", global_sort=True)
         process.register_stage(callback=event_pipe.sort_events, context=sorting_flow_ctx)
 
         if args.flow:
@@ -578,7 +578,7 @@ class Acelyzer:
                     stat_metrics=self.defaults["stats_v2"])
                 process.register_stage(callback=event_pipe.calculate_stats_v2, context=data_stats_compute_ctx)
 
-        final_sort_ctx = event_pipe.EventSortingContext(event_types=["X"], sortkey="ts,dur:r", global_sort=True)
+        final_sort_ctx = event_pipe.EventSortingContext(event_types=None, sortkey="ts,dur:r", global_sort=True)
         process.register_stage(callback=event_pipe.sort_events, context=final_sort_ctx)
 
         # <<< END Event processing functions registration
