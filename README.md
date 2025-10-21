@@ -6,11 +6,11 @@ You might consider creating a conda or other python venv with some recent versio
 There are two ways to get started:
 
 1) Use `pip` to install into your Python environment:
-   * For regular direct use from the repo:
+   * To get a released version from PyPI:
       ```
-      pip install --editable .
+      pip install aiu-trace-analyzer
       ```
-   * For developer use:
+   * For direct use from the repo or developer use:
       ```
       pip install --editable .
       ```
