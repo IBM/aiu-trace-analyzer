@@ -439,6 +439,12 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         #         print(f"Job: {n} -> {t.get()}, {t.fprint_data[:50]}")
         return super().drain()
 
+    def generate_fprint_jobhash(self, event: TraceEvent) -> int:
+        jobhash = event["args"]["jobhash"]
+        if "correlation" in event["args"]:
+            jobhash += event["args"]["correlation"]
+        return jobhash
+
 
 def compute_utilization_fingerprints(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
     if event["ph"] != "X":
@@ -449,7 +455,7 @@ def compute_utilization_fingerprints(event: TraceEvent, context: AbstractContext
     if PipelineContextTool.is_acc_event(event) and PipelineContextTool.is_acc_kernel(event):
         kernel_name = context.extract_kernel_from_event_name(event)
 
-        context.fingerprint_add(event["args"]["jobhash"], kernel_name)
+        context.fingerprint_add(context.generate_fprint_jobhash(event), kernel_name)
     return [event]
 
 
@@ -464,7 +470,8 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
         kernel_name = context.extract_kernel_from_event_name(event)
 
         try:
-            job_fingerprint = context.fingerprint_get(event["args"]["jobhash"])
+            jobhash = context.generate_fprint_jobhash(event)
+            job_fingerprint = context.fingerprint_get(jobhash)
         except KeyError:
             aiulog.log(aiulog.WARN, f"UTL: No matching fingerprint for job {event['args']['jobname']}."
                        " Unable to find a matching Ideal-cycles table.")
@@ -474,7 +481,7 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
             ideal_dur = float(context.get_ideal_dur(kernel_name, pid, job_fingerprint))
         except KeyError:
             aiulog.log(aiulog.DEBUG, f"UTL: No kernel table matching fingerprint {job_fingerprint}:"
-                       f" {context.fingerprints.keys()}/{context.fingerprints[event['args']['jobhash']].fprint_data} ")
+                       f" {context.fingerprints.keys()}/{context.fingerprints[jobhash].fprint_data} ")
             context.warn_nomatch += 1
             ideal_dur = 0.0
 
