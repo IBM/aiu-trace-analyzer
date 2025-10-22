@@ -4,6 +4,7 @@ import hashlib
 import json
 import copy
 import re
+from typing import Optional
 
 from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
 import aiu_trace_analyzer.logger as aiulog
@@ -161,3 +162,23 @@ class KernelDetailsDB:
         except KeyError:
             aiulog.log(aiulog.WARN, "APD: Found no data from previous run with autopilot=0.")
             return {}
+
+
+class FlexEventMapToTS(object):
+    def __init__(self):
+        self.map: dict[str, (str, str)] = {}
+        self.add("DmaI", ("TS1", "TS2"))
+        self.add("Cmpt Prep", ("TS2", "TS3"))
+        self.add("Cmpt Exec", ("TS3", "TS4"))
+        self.add("DmaO", ("TS4", "TS5"))
+
+    def add(self,
+            ev_str: str,
+            ts_entries: tuple[str, str]) -> None:
+        self.map[ev_str] = ts_entries
+
+    def __getitem__(self, event_name: str) -> Optional[tuple[str, str]]:
+        for k, v in self.map.items():
+            if k in event_name:
+                return v
+        return None
