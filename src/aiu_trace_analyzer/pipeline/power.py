@@ -116,13 +116,13 @@ class PowerExtractionContext(AbstractHashQueueContext):
             new_val = round((new_val / (this[TS_CYCLE_KEY] - prev[TS_CYCLE_KEY])), 3)
 
         elif self.power_ts == 4:
-            dt_in_ns = (this[TS_CYCLE_KEY] - prev[TS_CYCLE_KEY]) * 1000  # nano-second
+            dt_in_us = (this[TS_CYCLE_KEY] - prev[TS_CYCLE_KEY])  # micro-second
             # Least significant bit for the Analog-2-Digital Converter (LSB=1/512 from snt_dpm_dcr: Register-ro)
-            LSB_on_ADC = 5.37 / 512
+            LSB_on_ADC = 1 / 512
             voltage = 12            # volt/s
 
             # dcharge is sum(current), has to be in nano-Ampere to get Power in Watts
-            new_val = voltage * new_val * LSB_on_ADC / dt_in_ns
+            new_val = voltage * new_val * LSB_on_ADC / dt_in_us
             if new_val > 100:
                 aiulog.log(aiulog.DEBUG, "POWER: BAD event a,b: ", new_val, prev, this)
                 self.bad_events += 1
