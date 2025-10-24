@@ -180,6 +180,17 @@ If acelyzer detects a consistent effective frequency for events, it will provide
 ```
 <timestamp>  WARNING  FREQ: Recommendation: to minimize event time drift (max: -333833us) between CPU and Accelerator, use: --freq=899.577
 ```
+This suggestion will only appear for drift between jobs and thus requires at least 2 jobs at the input.
+
+An additional set of frequency statistics computes min/mean/max observed frequencies based on individual event duration and event intervals between subsequent compute events.  Therefore, it's working for single-job flex traces too.  The corresponding output looks like this:
+```
+<timestamp>  WARNING FREQ: Detected Event-duration-based frequency (min/mean/max): <x> <y> <z> ; rel_range=0.023, input_soc_freq/detected=2.08
+<timestamp>  WARNING FREQ: Detected Event-interval-based frequency (min/mean/max): <x> <y> <z> ; rel_range=0.012, input_soc_freq/detected=2.09
+```
+The `rel_range` number shows how narrow/wide the window of detected frequencies was.
+A narrow window indicates consistent trace data with well-calibrated cycle-to-clock conversion.
+The ratio of `input_soc_freq/detected` helps to determine whether the soc-freq setting on the cmdline was reasonably close to the reality of this trace.
+In best case, the relative range should be close to 0.0 and the input/detect-ratio is expected to be close to 1.0.
 
 Consequences when in use:
  * see [here](#understanding-and-troubleshooting-the-results) for various problems that can be caused or alleviated by this parameter
