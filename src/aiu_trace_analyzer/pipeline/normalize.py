@@ -57,7 +57,8 @@ class NormalizationContext(AbstractHashQueueContext):
     # tolerance before warning of frequency issue with trace or cmdline
     _FREQ_TOLERANCE = 0.1
 
-    def __init__(self, soc_frequency: float, ignore_crit: bool = False) -> None:
+    def __init__(self, soc_frequency: float, ignore_crit: bool = False,
+                 filterstr: str = "") -> None:
         super().__init__()
         self.soc_frequency = soc_frequency
         self.frequency_minmax = (1e99, 0.0, 0, 0.0, 0.0)
@@ -66,6 +67,7 @@ class NormalizationContext(AbstractHashQueueContext):
         self.ignore_crit = ignore_crit
         self.prev_event_data: dict[int, dict[str, EventStats]] = {}
         self.flex_name_ts_map = FlexEventMapToTS()
+        self.event_filter = self.extract_eventfilters(filterstr)
 
     def __del__(self) -> None:
         def _print_freq_minmax(key: str):
@@ -111,6 +113,30 @@ class NormalizationContext(AbstractHashQueueContext):
 
     def queue_hash(self, event: TraceEvent) -> int:
         return hash(event["pid"])
+
+    def extract_eventfilters(self, filterstr: str) -> dict[str, re.Pattern]:
+        event_filters: dict[str, re.Pattern] = {}
+        for fstr in filterstr.split(","):
+            key_regex = fstr.split(":")
+            if len(key_regex) != 2:
+                aiulog.log(aiulog.WARN, "FLTR: key:regex pattern not found in event filter. Skipping", fstr)
+                continue
+            event_filters[key_regex[0]] = re.compile(rf"{key_regex[1]}")
+        aiulog.log(aiulog.INFO, f"FLTR: Event filtering is active. {len(event_filters)} filters enabled.")
+        return event_filters
+
+    def event_filtered(self, event: TraceEvent) -> bool:
+        for attr, regex in self.event_filter.items():
+            attr_tree = attr.split('.')
+            e = event
+            for a in attr_tree:
+                if a not in e:
+                    break
+                e = e[a]
+
+            if not isinstance(e, dict) and regex.search(e) is not None:
+                return True
+        return False
 
     def get_overflow_count(self, qid, job: str, ts: float, cycle: int) -> tuple[float, float, float]:
         # potential start ts of epoch assuming cycle->wallclk mapping is correct
@@ -284,6 +310,10 @@ def normalize_phase1(event: TraceEvent, context: AbstractContext) -> list[TraceE
     event = _attr_to_args(event)
     event = _hex_to_int_str(event)
     event["name"] = _name_unification(event["name"])
+
+    if context.event_filtered(event):
+        return []
+
     event["args"]["jobname"] = _jobinfo.get_job(event["args"]["jobhash"])
     if "args" in event and "TS1" in event["args"]:
         event["args"] = context.tsx_32bit_local_correction(event)

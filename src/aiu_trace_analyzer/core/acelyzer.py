@@ -184,6 +184,11 @@ class Acelyzer:
         parser.add_argument("-D", "--loglevel", type=int, default=self.defaults["loglevel"],
                             choices=range(0, 5), help="Logging level 0(ERROR)..4(TRACE)")
 
+        parser.add_argument("--event_filter", type=str, default="",
+                            help="optional event filters based on attribute and regex."
+                            "Comma-separated list of <attribute>:<regex>."
+                            "Events matching any of the entries are dropped from the stream.")
+
         parser.add_argument("-F", "--filter", type=str, default=self.defaults["filter"],
                             help="List of event types to keep. E.g. 'C' to just keep counters.")
 
@@ -373,7 +378,8 @@ class Acelyzer:
         # frequency detection and per-job offset correction
         # and event manipulation/normalization in 2 phases
         normalize_ctx = event_pipe.NormalizationContext(soc_frequency=args.freq[0],
-                                                        ignore_crit=args.ignore_crit)
+                                                        ignore_crit=args.ignore_crit,
+                                                        filterstr=args.event_filter)
         frequency_align_ctx = event_pipe.FlexJobOffsetContext(soc_frequency=args.freq[0])
         process.register_stage(callback=event_pipe.normalize_phase1, context=normalize_ctx)
         if args.flex_ts_fix:
