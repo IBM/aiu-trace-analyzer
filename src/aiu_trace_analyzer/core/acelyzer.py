@@ -16,6 +16,7 @@ import aiu_trace_analyzer.logger as aiulog
 import aiu_trace_analyzer.pipeline as event_pipe
 from aiu_trace_analyzer import __version__
 
+
 class Acelyzer:
 
     defaults = {
@@ -200,7 +201,7 @@ class Acelyzer:
                             help="(oblolete by --freq)")
 
         required_group.add_argument("-i", "--input", type=str,
-                            help="Comma-separated list of input files. Or file pattern (requires quotes)")
+                                    help="Comma-separated list of input files. Or file pattern (requires quotes)")
 
         parser.add_argument("-I", "--intermediate", dest='intermediate', action='store_true',
                             default=self.defaults["intermediate"],
@@ -288,8 +289,8 @@ class Acelyzer:
                             help="Attempt to force through errors without breaking and just print error msgs instead.")
 
         required_group.add_argument("--version", action="store_true",
-                            default=False,
-                            help="Print version and exit.")
+                                    default=False,
+                                    help="Print version and exit.")
 
         parsed_args = parser.parse_args(args)
         if parsed_args.output is None:

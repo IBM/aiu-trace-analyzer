@@ -8,9 +8,54 @@ import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.hashqueue import AbstractHashQueueContext
 from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
+from aiu_trace_analyzer.pipeline.tools import FlexEventMapToTS
+
+
+class EventStats(object):
+    def __init__(self,
+                 cycles: tuple[int, int] = (0, 0),
+                 ts_dur: tuple[float, float] = (0.0, 0.0)):
+        self.cycle_start, self.cycle_end = cycles
+        self.ts, self.dur = ts_dur
+
+        self.freq_mean = 0.0
+        self.freq_min = 1.0e99
+        self.freq_max = 0.0
+        self.count = 0
+
+    def get_end_ts(self) -> float:
+        return self.ts + self.dur
+
+    def get_start_ts(self) -> float:
+        return self.ts
+
+    def get_end_cycle(self) -> int:
+        return self.cycle_end
+
+    def get_start_cycle(self) -> int:
+        return self.cycle_start
+
+    def update(self,
+               cycles: tuple[int, int],
+               ts_dur: tuple[float, float],
+               freq: float):
+        self.cycle_start, self.cycle_end = cycles
+        self.ts, self.dur = ts_dur
+
+        self.freq_max = max(self.freq_max, freq)
+        self.freq_min = min(self.freq_min, freq)
+        self.count += 1
+        self.freq_mean = self.freq_mean + (freq - self.freq_mean) / float(self.count)
 
 
 class NormalizationContext(AbstractHashQueueContext):
+
+    # dictionary keys to be used for 2 different freq-detection stats
+    _DURATION_KEY = "duration"
+    _INTERVAL_KEY = "interval"
+
+    # tolerance before warning of frequency issue with trace or cmdline
+    _FREQ_TOLERANCE = 0.1
 
     def __init__(self, soc_frequency: float, ignore_crit: bool = False) -> None:
         super().__init__()
@@ -19,21 +64,50 @@ class NormalizationContext(AbstractHashQueueContext):
         self.OVERFLOW_TIME_SPAN_US = float(1 << 32) / self.soc_frequency
         self.OVERFLOW_TIME_TOLERANCE = self.OVERFLOW_TIME_SPAN_US * 0.05  # allow for some tolerance
         self.ignore_crit = ignore_crit
+        self.prev_event_data: dict[int, dict[str, EventStats]] = {}
+        self.flex_name_ts_map = FlexEventMapToTS()
 
     def __del__(self) -> None:
+        def _print_freq_minmax(key: str):
+            freq_min = 1e99
+            freq_max = freq_mean = 0.0
+            for c, ev_stats in enumerate(self.prev_event_data.values()):
+                freq_min = min(freq_min, ev_stats[key].freq_min)
+                freq_max = max(freq_max, ev_stats[key].freq_max)
+                freq_mean = freq_mean + (ev_stats[key].freq_mean - freq_mean) / float(c + 1)
+
+            if math.isclose(freq_mean, 0.0, abs_tol=1e-9):
+                # if there was no event with hw clock timestamps and thus no frequency can be computed
+                return
+
+            rel_range = round((freq_max - freq_min) / freq_mean, 3)
+            inp_diff = round(self.soc_frequency / freq_mean, 3)
+            if rel_range > self._FREQ_TOLERANCE or abs(1.0 - inp_diff) > self._FREQ_TOLERANCE:
+                loglevel = aiulog.WARN
+            else:
+                loglevel = aiulog.INFO
+
+            aiulog.log(loglevel,
+                       f"FREQ: Detected Event-{key}-based frequency (min/mean/max):",
+                       round(freq_min, 2), round(freq_mean, 2), round(freq_max, 2),
+                       f"; rel_range={rel_range}, input_soc_freq/detected={inp_diff}"
+                       )
+
         mi, ma, _, mean, madr = self.frequency_minmax
-        if math.isclose(mean, 0.0, abs_tol=1e-9):
-            return
-        if ma-mi > mean * 0.2:
-            aiulog.log(aiulog.WARN,
-                       "FREQ: Min/Max of detected correct frequency is >20% of mean"
-                       f" ({round(mi, 3)},{round(ma, 3)})."
-                       " This indicates some events might have been assigned to the wrong TSx epoch.")
-        elif abs(mean - self.soc_frequency) > 0.1:
-            aiulog.log(aiulog.WARN,
-                       "FREQ: Recommendation: to minimize event time drift"
-                       f" (max: {madr}us) between CPU and Accelerator, use:"
-                       f" --freq={round(mean, 3)}")
+        if not math.isclose(mean, 0.0, abs_tol=1e-9):
+            if ma-mi > mean * 0.2:
+                aiulog.log(aiulog.WARN,
+                           "FREQ: Min/Max of detected correct frequency is >20% of mean"
+                           f" ({round(mi, 3)},{round(ma, 3)})."
+                           " This indicates some events might have been assigned to the wrong TSx epoch.")
+            elif abs(mean - self.soc_frequency) > self._FREQ_TOLERANCE:
+                aiulog.log(aiulog.WARN,
+                           "FREQ: Recommendation: to minimize event time drift"
+                           f" (max: {madr}us) between CPU and Accelerator, use:"
+                           f" --freq={round(mean, 3)}")
+
+        _print_freq_minmax(self._DURATION_KEY)
+        _print_freq_minmax(self._INTERVAL_KEY)
 
     def queue_hash(self, event: TraceEvent) -> int:
         return hash(event["pid"])
@@ -96,6 +170,40 @@ class NormalizationContext(AbstractHashQueueContext):
                 aiulog.log(aiulog.WARN,
                            "OVC: Detected event with long duration and"
                            " thus potential undetected overflow in TSx counter.")
+
+            if "Cmpt Exec" not in event["name"]:
+                return args
+
+            # compute anticipated frequency based on duration
+            qid = self.queue_hash(event)
+            if qid not in self.prev_event_data:
+                self.prev_event_data[qid] = {
+                    self._DURATION_KEY: EventStats(),
+                    self._INTERVAL_KEY: EventStats()}
+
+            ts_a, ts_b = self.flex_name_ts_map[event["name"]]
+            dur_cycles = int(event["args"][ts_b]) - int(event["args"][ts_a])
+            dur_freq = float(dur_cycles) / event["dur"]
+            aiulog.log(aiulog.TRACE,
+                       f"{event['args'][ts_a]:10} {event['args'][ts_b]:10} {dur_cycles:10}"
+                       f" {event['dur']:15} {dur_freq:12.3f} |{event['name']}")
+            self.prev_event_data[qid][self._DURATION_KEY].update(
+                (int(event["args"][ts_a]), int(event["args"][ts_b])),
+                (event["ts"], event["dur"]),
+                dur_freq)
+
+            # compute anticipated frequency based on event interval to previous event
+            if self.prev_event_data[qid][self._INTERVAL_KEY].count > 0:
+                gap_cycles = int(event["args"][ts_a]) - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_cycle()
+                gap_time = event["ts"] - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_ts()
+                gap_freq = float(gap_cycles) / gap_time
+            else:
+                gap_freq = dur_freq
+            self.prev_event_data[qid][self._INTERVAL_KEY].update(
+                (int(event["args"][ts_a]), int(event["args"][ts_b])),
+                (event["ts"], event["dur"]),
+                gap_freq)
+
             return args
         return event["args"]
 
