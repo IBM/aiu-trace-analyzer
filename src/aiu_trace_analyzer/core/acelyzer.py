@@ -169,7 +169,7 @@ class Acelyzer:
 
     def parse_inputs(self, args=None):
         # to include default value in --help output
-        parser = argparse.ArgumentParser(prog="acelyzer", formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        parser = argparse.ArgumentParser(prog="acelyzer", formatter_class=argparse.RawTextHelpFormatter)
         required_group = parser.add_mutually_exclusive_group(required=True)
         parser.add_argument("-C", "--counter", type=str, nargs='*', default=self.defaults["counter"],
                             choices=["power_ts4", "power_ts3", "coll_bw", "bandwidth", "prep_queue", "rcu_util"],
@@ -185,9 +185,12 @@ class Acelyzer:
                             choices=range(0, 5), help="Logging level 0(ERROR)..4(TRACE)")
 
         parser.add_argument("--event_filter", type=str, default="",
-                            help="optional event filters based on attribute and regex."
-                            "Comma-separated list of <attribute>:<regex>."
-                            "Events matching any of the entries are dropped from the stream.")
+                            help="optional event filters based on attribute and regex. "
+                            "Comma-separated list of <attribute>:<regex>. "
+                            "Events matching any of the entries are dropped from the stream.\n"
+                            "Example:\n   acelyzer ... --event_filter='name:XYZ$','args.Type:^XYZ$'...\n"
+                            "drops events if event[name] ends in XYZ or event[args][Type]=='XYZ'",
+                            )
 
         parser.add_argument("-F", "--filter", type=str, default=self.defaults["filter"],
                             help="List of event types to keep. E.g. 'C' to just keep counters.")
