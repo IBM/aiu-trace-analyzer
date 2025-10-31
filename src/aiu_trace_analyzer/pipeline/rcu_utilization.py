@@ -138,99 +138,123 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         self.categories = {}
         self.kernel_cat_map = {"other": "other"}
 
+    def _finish_add_table(self, fprint: RCUTableFingerprint, table: dict[str, int]) -> dict[str, int]:
+        if fprint.get() in self.kernel_cycles:
+            aiulog.log(aiulog.ERROR, "UTL: Fingerprint of current table already exists in previous table.")
+            raise NotImplementedError("UTL: Fingerprint of current table already exists in previous table."
+                                      " Support for same-sequence utilisation is not yet implemented."
+                                      " You may want to send us this sample to help enabling this feature.")
+        else:
+            aiulog.log(aiulog.INFO, f"UTL: Adding ideal cycles table with fingerprint: {fprint.get()}")
+            aiulog.log(aiulog.DEBUG, f"UTL:    TablefprintStr: {fprint.fprint_data}")
+        return copy.deepcopy(table)
+
+    def _handle_category(self, kernel_and_cat) -> str:
+        if len(kernel_and_cat) > 1:
+            if kernel_and_cat[1] == "-opCat":
+                return kernel_and_cat[-1]
+            else:
+                return "NotAvailable"
+        else:
+            return "Total"
+
+    def _process_table_line(self,
+                            line: str,
+                            fprint: RCUTableFingerprint,
+                            parse_mode: bool,
+                            current_table: dict[str, int]) -> tuple[
+                                bool,
+                                bool,
+                                dict[str, int],
+                                RCUTableFingerprint]:
+
+        # drop out if autopilot=1 is detected
+        if self._autopilot_pattern.search(line):
+            self.autopilot = True
+            return False, parse_mode, current_table, fprint
+
+        if self._clock_scaling.search(line):
+            aiulog.log(aiulog.WARN,
+                       "UTL: Found obsolete 'Ideal Cycle Scaling' setting in logfile."
+                       " This setting is ignored. Use '--freq=<soc>:<core>'.")
+            return True, parse_mode, current_table, fprint
+
+        if self._start_pattern.search(line):
+            self.multi_table += 1
+            current_table = {}
+            fprint.reset()
+            parse_mode = True
+            aiulog.log(aiulog.DEBUG,
+                       "UTL: Start of Ideal Cycle Count section detected. Parse mode:",
+                       parse_mode, self.multi_table)
+            return True, parse_mode, current_table, fprint
+
+        # don't bother checking for the end_pattern if we're not even in parse mode
+        if not parse_mode:
+            return True, parse_mode, current_table, fprint
+
+        if self._end_pattern.search(line):
+            aiulog.log(aiulog.DEBUG, "UTL: End of Ideal Cycle Count section detected. Stopping parse mode.")
+            parse_mode = False
+            self.kernel_cycles[fprint.get()] = self._finish_add_table(fprint, current_table)
+            return True, parse_mode, current_table, fprint
+
+        # This will needs to be the last regex check because it skips everything else
+        if not self._data_pattern.search(line) or self._ignore_pattern.search(line):
+            return True, parse_mode, current_table, fprint
+
+        ldata = re.split(" +", line)
+        if len(ldata) < 2 or len(ldata) > 3:  # strange format includes newline as a 3rd column
+            aiulog.log(
+                aiulog.WARN,
+                "UTL: found data pattern line with more than 2 columns. Check patterns.",
+                ldata)
+            return True, parse_mode, current_table, fprint
+
+        cycles = int(ldata[1])
+        kernel_and_cat = self._category_splitter.split(ldata[0])
+        category = self._handle_category(kernel_and_cat)
+
+        # Skip anything that's not a kernel name
+        if kernel_and_cat[0] in self._non_kernel_names:
+            return True, parse_mode, current_table, fprint
+
+        kernel = kernel_and_cat[0]+" Cmpt Exec"
+        fprint.add(kernel)
+
+        if kernel not in current_table:
+            aiulog.log(aiulog.TRACE, "UTL: Kernel:", kernel)
+            if cycles != 0:
+                current_table[kernel] = cycles
+        elif cycles != current_table[kernel]:
+            aiulog.log(aiulog.WARN,
+                       "UTL: Kernel already has an entry with different cycle count:",
+                       kernel, cycles, current_table[kernel])
+
+        if kernel not in self.kernel_cat_map:
+            self.kernel_cat_map[kernel] = category
+        elif category != self.kernel_cat_map[kernel]:
+            aiulog.log(aiulog.WARN,
+                       "UTL: Kernel->Category map already has an entry with different category:",
+                       kernel, category, self.kernel_cat_map[kernel])
+        return True, parse_mode, current_table, fprint
+
     def extract_tables(self, compiler_log: str):
+
         parse_mode = False
         self.multi_table = -1  # track if there might be multiple tables in the log (force to use the first one only)
         current_table = {}
         fprint = RCUTableFingerprint(_default_fprint_len)  # use the first N kernels as a fingerprint
         with open(compiler_log, 'r') as cl:
             for line in cl:
-                # drop out if autopilot=1 is detected
-                if self._autopilot_pattern.search(line):
-                    self.autopilot = True
-                    return
-
-                if self._clock_scaling.search(line):
-                    aiulog.log(aiulog.WARN,
-                               "UTL: Found obsolete 'Ideal Cycle Scaling' setting in logfile."
-                               " This setting is ignored. Use '--freq=<soc>:<core>'.")
-                    continue
-
-                if self._start_pattern.search(line):
-                    self.multi_table += 1
-                    current_table = {}
-                    fprint.reset()
-                    parse_mode = True
-                    aiulog.log(aiulog.DEBUG,
-                               "UTL: Start of Ideal Cycle Count section detected. Parse mode:",
-                               parse_mode, self.multi_table)
-                    continue
-
-                # don't bother checking for the end_pattern if we're not even in parse mode
-                if not parse_mode:
-                    continue
-
-                if self._end_pattern.search(line):
-                    aiulog.log(aiulog.DEBUG, "UTL: End of Ideal Cycle Count section detected. Stopping parse mode.")
-                    parse_mode = False
-                    if fprint.get() in self.kernel_cycles:
-                        aiulog.log(aiulog.ERROR, "UTL: Fingerprint of current table already exists in previous table.")
-                        raise NotImplementedError("UTL: Fingerprint of current table already exists in previous table."
-                                                  " Support for same-sequence utilisation is not yet implemented."
-                                                  " You may want to send us this sample to help enabling this feature.")
-                    else:
-                        aiulog.log(aiulog.INFO, f"UTL: Adding ideal cycles table with fingerprint: {fprint.get()}")
-                        aiulog.log(aiulog.DEBUG, f"UTL:    TablefprintStr: {fprint.fprint_data}")
-                        self.kernel_cycles[fprint.get()] = copy.deepcopy(current_table)
-                    continue
-
-                # This will needs to be the last regex check because it skips everything else
-                if not self._data_pattern.search(line) or self._ignore_pattern.search(line):
-                    continue
-
-                ldata = re.split(" +", line)
-                if len(ldata) < 2 or len(ldata) > 3:  # strange format includes newline as a 3rd column
-                    aiulog.log(aiulog.WARN,
-                               "UTL: found data pattern line with more than 2 columns. Check patterns.",
-                               ldata)
-                    continue
-
-                cycles = int(ldata[1])
-                kernel_and_cat = self._category_splitter.split(ldata[0])
-                if len(kernel_and_cat) > 1:
-                    if kernel_and_cat[1] == "-opCat":
-                        category = kernel_and_cat[-1]
-                    else:
-                        category = "NotAvailable"
-                else:
-                    category = "Total"
-
-                # Skip anything that's not a kernel name
-                if kernel_and_cat[0] in self._non_kernel_names:
-                    continue
-
-                kernel = kernel_and_cat[0]+" Cmpt Exec"
-                fprint.add(kernel)
-
-                if kernel not in current_table:
-                    aiulog.log(aiulog.TRACE, "UTL: Kernel:", kernel)
-                    if cycles != 0:
-                        current_table[kernel] = cycles
-                elif cycles != current_table[kernel]:
-                    aiulog.log(aiulog.WARN,
-                               "UTL: Kernel already has an entry with different cycle count:",
-                               kernel, cycles, current_table[kernel])
-                else:
-                    pass  # found the same kernel name associated with the same ideal cycles: still consistent to go
-
-                if kernel not in self.kernel_cat_map:
-                    self.kernel_cat_map[kernel] = category
-                elif category != self.kernel_cat_map[kernel]:
-                    aiulog.log(aiulog.WARN,
-                               "UTL: Kernel->Category map already has an entry with different category:",
-                               kernel, category, self.kernel_cat_map[kernel])
-                else:
-                    pass  # found the same kernel name associated with the same category: still consistent to go
+                (
+                    keep_parsing,
+                    parse_mode,
+                    current_table,
+                    fprint
+                ) = self._process_table_line(line, fprint, parse_mode, current_table)
+                if not keep_parsing:
+                    break
 
     def print_table_as_pd(self, cat_tab):
         """
