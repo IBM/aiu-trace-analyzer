@@ -7,7 +7,13 @@ import math
 from copy import deepcopy
 
 import aiu_trace_analyzer.logger as aiulog
-from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, InputDialect, InputDialectFLEX, InputDialectTORCH
+from aiu_trace_analyzer.types import (
+    TraceEvent,
+    TraceWarning,
+    GlobalIngestData,
+    InputDialect,
+    InputDialectFLEX,
+    InputDialectTORCH)
 
 
 class AbstractTraceIngest:
@@ -40,16 +46,21 @@ class AbstractTraceIngest:
         self.ts_offset = None
         self.rank_pid = -1
         self.show_warnings = show_warnings
-        self.warnings = {}
+        self.warnings: dict[str, TraceWarning] = {
+            "zero_duration": TraceWarning(
+                name="zero_duration",
+                text="detected 'CompleteEvent' type (ph=X) of zero duration."
+                     "This should be an 'InstantEvent' type (ph=i). Events skipped: {d[count]}",
+                data={"count": 0}),
+            "negative_duration": TraceWarning(
+                name="negative_duration",
+                text="Ingestion: detected negative duration event(s). Events ignored:{d[count]}",
+                data={"count": 0})
+        }
         self._initialized = False
         self.other_metadata = {}
         self.jobhash = jobdata.add_job_info(source_uri, data_dialect)
         assert scale > 0.0, 'Scale parameter needs to be >0.0'
-
-    def __del__(self):
-        if hasattr(self, "show_warnings") and self.show_warnings:
-            for warnclass, warning in self.warnings.items():
-                aiulog.log(aiulog.WARN, self.source_uri, warnclass, self.WARN_MSG_MAP[warnclass], warning)
 
     def set_ts_offset(self, offset):
         self.ts_offset = offset
@@ -259,24 +270,19 @@ class JsonEventTraceIngest(AbstractTraceIngest):
             self.pending_close = False
 
             if open_event["dur"] < 0.0:
-                self.count_warning('negative_duration')
+                self.issue_warning('negative_duration')
                 return None
 
             if math.isclose(open_event["dur"], 0.0, abs_tol=1e-9):
-                self.count_warning('zero_duration')
+                self.issue_warning('zero_duration')
                 return None
 
-            # TODO commented out until time stamp issue is clarified
-            # assert  self.last_ts-self.ts_tolerance <= open_event["ts"], \
-            #    f"TimeStamp Sequence problem in {self.source_uri}"
             return open_event
         else:
             assert False, f'Expected to find E-event in {self.source_uri}. Found {event["ph"]}'
 
-    def count_warning(self, warn_class: str) -> None:
-        if warn_class not in self.warnings:
-            self.warnings[warn_class] = 0
-        self.warnings[warn_class] += 1
+    def issue_warning(self, warn_class: str) -> None:
+        self.warnings[warn_class].update()
 
     def __next__(self):
         event = self.build_complete_event()
