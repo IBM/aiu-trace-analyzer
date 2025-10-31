@@ -1,6 +1,7 @@
 # Copyright 2024-2025 IBM Corporation
 
-from aiu_trace_analyzer.types import TraceEvent
+import aiu_trace_analyzer.logger as aiulog
+from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 
 
 class AbstractContext:
@@ -22,15 +23,39 @@ class AbstractContext:
 
     TODO: Might have to be extended should the need arise to assign contexts to events or other components.
     '''
-    def __init__(self) -> None:
-        # intentionnaly left blank
-        pass
+    def __init__(self, warnings: list[TraceWarning] = None) -> None:
+        self.warnings: dict[str, TraceWarning] = {}
 
-    '''
-    If the context has any form of buffer, the processing loop drains those buffers using this function call.
-    drain() needs to do any necessary processing of the buffered events and return anything of value as
-    a list of events.
-    Events are drained following the sequence of registered processing functions.
-    '''
+        if warnings is not None:
+            for w in warnings:
+                self.add_warning(w)
+
+    def __del__(self) -> None:
+        self.print_warnings()
+
+    def print_warnings(self) -> None:
+        for _, w in self.warnings.items():
+            if w.has_warning():
+                aiulog.log(aiulog.WARN, w)
+
+    def add_warning(self, warning: TraceWarning):
+        self.warnings[warning.get_name()] = warning
+
+    def issue_warning(self, w_name: str, data: dict[str, any] = {}) -> int:
+        '''
+        this will use the default update_fn (int.__add__) for issued warnings
+        child classes need to reimplement their own if that's insufficient
+        '''
+        if len(data) == 0:
+            return self.warnings[w_name].update(data={"count": 1})
+        else:
+            return self.warnings[w_name].update(data)
+
     def drain(self) -> list[TraceEvent]:
+        '''
+        If the context has any form of buffer, the processing loop drains those buffers using this function call.
+        drain() needs to do any necessary processing of the buffered events and return anything of value as
+        a list of events.
+        Events are drained following the sequence of registered processing functions.
+        '''
         return []

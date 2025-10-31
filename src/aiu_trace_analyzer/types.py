@@ -1,6 +1,9 @@
 # Copyright 2024-2025 IBM Corporation
 
 from pathlib import Path
+import re
+
+import aiu_trace_analyzer.logger as aiulog
 
 
 # define TraceEvent to be a dictionary for consistency
@@ -172,3 +175,81 @@ class GlobalIngestData(object):
         except KeyError:
             print(f"no jobmap entry for {jobhash}.")
             raise
+
+
+class TraceWarning:
+    """
+    Keep track of warnings to allow accumulated warning at the end of a run
+    Usage:
+
+        w = TraceWarning(
+            name="MyWarning",
+            text="This stage has detected {d[count]} issues with max {d[max]}.",
+            data={"count": 0, "max": 0.0},
+            update_fn={"count": int.__add__, "max": max}
+        )
+
+        Whenever a warning should be added:
+            w.update({"count": 1, "max": 100.0})
+        this calls the preset update_fn for each item to update the values
+        if update_fn is e.g. int.__add__, then the new_val entry for count will be increased by 1
+
+        If the warning summary should be issued:
+        print(w)
+        -> this uses the __str__() method to assemble the text and should print
+        "This stage has detected 1 issues with max 100.0"
+    """
+
+    def __init__(self, name: str, text: str, data: dict[str, any], update_fn: dict[str, callable] = {}):
+        self.occurred = False
+        self.name = name
+        # format-string with {d[key]} placeholders
+        self.text: str = text
+        self.args_list: dict[str, any] = {k: v for k, v in data.items()}
+        self.update_fn: dict[str, callable] = {k: v for k, v in update_fn.items()}
+
+        text_keys = re.findall(r"{d\[([.\w]+)\]}", self.text)
+        if len(text_keys) != len(self.args_list):
+            raise ValueError(
+                "Number of args needs to match placeholders in format string."
+                " Make sure to use format {d[<key>]}")
+
+        # check keys of text and args overlap
+        for k in self.update_fn.keys():
+            if k not in text_keys:
+                raise KeyError(f"Update_fn key {k} not found in text pattern {text_keys}")
+            if k not in self.args_list:
+                raise KeyError(f"Update_fn key {k} not found in args {self.args_list}")
+        for k in text_keys:
+            if k not in self.args_list:
+                raise KeyError(f"Text key {k} not found in args {self.args_list}.")
+            if k not in self.update_fn:
+                aiulog.log(aiulog.DEBUG, f"Text key {k} not in update functions {self.update_fn}. Using default.")
+                self.update_fn[k] = int.__add__
+        for k in self.args_list.keys():
+            if k not in text_keys:
+                raise KeyError(f"Args key {k} not in text pattern {text_keys}.")
+            if k not in self.update_fn:
+                aiulog.log(aiulog.DEBUG, f"Args key {k} not in update functions {self.update_fn}. Using default.")
+                self.update_fn[k] = int.__add__
+
+    def get_name(self) -> str:
+        return self.name
+
+    def update(self,
+               data: dict[str, any] = {"count": 1}) -> int:
+        items_changed = 0
+        for k, v in data.items():
+            if k not in self.args_list:
+                raise KeyError(f"Requested args key {k} does not exist in exsting args: {self.args_list.keys()}")
+            self.args_list[k] = self.update_fn[k](self.args_list[k], v)
+            items_changed += 1
+
+        self.occurred |= (items_changed > 0)
+        return items_changed
+
+    def has_warning(self) -> bool:
+        return self.occurred
+
+    def __str__(self) -> str:
+        return self.text.format(d=self.args_list)

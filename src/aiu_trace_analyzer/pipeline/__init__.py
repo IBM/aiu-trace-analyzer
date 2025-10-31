@@ -16,6 +16,8 @@ Adding new functionality as follows:
   Simple example to get started could be TIDMappingContext and map_tid_to_range in tid_mapping.py
 '''
 
+from aiu_trace_analyzer.types import TraceWarning
+
 # Make available the abstract top-level context class
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.hashqueue import AbstractHashQueueContext
