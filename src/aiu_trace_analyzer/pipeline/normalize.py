@@ -116,6 +116,8 @@ class NormalizationContext(AbstractHashQueueContext):
 
     def extract_eventfilters(self, filterstr: str) -> dict[str, re.Pattern]:
         event_filters: dict[str, re.Pattern] = {}
+        if len(filterstr.strip()) == 0:
+            return event_filters
         for fstr in filterstr.split(","):
             key_regex = fstr.split(":")
             if len(key_regex) != 2:
