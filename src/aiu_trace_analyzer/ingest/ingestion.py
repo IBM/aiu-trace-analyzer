@@ -5,6 +5,7 @@ import re
 import pathlib  # for multifile patterns
 import math
 from copy import deepcopy
+from typing import Optional
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import (
@@ -235,12 +236,26 @@ class JsonEventTraceIngest(AbstractTraceIngest):
         else:
             return None
 
+    def sane_event(self, event: TraceEvent) -> Optional[TraceEvent]:
+        if "dur" not in event:
+            return event
+
+        if event["dur"] < 0.0:
+            self.issue_warning('negative_duration')
+            return None
+
+        if math.isclose(event["dur"], 0.0, abs_tol=1e-9):
+            self.issue_warning('zero_duration')
+            return None
+
+        return event
+
     def build_complete_event(self) -> TraceEvent:
         def _torch_prof_or_none(name, evtype) -> TraceEvent:
             if evtype == "M":
                 return event
             elif "PyTorch Profiler" not in name:
-                return event
+                return self.sane_event(event)
             else:
                 return None
 
@@ -269,15 +284,7 @@ class JsonEventTraceIngest(AbstractTraceIngest):
             open_event["dur"] = event["ts"] - open_event["ts"]
             self.pending_close = False
 
-            if open_event["dur"] < 0.0:
-                self.issue_warning('negative_duration')
-                return None
-
-            if math.isclose(open_event["dur"], 0.0, abs_tol=1e-9):
-                self.issue_warning('zero_duration')
-                return None
-
-            return open_event
+            return self.sane_event(open_event)
         else:
             assert False, f'Expected to find E-event in {self.source_uri}. Found {event["ph"]}'
 
@@ -335,7 +342,7 @@ class JsonFileEventTraceIngest(JsonEventTraceIngest):
 
 # optional perfetto trace import
 try:
-    from perfetto.trace_processor import TraceProcessor
+    from perfetto.trace_processor import TraceProcessor  # type: ignore
 
     class ProtobufIngest(AbstractTraceIngest):
         def __init__(self, source_uri, show_warnings: bool = True) -> None:
@@ -343,7 +350,7 @@ try:
 
             self._index = 0
             self.tp = TraceProcessor(trace=source_uri)
-            # self.data = self.tp.query('SELECT * FROM slice')
+            # use this for example query: self.data = self.tp.query('SELECT * FROM slice')
             #
             slice_fields = "ts, dur, cat, slice.name as slice_name, slice.id as slice_id, slice.arg_set_id as aid,"
             pt_fields = "utid, thread.name as thread_name, thread.tid as tid, " \

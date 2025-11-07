@@ -3,11 +3,8 @@
     {"name": "Case1 E2",   "cat": "CatA",     "ph": "B",    "pid": 0,    "tid": 5,  "ts": 1, "comment": "full overlap in order starting at the same time, should stack as is"},
     {"name": "Case1 E2",   "cat": "CatA",     "ph": "E",    "pid": 0,    "tid": 5,  "ts": 5},
 
-    {"name": "CaseTSRev1",   "cat": "CatA",     "ph": "B",    "pid": 0,    "tid": 5,  "ts": 30, "comment": "broken TS, should not appear in viz"},
+    {"name": "CaseTSRev1",   "cat": "CatA",     "ph": "B",    "pid": 0,    "tid": 5,  "ts": 30, "comment": "broken TS (neg duration), should not appear in viz"},
     {"name": "CaseTSRev1",   "cat": "CatA",     "ph": "E",    "pid": 0,    "tid": 5,  "ts": 20},
-
-    {"name": "CaseTSRev2",   "cat": "CatA",     "ph": "B",    "pid": 0,    "tid": 5,  "ts": 30, "comment": "broken TS + E before B, should not appear in viz"},
-    {"name": "CaseTSRev2",   "cat": "CatA",     "ph": "E",    "pid": 0,    "tid": 5,  "ts": 20},
 
     {"name": "Case2 E1",   "cat": "CatA",     "ph": "B",    "pid": 0,    "tid": 5,  "ts": 20, "comment": "full overlap in order, should stack as is"},
     {"name": "Case2 E1",   "cat": "CatA",     "ph": "E",    "pid": 0,    "tid": 5,  "ts": 30},
@@ -50,6 +47,10 @@
     {"name": "Case8 E4",   "cat": "CatA",     "ph": "B",    "pid": 0,    "tid": 0,  "ts": 151},
     {"name": "Case8 E4",   "cat": "CatA",     "ph": "E",    "pid": 0,    "tid": 0,  "ts": 154},
     {"name": "Case8 E5",   "cat": "CatA",     "ph": "B",    "pid": 0,    "tid": 0,  "ts": 153},
-    {"name": "Case8 E5",   "cat": "CatA",     "ph": "E",    "pid": 0,    "tid": 0,  "ts": 157}
+    {"name": "Case8 E5",   "cat": "CatA",     "ph": "E",    "pid": 0,    "tid": 0,  "ts": 157},
+
+    {"name": "CaseZeroDurA",  "cat": "CatA",   "ph": "X",    "pid": 0,    "tid": 0,  "ts": 170, "dur": 0.0, "comment": "Zero-duration event type X. Should create a warning."},
+    {"name": "CaseZeroDurB",   "cat": "CatA",     "ph": "B",    "pid": 0,    "tid": 5,  "ts": 180, "comment": "Zero-duration event type BE. Should create a warning."},
+    {"name": "CaseZeroDurB",   "cat": "CatA",     "ph": "E",    "pid": 0,    "tid": 5,  "ts": 180}
 
 ]
