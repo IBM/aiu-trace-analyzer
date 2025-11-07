@@ -487,7 +487,7 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
 
         # cmpt_dur = int(event["args"]["TS4"]) - int(event["args"]["TS3"])
         cmpt_dur = float(event["dur"])
-        utilization = abs(ideal_dur/cmpt_dur)
+        utilization = abs(ideal_dur/cmpt_dur) if cmpt_dur != 0 else 0.0
 
         if utilization > 0.0:
             event["args"]["core used"] = True
