@@ -13,7 +13,8 @@ def default_warning() -> TraceWarning:
         name="pytest",
         text="A Warning with 2 args: {d[count]} and {d[max]}",
         data={"count": 0, "max": 0.0},
-        update_fn={"count": int.__add__, "max": max}
+        update_fn={"count": int.__add__, "max": max},
+        auto_log=False
     )
 
 
@@ -48,7 +49,8 @@ def test_fail_warning(warning_arg, exception):
             name=warning_arg[0],
             text=warning_arg[1],
             data=warning_arg[2],
-            update_fn=warning_arg[3])
+            update_fn=warning_arg[3],
+            auto_log=False)
     assert isinstance(cli_res.value, exception)
 
 
@@ -113,7 +115,8 @@ def test_add_warning(abstract_context):
         name="added",
         text="Another Warning with 1 arg: {d[count]}",
         data={"count": 0},
-        update_fn={}
+        update_fn={},
+        auto_log=False
     )
     abstract_context.add_warning(new_warning)
 
@@ -122,9 +125,12 @@ def test_add_warning(abstract_context):
 
 
 def test_issue_warning(abstract_context):
+    abstract_context.warnings["pytest"].auto_log = False   # disable auto-output for tests
     abstract_context.issue_warning("pytest", {"count": 2, "max": 5.0})
 
     assert abstract_context.warnings["pytest"].has_warning() is True
+    assert abstract_context.warnings["pytest"].args_list["count"] == 2
+    assert abstract_context.warnings["pytest"].args_list["max"] == 5.0
     assert abstract_context.warnings["pytest"].__str__() == "A Warning with 2 args: 2 and 5.0"
 
 

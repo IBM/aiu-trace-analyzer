@@ -23,12 +23,6 @@ class AbstractTraceIngest:
     FTYPE_PFTRACE = 2
     FTYPE_API = 3
 
-    WARN_MSG_MAP = {
-        "zero_duration":    "detected 'CompleteEvent' type (ph=X) of zero duration. "
-                            "This should be an 'InstantEvent' type (ph=i). Events skipped:",
-        "negative_duration": "Ingestion: detected negative duration event(s). Events ignored:"
-    }
-
     '''
     Abstract ingestion class
     Ingestion is implemented as an iterator.
@@ -50,7 +44,7 @@ class AbstractTraceIngest:
         self.warnings: dict[str, TraceWarning] = {
             "zero_duration": TraceWarning(
                 name="zero_duration",
-                text="Detected 'CompleteEvent' type (ph=X) with zero duration. "
+                text="Ingestion: Detected 'CompleteEvent' type (ph=X) with zero duration. "
                      "This should be an 'InstantEvent' type (ph=i). Events skipped: {d[count]}",
                 data={"count": 0}),
             "negative_duration": TraceWarning(
