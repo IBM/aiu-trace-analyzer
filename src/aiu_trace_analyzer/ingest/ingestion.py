@@ -50,7 +50,7 @@ class AbstractTraceIngest:
         self.warnings: dict[str, TraceWarning] = {
             "zero_duration": TraceWarning(
                 name="zero_duration",
-                text="detected 'CompleteEvent' type (ph=X) of zero duration."
+                text="Detected 'CompleteEvent' type (ph=X) with zero duration. "
                      "This should be an 'InstantEvent' type (ph=i). Events skipped: {d[count]}",
                 data={"count": 0}),
             "negative_duration": TraceWarning(
