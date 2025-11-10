@@ -44,7 +44,7 @@ class AbstractTraceIngest:
         self.warnings: dict[str, TraceWarning] = {
             "zero_duration": TraceWarning(
                 name="zero_duration",
-                text="Ingestion: Detected 'CompleteEvent' type (ph=X) with zero duration. "
+                text=f"Ingestion: ..{str(source_uri)[-15:]} Detected 'CompleteEvent' type (ph=X) with zero duration. "
                      "This should be an 'InstantEvent' type (ph=i). Events skipped: {d[count]}",
                 data={"count": 0}),
             "negative_duration": TraceWarning(
