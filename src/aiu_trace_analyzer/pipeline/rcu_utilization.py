@@ -142,7 +142,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         if fprint.get() in self.kernel_cycles:
             aiulog.log(aiulog.ERROR, "UTL: Fingerprint of current table already exists in previous table.")
             raise NotImplementedError("UTL: Fingerprint of current table already exists in previous table."
-                                      " Support for same-sequence utilisation is not yet implemented."
+                                      " Support for same-sequence utilization is not yet implemented."
                                       " You may want to send us this sample to help enabling this feature.")
         else:
             aiulog.log(aiulog.INFO, f"UTL: Adding ideal cycles table with fingerprint: {fprint.get()}")
