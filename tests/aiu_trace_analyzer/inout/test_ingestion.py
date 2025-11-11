@@ -111,3 +111,21 @@ def test_json_iterator(generate_event_list, exp_len, json_input):
         ts = event["ts"]
         count += 1
     assert count == exp_len, "Unexpected number of events"
+
+
+def test_zero_duration_warning(json_ingest):
+    # iterate through events to create issued warnings
+    for _ in json_ingest:
+        pass
+
+    assert json_ingest.warnings['zero_duration'].has_warning() is True
+    assert json_ingest.warnings['zero_duration'].args_list['count'] == 2
+
+
+def test_neg_duration_warning(json_ingest):
+    # iterate through events to create issued warnings
+    for _ in json_ingest:
+        pass
+
+    assert json_ingest.warnings['negative_duration'].has_warning() is True
+    assert json_ingest.warnings['negative_duration'].args_list['count'] == 1

@@ -30,9 +30,6 @@ class AbstractContext:
             for w in warnings:
                 self.add_warning(w)
 
-    def __del__(self) -> None:
-        self.print_warnings()
-
     def print_warnings(self) -> None:
         for _, w in self.warnings.items():
             if w.has_warning():
