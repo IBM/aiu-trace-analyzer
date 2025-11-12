@@ -4,6 +4,7 @@ import re
 import copy
 from math import isclose
 import pathlib
+from enum import Flag, auto
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent, TraceWarning
@@ -39,9 +40,11 @@ class RCUTableFingerprint():
     def __init__(
             self,
             datalimit: int = -1,
-            event_filter: str = r''):
+            event_filter: str = r'',
+            table_mode: str = "UKN"):
         self.datalimit = datalimit if datalimit > 0 else 1 << 31   # yes, it's not really unlimited...
         self.event_filter = re.compile(event_filter)
+        self.table_mode = table_mode
         self.sim_weights = {
             "sequence": 0.5,
             "tab_len": 0.5,
@@ -51,6 +54,9 @@ class RCUTableFingerprint():
 
     def get(self) -> int:
         return self.hash
+
+    def get_table_mode(self) -> int:
+        return self.table_mode
 
     def add(self, data: str, time: float) -> None:
         if self.dataitems < self.datalimit and self.event_filter.search(data) is not None:
@@ -149,6 +155,21 @@ class RCUKernelCategoryMap():
         return self.kernel_cat_map.values()
 
 
+class RCUTableParseMode(Flag):
+    ACTIVE_TABLE = auto()
+    PREFILL = auto()
+
+    def get_phase(self):
+        return "TTFT" if self.PREFILL in self else "ITL"
+
+    def update(self, phase_str: str):
+        if phase_str == "PREFILL":
+            self |= RCUTableParseMode.PREFILL
+        else:
+            self &= ~RCUTableParseMode.PREFILL
+        return self
+
+
 class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
     _start_pattern = re.compile(r' Ideal/Total Cycles ')
@@ -158,6 +179,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
     _ignore_pattern = re.compile(r'(Precompute|-LxPreload)')
     _category_splitter = re.compile(r'(\-opCat|\-NA$)')
     _autopilot_pattern = re.compile(r'DSM-AutoPilot BEGIN')
+    _iteration_mode_pattern = re.compile(r'^\s+(DECODING|PREFILL)\s+$')
     _non_kernel_names = ["Total"]
 
     _print_to_log = False
@@ -204,7 +226,6 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             self.extract_tables(compiler_log=compiler_log_name)
             # with a single table, we won't need to respect any fingerprinting
             if self.multi_table == 0:
-                self.use_fprint = 0
                 _, self.kernel_cycles[0] = self.kernel_cycles.popitem()
         except Exception as e:
             aiulog.log(aiulog.ERROR, "UTL: Unable to open/parse log file.", compiler_log, e)
@@ -243,12 +264,13 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         self.fingerprints: dict[int, RCUTableFingerprint] = {}
         self.hash_to_pid: dict[int, int] = {}
 
-    def _start_init_table(self) -> tuple[dict, RCUTableFingerprint]:
+    def _start_init_table(self, table_mode: str) -> tuple[dict, RCUTableFingerprint]:
         self.multi_table += 1
         current_table = {}
         fprint = RCUTableFingerprint(
             datalimit=_table_data_limit,
-            event_filter=_fprint_event_filter)  # use the first N (filtered) kernels as a fingerprint
+            event_filter=_fprint_event_filter,
+            table_mode=table_mode)  # use the first N (filtered) kernels as a fingerprint
         self.kernel_cat_map[0] = RCUKernelCategoryMap()  # new kernel-cat-map at temporary fprint key
         return current_table, fprint
 
@@ -260,13 +282,15 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 "UTL: Fingerprint of current table already exists for previous table. "
                 "Duplicated tables? Keeping the previous table only")
         else:
-            aiulog.log(aiulog.INFO, f"UTL: Adding ideal cycles table with fingerprint: {fprint_key}")
+            aiulog.log(
+                aiulog.INFO,
+                f"UTL: Adding ideal cycles table ({fprint.get_table_mode()}) with fingerprint: {fprint_key}")
             aiulog.log(aiulog.DEBUG, f"UTL:    TablefprintStr: {fprint.fprint_data}")
         self.fingerprints[fprint_key] = fprint
-        fprint = RCUTableFingerprint()
         self.kernel_cycles[fprint_key] = copy.deepcopy(table)
         # re-assign temp kernel-cat-map to actual fingerprint
         self.kernel_cat_map[fprint_key] = self.kernel_cat_map.pop(0)
+        fprint = None
 
     def _handle_category(self, kernel_and_cat) -> str:
         if len(kernel_and_cat) > 1:
@@ -280,7 +304,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
     def _process_table_line(self,
                             line: str,
                             fprint: RCUTableFingerprint,
-                            parse_mode: bool,
+                            parse_mode: RCUTableParseMode,
                             current_table: dict[str, int]) -> tuple[
                                 bool,
                                 bool,
@@ -298,21 +322,28 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                        " This setting is ignored. Use '--freq=<soc>:<core>'.")
             return True, parse_mode, current_table, fprint
 
+        _iter_mode = self._iteration_mode_pattern.search(line)
+        if _iter_mode is not None:
+            iteration_phase = _iter_mode.group(1)
+            parse_mode = parse_mode.update(iteration_phase)
+            aiulog.log(aiulog.DEBUG, "DETECTED:", iteration_phase, "table to be next. Parsemode:", parse_mode)
+            return True, parse_mode, current_table, fprint
+
         if self._start_pattern.search(line):
-            parse_mode = True
-            current_table, fprint = self._start_init_table()
+            parse_mode |= RCUTableParseMode.ACTIVE_TABLE
+            current_table, fprint = self._start_init_table(parse_mode.get_phase())
             aiulog.log(aiulog.DEBUG,
                        "UTL: Start of Ideal Cycle Count section detected. Parse mode:",
                        parse_mode, self.multi_table)
             return True, parse_mode, current_table, fprint
 
         # don't bother checking for the end_pattern if we're not even in parse mode
-        if not parse_mode:
+        if RCUTableParseMode.ACTIVE_TABLE not in parse_mode:
             return True, parse_mode, current_table, fprint
 
         if self._end_pattern.search(line):
             aiulog.log(aiulog.DEBUG, "UTL: End of Ideal Cycle Count section detected. Stopping parse mode.")
-            parse_mode = False
+            parse_mode &= ~RCUTableParseMode.ACTIVE_TABLE  # reset to scanning/no table
             self._finish_add_table(fprint, current_table)
             return True, parse_mode, current_table, fprint
 
@@ -358,7 +389,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
     def extract_tables(self, compiler_log: str):
 
-        parse_mode = False
+        parse_mode = RCUTableParseMode(0)
         self.multi_table = -1  # track if there might be multiple tables in the log
         current_table = {}
         fprint = None  # fingerprints created when a new table is detected
@@ -391,22 +422,21 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                     the accumulated observed-time of kernels in the same category.
         """
 
-        title_row = ["Pid", "Table#", "Category", "Kernel_Time", "Frac_Time", "Calls",
+        title_row = ["Pid", "Phase", "Category", "Kernel_Time", "Frac_Time", "Calls",
                      "Ideal_Time", "Ideal_Cyc", "Frac_Ideal", "PT_Util"]
         aiulog.log(aiulog.DEBUG, "UTL: category title_row: ", title_row)
 
         list_of_list = []
-        pid_table_tracker: dict[int, int] = {}
         for p, data in cat_tab.items():
             if len(data) == 0:
                 return
 
-            pid = self.hash_to_pid[p]
-            if pid not in pid_table_tracker:
-                pid_table_tracker[pid] = 1
-            else:
-                pid_table_tracker[pid] += 1
-            table_nr = pid_table_tracker[pid]
+            pid, fp_key = self.hash_to_pid[p]
+            try:
+                phase = self.fingerprints[fp_key].get_table_mode()
+            except KeyError:
+                aiulog.log(aiulog.WARN, "UTL: Unexpected entry in category tables", fp_key)
+                phase = "UKN"
             total = data["Total"][0]
             ideal_total = data["Total"][1]
 
@@ -419,7 +449,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 pt_util = 0 if isclose(dur, 0.0, abs_tol=1e-9) else round(ideal / dur, 4)
 
                 # note: to sync the columns of value_row with title_row
-                value_row = [pid, table_nr, k, dur, dur_frac, calls, round(ideal, 4), ideal_cyc, ideal_frac, pt_util]
+                value_row = [pid, phase, k, dur, dur_frac, calls, round(ideal, 4), ideal_cyc, ideal_frac, pt_util]
                 list_of_list.append(value_row)
 
                 aiulog.log(aiulog.DEBUG, "UTL: category value_row: ", value_row)
@@ -444,7 +474,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             aiulog.log(aiulog.DEBUG, "UTL: Creating new categories table for", cat_hash)
             # always have the StcdpHbm category
             self.categories[cat_hash] = {"Total": (0.0, 0.0, 0), "StcdpHbm": (0.0, 0.0, 0)}
-            self.hash_to_pid[cat_hash] = pid
+            self.hash_to_pid[cat_hash] = (pid, fprint)
 
         for cat in self.kernel_cat_map[fprint].values():
             self.categories[cat_hash][cat] = (0.0, 0.0, 0)
