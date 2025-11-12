@@ -113,11 +113,11 @@ def test_compute_utilization_event_passthrough(multircu_single):
 tests_to_run_for_rcu_util: list[tuple[str, str, int, int]] = [
     (
         "--freq=560:800 -c tests/test_data/sample_comp_log_ideal.txt -i tests/test_data/sample_flex_3062_job_4.json",
-        10, 9
+        10, 10
     ),
     (
         "--freq 560.0 -c tests/test_data/sample_comp_log_ideal.txt -i tests/test_data/sample_flex_3062_job_4.json",
-        10, 9
+        10, 10
     ),
 ]
 
