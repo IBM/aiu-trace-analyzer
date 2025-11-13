@@ -187,14 +187,16 @@ class TraceWarning:
             text="This stage has detected {d[count]} issues with max {d[max]}.",
             data={"count": 0, "max": 0.0},
             update_fn={"count": int.__add__, "max": max},
-            autolog=True
+            autolog=True,
+            is_error=False,
         )
 
         name:      a key that can be used to manage multiple warnings in e.g. a dictionary
         text:      the warning text with variables (always us 'd' as the dictionary name)
         data:      dictionary with entries that match the text variables
         update_fn: functions to run when the update function is called with data
-        autolog:   automatically print the warning at destruction time
+        autolog:   automatically print the warning at destruction time (default)
+        is_error:  print the summary warning at WARN level (default) and not as ERROR
 
         Whenever a warning should be added:
             w.update({"count": 1, "max": 100.0})
@@ -213,7 +215,8 @@ class TraceWarning:
             text: str,
             data: dict[str, any],
             update_fn: dict[str, callable] = {},
-            auto_log: bool = True):
+            auto_log: bool = True,
+            is_error: bool = False):
         self.occurred = False
         self.name = name
         # format-string with {d[key]} placeholders
@@ -221,6 +224,7 @@ class TraceWarning:
         self.args_list: dict[str, any] = {k: v for k, v in data.items()}
         self.update_fn: dict[str, callable] = {k: v for k, v in update_fn.items()}
         self.auto_log = auto_log
+        self.warn_level = aiulog.WARN if not is_error else aiulog.ERROR
 
         text_keys = re.findall(r"{d\[([.\w]+)\]}", self.text)
         if len(text_keys) != len(self.args_list):
@@ -249,7 +253,7 @@ class TraceWarning:
 
     def __del__(self) -> None:
         if self.auto_log is True and self.has_warning():
-            aiulog.log(aiulog.WARN, self)
+            aiulog.log(self.warn_level, self)
 
     def get_name(self) -> str:
         return self.name
