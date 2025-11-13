@@ -20,33 +20,107 @@ pd.set_option('display.width', None)
 RCU_pt_util_counter_name = "PT Active"
 RCU_pt_util_counter_unit = "Percent"
 
-_default_fprint_len = 25
+# for table fingerprint: include only event names that match this regex
+_fprint_event_filter = r'^.*'
+
+# default number of events for fingerprint of observed event stream
+_default_fprint_len = 30
+
+# default number of kernels for fingerprint of ideal cycles table
+_table_data_limit = 500
+
+# keep disabled until db-lookup feature is implemented
 _kernel_db_feature_implemented = False
 
 
 class RCUTableFingerprint():
-    def __init__(self, datalimit: int = -1, initial_data: str = ''):
-        self.initial_data = initial_data
+    _separator = '_'
+
+    def __init__(
+            self,
+            datalimit: int = -1,
+            event_filter: str = r''):
         self.datalimit = datalimit if datalimit > 0 else 1 << 31   # yes, it's not really unlimited...
+        self.event_filter = re.compile(event_filter)
+        self.sim_weights = {
+            "sequence": 0.5,
+            "tab_len": 0.5,
+            "total_time": 0.5
+            }
         self.reset()
 
     def get(self) -> int:
         return self.hash
 
-    def add(self, data: str) -> None:
-        if self.datalimit > self.dataitems:
+    def add(self, data: str, time: float) -> None:
+        if self.dataitems < self.datalimit and self.event_filter.search(data) is not None:
             aiulog.log(aiulog.DEBUG, f"adding to FP: {data}, Hash: {hash(data)}")
-            self.fprint_data += data
-            self.dataitems += 1
-            self._update_hash()
+            converted = self._data_conversion(data)
+            self.fprint_data += f"{converted}{self._separator}"
+            self.data_hashes.append(converted)
+
+        # item count and accumulated time needed for non-hash similarity checks
+        self.dataitems += 1
+        self.totaltime += time
+        self._update_hash()
+
+    def _data_conversion(self, data: str):
+        # enough variety to build a rough 'alphabet' of kernel names
+        # no big deal if some collisions occur
+        return hash(data) % 65535
 
     def _update_hash(self) -> None:
-        self.hash = hash(self.fprint_data)
+        # hash based on data and totaltime (distinguish same sequence for different input sizes)
+        self.hash = hash(self.fprint_data + str(self.totaltime))
 
     def reset(self) -> None:
-        self.fprint_data = self.initial_data
-        self.dataitems = 0
+        self.fprint_data: str = ""
+        self.data_hashes: list[int] = []
+        self.dataitems: int = 0
+        self.totaltime = 0.0
         self._update_hash()
+
+    def similarity(self, other) -> float:
+        """
+        similarity check happens under assumption:
+         * self  == event stream fingerprint
+         * other == ideal table fingerprint
+        -> exclude criteria:
+           * impossible: other.dataitems < self.dataitems
+           * impossible: other.totaltime > self.totaltime
+        """
+        aiulog.log(aiulog.DEBUG, "FPRINT SIMILARITY: -----------------")
+        # kernel sequence similarity
+        sim_val = self.sim_weights["sequence"] * (1.0 if other.fprint_data.find(self.fprint_data) != -1 else 0.5)
+        matched = "sub-sequence not found" if sim_val < self.sim_weights["sequence"] else "sub-sequence found"
+        aiulog.log(
+            aiulog.DEBUG, "   SIMVAL(sequence):",
+            f"{sim_val}  <- ({matched}, {other.fprint_data.find(self.fprint_data)})")
+
+        # table-length similarity
+        if self.dataitems > other.dataitems:
+            aiulog.log(
+                aiulog.DEBUG, "   SIMVAL(tablelen):",
+                f"{0.0}  <- (events={self.dataitems} > table={other.dataitems})")
+            return 0.0
+
+        sim_val += self.sim_weights["tab_len"] * (self.dataitems / other.dataitems)
+        aiulog.log(
+            aiulog.DEBUG, "   SIMVAL(tablelen):",
+            f"{sim_val}  <- ({self.dataitems} / {other.dataitems} = {self.dataitems / other.dataitems})")
+
+        # exclude table canditate if
+        if other.totaltime > self.totaltime:
+            aiulog.log(
+                aiulog.DEBUG, "   SIMVAL(totaltim):",
+                f"0.0  <- ({other.totaltime} / {self.totaltime} = {other.totaltime / self.totaltime})")
+            return 0.0
+
+        sim_val += self.sim_weights["total_time"] * (other.totaltime / self.totaltime)
+        aiulog.log(
+            aiulog.DEBUG, "   SIMVAL(totaltim):",
+            f"{sim_val}  <- ({other.totaltime} / {self.totaltime} = {other.totaltime / self.totaltime})")
+        return sim_val
 
 
 class RCUUtilizationContext(AbstractContext, PipelineContextTool):
@@ -95,6 +169,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         self.scale_factor = soc_freq/core_freq
         self.cycle_to_clock_factor = 1.0/core_freq
         self.unscaled = False
+        self.fingerprints: dict[int, RCUTableFingerprint] = {}
         aiulog.log(aiulog.DEBUG, "UTL: Input Ideal Cycle To Clock factor", self.cycle_to_clock_factor)
 
         self.initialize_tables()
@@ -107,11 +182,11 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 self.use_fprint = 0
                 _, self.kernel_cycles[0] = self.kernel_cycles.popitem()
         except Exception as e:
-            aiulog.log(aiulog.WARN, "UTL: Unable to open or parse log file.", compiler_log, e)
+            aiulog.log(aiulog.ERROR, "UTL: Unable to open/parse log file.", compiler_log, e)
 
         self.scale_cycles()
 
-        for n, t in self.kernel_cycles.items():
+        for _, t in self.kernel_cycles.items():
             self.autopilot_detail = AutopilotDetail(t)
             self.table_hash = self.autopilot_detail.table_hash()
 
@@ -143,16 +218,19 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         self.categories = {}
         self.kernel_cat_map = {"other": "other"}
 
-    def _finish_add_table(self, fprint: RCUTableFingerprint, table: dict[str, int]) -> dict[str, int]:
-        if fprint.get() in self.kernel_cycles:
-            aiulog.log(aiulog.ERROR, "UTL: Fingerprint of current table already exists in previous table.")
-            raise NotImplementedError("UTL: Fingerprint of current table already exists in previous table."
-                                      " Support for same-sequence utilization is not yet implemented."
-                                      " You may want to send us this sample to help enabling this feature.")
+    def _finish_add_table(self, fprint: RCUTableFingerprint, table: dict[str, int]) -> None:
+        fprint_key = fprint.get()
+        if fprint_key in self.kernel_cycles:
+            aiulog.log(
+                aiulog.WARN,
+                "UTL: Fingerprint of current table already exists for previous table. "
+                "Duplicated tables? Keeping the previous table only")
         else:
-            aiulog.log(aiulog.INFO, f"UTL: Adding ideal cycles table with fingerprint: {fprint.get()}")
+            aiulog.log(aiulog.INFO, f"UTL: Adding ideal cycles table with fingerprint: {fprint_key}")
             aiulog.log(aiulog.DEBUG, f"UTL:    TablefprintStr: {fprint.fprint_data}")
-        return copy.deepcopy(table)
+        self.fingerprints[fprint_key] = fprint
+        fprint = RCUTableFingerprint()
+        self.kernel_cycles[fprint_key] = copy.deepcopy(table)
 
     def _handle_category(self, kernel_and_cat) -> str:
         if len(kernel_and_cat) > 1:
@@ -187,7 +265,9 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         if self._start_pattern.search(line):
             self.multi_table += 1
             current_table = {}
-            fprint.reset()
+            fprint = RCUTableFingerprint(
+                datalimit=_table_data_limit,
+                event_filter=_fprint_event_filter)  # use the first N (filtered) kernels as a fingerprint
             parse_mode = True
             aiulog.log(aiulog.DEBUG,
                        "UTL: Start of Ideal Cycle Count section detected. Parse mode:",
@@ -201,7 +281,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         if self._end_pattern.search(line):
             aiulog.log(aiulog.DEBUG, "UTL: End of Ideal Cycle Count section detected. Stopping parse mode.")
             parse_mode = False
-            self.kernel_cycles[fprint.get()] = self._finish_add_table(fprint, current_table)
+            self._finish_add_table(fprint, current_table)
             return True, parse_mode, current_table, fprint
 
         # This will needs to be the last regex check because it skips everything else
@@ -225,7 +305,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             return True, parse_mode, current_table, fprint
 
         kernel = kernel_and_cat[0]+" Cmpt Exec"
-        fprint.add(kernel)
+        fprint.add(kernel, cycles * self.cycle_to_clock_factor)
 
         if kernel not in current_table:
             aiulog.log(aiulog.TRACE, "UTL: Kernel:", kernel)
@@ -249,7 +329,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         parse_mode = False
         self.multi_table = -1  # track if there might be multiple tables in the log (force to use the first one only)
         current_table = {}
-        fprint = RCUTableFingerprint(_default_fprint_len)  # use the first N kernels as a fingerprint
+        fprint = None  # use the first N kernels as a fingerprint
         with open(compiler_log, 'r') as cl:
             for line in cl:
                 (
@@ -372,7 +452,13 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
 
 class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool):
-    name_converter = re.compile(r"\[N\]")
+    _name_converter = re.compile(r"\[N\]")
+
+    """
+    Create a warning about uncertain table matching
+    if similarity of a job fingerprint and 2 tables differs by less than this tolerance
+    """
+    _similarity_tolerance = 0.2
 
     def __init__(
             self,
@@ -394,12 +480,20 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                 text="UTL: No matching Ideal Cycles table found for {d[count]} "
                      "Events. This might indicate a wrong frequency setting.",
                 data={"count": 0}
+            ),
+            # count jobs with uncertain table match
+            TraceWarning(
+                name="uncertain_match",
+                text="UTL: Detected uncertain Ideal Cycles table match for {d[count]} "
+                     "jobs: {d[joblist]}",
+                data={"count": 0, "joblist": []},
+                update_fn={"count": int.__add__, "joblist": list.__add__}
             )
         ])
 
         log_list = compiler_log.split(",")
         self.multi_log = (len(log_list) > 1)
-        self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job-file
+        self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job/file
         if self.multi_log:
             aiulog.log(aiulog.INFO, "UTL: Multi-AIU logs provided. Entries:", len(log_list))
 
@@ -425,7 +519,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
 
         # if a fn_idx was removed from the event name, we have to bring it back in to match the ideal cycles table entry
         if "[N]" in rname and "args" in event and "fn_idx" in event["args"]:
-            rname = self.name_converter.sub(str(event["args"]["fn_idx"]), event["name"], count=1)
+            rname = self._name_converter.sub(str(event["args"]["fn_idx"]), event["name"], count=1)
 
         if not rname.endswith("Cmpt Exec"):
             rname += " Cmpt Exec"
@@ -440,11 +534,11 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         rank = pid * self.rank_factor
         return self.rcuctx[rank].accumulate_categories(pid, kernel, ideal_dur, duration)
 
-    def fingerprint_add(self, job: int, kernel: str) -> None:
+    def fingerprint_add(self, job: int, kernel: str, time: float) -> None:
         if job not in self.fingerprints:
-            self.fingerprints[job] = RCUTableFingerprint(_default_fprint_len)
+            self.fingerprints[job] = RCUTableFingerprint(_default_fprint_len, event_filter=_fprint_event_filter)
 
-        self.fingerprints[job].add(kernel)
+        self.fingerprints[job].add(kernel, time)
 
     def fingerprint_get(self, job: int) -> int:
         return self.fingerprints[job].get()
@@ -469,10 +563,35 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             })
         return revents
 
+    def update_fprint_matches(self):
+        for job, event_fprint in self.fingerprints.items():
+            matching_fprints = []
+            for table in self.rcuctx.values():
+                for fprint in table.fingerprints.values():
+                    matching_fprints.append((fprint, event_fprint.similarity(fprint)))
+
+            if len(matching_fprints) == 0:
+                continue
+
+            matching_fprints.sort(key=(lambda x: x[1]), reverse=True)
+            job_fprint, similar = matching_fprints[0]
+            if similar < 0.8:
+                # warn about low similarity value
+                self.warnings["uncertain_match"].update({"count": 1, "joblist": [job]})
+            elif len(matching_fprints) > 1 and isclose(similar,
+                                                       matching_fprints[1][1],
+                                                       abs_tol=self._similarity_tolerance):
+                # at least 2 tables with the same best similarity value (spit a warning)
+                self.warnings["uncertain_match"].update({"count": 1, "joblist": [job]})
+            else:
+                pass
+
+            aiulog.log(aiulog.DEBUG, "UTL: (New) table-fprint for job", job, "to", job_fprint.get())
+            self.fingerprints[job] = job_fprint
+
     def drain(self) -> list[TraceEvent]:
-        # if self.phase == self._COLLECTION_PHASE:
-        #     for n,t in self.fingerprints.items():
-        #         print(f"Job: {n} -> {t.get()}, {t.fprint_data[:50]}")
+        # run fingerprint-similarity check for all jobs
+        self.update_fprint_matches()
         return super().drain()
 
     def generate_fprint_jobhash(self, event: TraceEvent) -> int:
@@ -491,7 +610,7 @@ def compute_utilization_fingerprints(event: TraceEvent, context: AbstractContext
     if PipelineContextTool.is_acc_event(event) and PipelineContextTool.is_acc_kernel(event):
         kernel_name = context.extract_kernel_from_event_name(event)
 
-        context.fingerprint_add(context.generate_fprint_jobhash(event), kernel_name)
+        context.fingerprint_add(context.generate_fprint_jobhash(event), kernel_name, event["dur"])
     return [event]
 
 
