@@ -800,7 +800,7 @@ def flow_prepare_event_data(event: TraceEvent, _: AbstractContext) -> list[Trace
         # extract sync entry from name
         sync_entry = _sync_pattern.findall(name)
         if len(sync_entry) > 0:
-            flow_extraction_event[_FLOW_SYNC] = sync_entry[0]  # TODO consider hashing
+            flow_extraction_event[_FLOW_SYNC] = sync_entry[0]  # consider hashing
         else:
             # if no sync-info is in the name, then we have no way of connecting a flow
             return [event]

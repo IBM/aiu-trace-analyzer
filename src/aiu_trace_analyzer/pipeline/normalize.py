@@ -202,7 +202,9 @@ class NormalizationContext(AbstractHashQueueContext):
                     if "TSxOF" not in event["args"]:
                         event["args"]["TSxOF"] = ts
                     aiulog.log(aiulog.TRACE, "OVC: intra-event TSx overflow:", event["args"])
-                    # TODO instead of hard-coded 1 epoch, consider estimated number of epochs based on event duration
+                    # currently hard-coded 1 epoch
+                    # event-duration-based epochs require analysis of circular dependency
+                    # between cycle->time and time->cycle conversions
                     curr += 1 << 32
                 args[ts] = str(curr)
                 prev = curr

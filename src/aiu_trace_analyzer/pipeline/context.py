@@ -20,8 +20,6 @@ class AbstractContext:
 
     Contexts are attached to processing functions at the time of registration.
     So they're specific to a processing function as of now.
-
-    TODO: Might have to be extended should the need arise to assign contexts to events or other components.
     '''
     def __init__(self, warnings: list[TraceWarning] = None) -> None:
         self.warnings: dict[str, TraceWarning] = {}

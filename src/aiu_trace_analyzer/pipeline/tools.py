@@ -37,7 +37,6 @@ class PipelineContextTool:
         is_torch = "args" in event and ("External id" in event["args"] or "Python id" in event["args"])
         return (is_torch is False)
 
-    # TODO this should be folded into the dialect classes/objects for more efficient processing
     def is_acc_event(event: TraceEvent) -> bool:
         if "args" not in event:
             return False

@@ -70,7 +70,7 @@ class AbstractTraceIngest:
         raise NotImplementedError("Class %s doesn't implement __next__" % (self.__class__.__name__))
 
     def detect_ftype(self, fname: str) -> bool:
-        # TODO: implement a more thorough way to distinguish log and json, for now just check for '.json'
+        # just a rough file type determination based on filename
         if ".json" in fname:
             return self.FTYPE_JSON
         elif ".pftrace" in fname:

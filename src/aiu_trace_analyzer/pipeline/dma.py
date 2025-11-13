@@ -70,25 +70,19 @@ class DataTransferExtractionContext(EventPairDetectionContext):
             return new_val
 
     def name_from_category(self, prev: TraceEvent) -> TraceEvent:
-        # cat field (event name)
-        # cat = prev.pop("cat") # remove category to keep all power readings in one viz track
-
-        # TODO: remove this statement
-        cat = prev['cat']  # keep name in the category to keep all power readings in one viz track
+        _cat = prev['cat']  # keep name in the category to keep all power readings in one viz track
 
         # possible categories: DmaI, DmaO, AllGather, Exec
-        if "DmaI" in cat:
+        if "DmaI" in _cat:
             cat_type = " DmaI"
-        elif "DmaO" in cat:
+        elif "DmaO" in _cat:
             cat_type = " DmaO"
         else:
             cat_type = " Other"
 
-        # print("name: %s, cat_type: %s" %(cat, cat_type))
         # overwrite name field
         prev["name"] += cat_type
 
-        # print("name:    ", prev['name'])
         return prev
 
     def create_zero_event(self, event: TraceEvent) -> TraceEvent:

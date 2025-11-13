@@ -88,15 +88,14 @@ class ProtobufTraceExporter(AbstractTraceExporter):
     '''
     def __init__(self, target_uri, settings=None) -> None:
         super().__init__(target_uri, settings)
-        # TODO: open channel to trace processing
 
     def export(self, data: list[tv.AbstractEventType]):
         # not exporting anything yet
-        pass
+        super().export(data)
 
     def flush(self):
         # nothing to flush for protobuf exporter
-        pass
+        super().flush()
 
 
 class TensorBoardFileTraceExporter(JsonFileTraceExporter):
@@ -160,7 +159,7 @@ class TensorBoardFileTraceExporter(JsonFileTraceExporter):
                            " for traceview when preparing distributed view for TB")
 
     def _save_overall_trace(self) -> None:
-        # TODO: support other file formats not end with .json
+        # consider support for other file formats not end with .json
         file_name = self.target_uri
         if file_name.endswith('.json') and not file_name.endswith(self.default_extension):
             file_name = file_name.replace('.json', self.default_extension)
@@ -178,7 +177,7 @@ class TensorBoardFileTraceExporter(JsonFileTraceExporter):
 
     # Save events to indivudal file by pid
     def _save_events_by_id(self) -> None:
-        # TODO: support other file formats not end with .json
+        # consider support for other file formats not end with .json
         file_name = self.target_uri
         if file_name.endswith(self.default_extension):
             fbase = file_name[:-len(self.default_extension)]
