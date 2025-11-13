@@ -1,5 +1,7 @@
 # Copyright 2024-2025 IBM Corporation
 
+from typing import Optional
+
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.pipeline import AbstractContext, TraceWarning
@@ -9,7 +11,7 @@ class AbstractHashQueueContext(AbstractContext):
     '''
     Provides a dictionary for e.g. queues to group events for processing
     '''
-    def __init__(self, warnings: list[TraceWarning] = None) -> None:
+    def __init__(self, warnings: Optional[list[TraceWarning]] = None) -> None:
         super().__init__(warnings=warnings)
         self.queues = {}
 

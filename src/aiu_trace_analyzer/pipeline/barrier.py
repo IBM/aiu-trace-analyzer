@@ -1,5 +1,7 @@
 # Copyright 2024-2025 IBM Corporation
 
+from typing import Optional
+
 from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 from aiu_trace_analyzer.pipeline import AbstractContext, AbstractHashQueueContext
 
@@ -31,7 +33,7 @@ class TwoPhaseWithBarrierContext(AbstractHashQueueContext):
     _COLLECTION_PHASE = 0
     _APPLICATION_PHASE = 1
 
-    def __init__(self, warnings: list[TraceWarning] = None) -> None:
+    def __init__(self, warnings: Optional[list[TraceWarning]] = None) -> None:
         super().__init__(warnings=warnings)
         self.phase = self._COLLECTION_PHASE
 

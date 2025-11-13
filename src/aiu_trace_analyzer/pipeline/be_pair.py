@@ -1,5 +1,7 @@
 # Copyright 2024-2025 IBM Corporation
 
+from typing import Optional
+
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 from aiu_trace_analyzer.pipeline import AbstractHashQueueContext
@@ -16,7 +18,7 @@ class EventPairDetectionContext(AbstractHashQueueContext):
     a) find a closing event match for a given opening event
     b) find an opening event match for a given closing event
     '''
-    def __init__(self, warnings: list[TraceWarning] = None) -> None:
+    def __init__(self, warnings: Optional[list[TraceWarning]] = None) -> None:
         super().__init__(warnings=warnings)
 
     def drain(self) -> list[TraceEvent]:
