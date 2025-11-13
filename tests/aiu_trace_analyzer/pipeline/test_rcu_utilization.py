@@ -55,8 +55,6 @@ expected_vars_and_values = [
     ("multi_table", 0),
     ("autopilot", False),
     ("unscaled", False),
-    ("warn_util_100", 0),
-    ("other_warning", 0),
     ("kernel_cycles",
      {"somevalue":
       {'addmm_MatMul-BMM_1 Cmpt Exec': 27648,

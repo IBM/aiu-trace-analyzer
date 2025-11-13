@@ -6,10 +6,10 @@ from math import isclose
 import pathlib
 
 import aiu_trace_analyzer.logger as aiulog
+from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
 from aiu_trace_analyzer.pipeline.barrier import TwoPhaseWithBarrierContext
-from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.pipeline.tools import KernelDetailsDB, AutopilotDetail
 
 import pandas as pd
@@ -69,10 +69,20 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             soc_freq: float,
             core_freq: float,
             kernel_db_url: str = "ai_kernel.db") -> None:
-        super().__init__()
 
-        self.warn_util_100 = 0   # count the number of events with >100% utilization to print warning at the end
-        self.other_warning = 0   # count the number of kernels that had to be accounted as 'other'
+        super().__init__(warnings=[
+            TraceWarning(
+                name="util_100",
+                text="UTL: Encountered {d[count]} Events with >100% utilization",
+                data={"count": 0}
+            ),
+            TraceWarning(
+                name="kernel_other",
+                text="UTL: Found {d[count]} Events without a matching kernel category and accounted for 'other'",
+                data={"count": 0}
+            )
+        ])
+
         self.autopilot = False
         self.csv_fname = self.generate_filename(csv_fname, "categories")
         self.tab_fname = self.generate_filename(csv_fname, "categories", "txt")
@@ -110,11 +120,6 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             aiulog.log(aiulog.WARN, "UTL:", self.multi_table+1,
                        "tables with ideal cycles have been detected."
                        " Utilization results should be inspected carefully!!!!")
-        if self.warn_util_100:
-            aiulog.log(aiulog.WARN, "UTL: Encountered", self.warn_util_100, "Events with >100% utilization")
-        if self.other_warning:
-            aiulog.log(aiulog.WARN, "UTL: Found", self.other_warning,
-                       "Events without a matching kernel category and accounted for 'other'")
         if self.unscaled:
             aiulog.log(aiulog.WARN, "UTL: No ideal/real frequency unscaled (factor 1.0). "
                        "Utilization might be based on undefined data.")
@@ -351,8 +356,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
     def accumulate_categories(self, pid, kernel, ideal_dur, duration):
         if kernel not in self.kernel_cat_map:
-            self.other_warning += 1
-            aiulog.log(aiulog.DEBUG, "UTL:", pid, "Unexpected kernel name: ", kernel, "Accounting for as 'other'.")
+            self.issue_warning("kernel_other")
             kernel = "other"
 
         cat = self.kernel_cat_map[kernel]
@@ -376,11 +380,25 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             csv_fname: str,
             soc_freq: float,
             core_freq: float) -> None:
-        super().__init__()
+
+        super().__init__(warnings=[
+            # count the number of events with >100% utilization (indication of table mismatch)
+            TraceWarning(
+                name="util_100",
+                text="UTL: Encountered {d[count]} Events with >100% utilization",
+                data={"count": 0}
+            ),
+            # count the number of events where no corresponding table/fingerprint was found
+            TraceWarning(
+                name="kernel_nomatch",
+                text="UTL: No matching Ideal Cycles table found for {d[count]} "
+                     "Events. This might indicate a wrong frequency setting.",
+                data={"count": 0}
+            )
+        ])
+
         log_list = compiler_log.split(",")
         self.multi_log = (len(log_list) > 1)
-        self.warn_util_100 = 0
-        self.warn_nomatch = 0  # count the number of events where no corresponding table/fingerprint was found
         self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job-file
         if self.multi_log:
             aiulog.log(aiulog.INFO, "UTL: Multi-AIU logs provided. Entries:", len(log_list))
@@ -396,17 +414,11 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                 csv_basename = csv_fname + str(rank)
             else:
                 csv_basename = csv_fname
-            self.rcuctx[rank] = RCUUtilizationContext(log,
-                                                      csv_fname=csv_basename,
-                                                      soc_freq=soc_freq,
-                                                      core_freq=core_freq)
-
-    def __del__(self) -> None:
-        if self.warn_util_100:
-            aiulog.log(aiulog.WARN, "UTL: Encountered", self.warn_util_100, "Events with >100% utilization")
-        if self.warn_nomatch:
-            aiulog.log(aiulog.WARN, "UTL: No matching Ideal Cycles table found for", self.warn_nomatch,
-                       "Events. This might indicate a wrong frequency setting.")
+            self.rcuctx[rank] = RCUUtilizationContext(
+                log,
+                csv_fname=csv_basename,
+                soc_freq=soc_freq,
+                core_freq=core_freq)
 
     def extract_kernel_from_event_name(self, event: TraceEvent) -> str:
         rname = event["name"]
@@ -506,7 +518,7 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
         except KeyError:
             aiulog.log(aiulog.DEBUG, f"UTL: No kernel table matching fingerprint {job_fingerprint}:"
                        f" {context.fingerprints.keys()}/{context.fingerprints[jobhash].fprint_data} ")
-            context.warn_nomatch += 1
+            context.issue_warning("kernel_nomatch")
             ideal_dur = 0.0
 
         # cmpt_dur = int(event["args"]["TS4"]) - int(event["args"]["TS3"])
@@ -520,7 +532,7 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
             aiulog.log(aiulog.WARN, "UTL: Event with +100% utilization. "
                        "This could indicate a problem with table fingerprinting: "
                        "(pid, ideal, observed, event)", pid, ideal_dur, cmpt_dur, event)
-            context.warn_util_100 += 1
+            context.issue_warning("util_100")
             utilization = 1.0
 
         if "cat" in event:
