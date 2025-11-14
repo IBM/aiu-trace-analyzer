@@ -180,7 +180,7 @@ class GlobalIngestData(object):
 class TraceWarning:
     """
     Keep track of warnings to allow accumulated warning at the end of a run
-    Usage:
+    Example:
 
         w = TraceWarning(
             name="MyWarning",
@@ -188,7 +188,7 @@ class TraceWarning:
             data={"count": 0, "max": 0.0},
             update_fn={"count": int.__add__, "max": max},
             autolog=True,
-            is_error=False,
+            is_error=True,
         )
 
         name:      a key that can be used to manage multiple warnings in e.g. a dictionary
@@ -196,10 +196,12 @@ class TraceWarning:
         data:      dictionary with entries that match the text variables
         update_fn: functions to run when the update function is called with data
         autolog:   automatically print the warning at destruction time (default)
-        is_error:  print the summary warning at WARN level (default) and not as ERROR
+        is_error:  print the summary warning as ERROR level and not as WARN (default)
 
         Whenever a warning should be added:
+
             w.update({"count": 1, "max": 100.0})
+
         this calls the preset update_fn for each item to update the values
         if update_fn is e.g. int.__add__, then the new_val entry for count will be increased by 1
 
