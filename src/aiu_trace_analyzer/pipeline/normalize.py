@@ -5,9 +5,9 @@ import math
 import re
 
 import aiu_trace_analyzer.logger as aiulog
+from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, TraceWarning
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.hashqueue import AbstractHashQueueContext
-from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
 from aiu_trace_analyzer.pipeline.tools import FlexEventMapToTS
 
 
@@ -59,7 +59,20 @@ class NormalizationContext(AbstractHashQueueContext):
 
     def __init__(self, soc_frequency: float, ignore_crit: bool = False,
                  filterstr: str = "") -> None:
-        super().__init__()
+        super().__init__(warnings=[
+            TraceWarning(
+                name="long_dur",
+                text="OVC: Detected {d[count]} event(s) with long duration and"
+                     " thus potential undetected overflow in TSx counter.",
+                data={"count": 0}
+            ),
+            TraceWarning(
+                name="ts_seq_err",
+                text="OVC: local_correction fix has missed a spot in TS-sequence of {d[count]} event(s).",
+                data={"count": 0},
+                is_error=True
+            )
+        ])
         self.soc_frequency = soc_frequency
         self.frequency_minmax = (1e99, 0.0, 0, 0.0, 0.0)
         self.OVERFLOW_TIME_SPAN_US = float(1 << 32) / self.soc_frequency
@@ -195,9 +208,7 @@ class NormalizationContext(AbstractHashQueueContext):
                 prev = curr
 
             if event["dur"] > self.OVERFLOW_TIME_SPAN_US:
-                aiulog.log(aiulog.WARN,
-                           "OVC: Detected event with long duration and"
-                           " thus potential undetected overflow in TSx counter.")
+                self.warnings["long_dur"].update()
 
             if "Cmpt Exec" not in event["name"]:
                 return args
@@ -249,7 +260,7 @@ class NormalizationContext(AbstractHashQueueContext):
                 curr = int(args[ts], 0)
                 curr += (ovc * 1 << 32)
                 if curr < prev:
-                    aiulog.log(aiulog.ERROR, "attempt of local_correction fix has missed a spot in TS-sequence.")
+                    self.warnings["ts_seq_err"].update()
                     if not self.ignore_crit:
                         assert curr >= prev, "local_correction of TS-sequence incomplete."
                 args[ts] = str(curr)
