@@ -41,7 +41,7 @@ class RCUTableFingerprint():
             self,
             datalimit: int = -1,
             event_filter: str = r'',
-            table_mode: str = "UKN"):
+            table_mode: str = "UNKN"):
         self.datalimit = datalimit if datalimit > 0 else 1 << 31   # yes, it's not really unlimited...
         self.event_filter = re.compile(event_filter)
         self.table_mode = table_mode
@@ -436,7 +436,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 phase = self.fingerprints[fp_key].get_table_mode()
             except KeyError:
                 aiulog.log(aiulog.WARN, "UTL: Unexpected entry in category tables", fp_key)
-                phase = "UKN"
+                phase = "UNKN"
             total = data["Total"][0]
             ideal_total = data["Total"][1]
 
