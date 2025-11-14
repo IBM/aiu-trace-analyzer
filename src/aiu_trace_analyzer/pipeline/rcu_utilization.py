@@ -157,16 +157,28 @@ class RCUKernelCategoryMap():
 
 class RCUTableParseMode(Flag):
     ACTIVE_TABLE = auto()
+    UNKNOWN = auto()
     PREFILL = auto()
 
     def get_phase(self):
-        return "TTFT" if self.PREFILL in self else "ITL"
+        if self.UNKNOWN not in self:
+            if self.PREFILL in self:
+                return "TTFT"
+            else:
+                return "ITL"
+        else:
+            return "UNKN"
 
     def update(self, phase_str: str):
         if phase_str == "PREFILL":
             self |= RCUTableParseMode.PREFILL
+            self &= ~RCUTableParseMode.UNKNOWN
+        elif phase_str == "DECODING":
+            self &= ~RCUTableParseMode.PREFILL
+            self &= ~RCUTableParseMode.UNKNOWN
         else:
             self &= ~RCUTableParseMode.PREFILL
+            self |= RCUTableParseMode.UNKNOWN
         return self
 
 
@@ -211,7 +223,6 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         self.kernel_db_url = kernel_db_url
         self._use_core_freq = True
         self.multi_table = -1  # assume no multitable case
-        self.use_fprint = 1  # assume to require table-fingerprinting
 
         # if scale factor is unknown, set to -1.0 to later identify cycles that need subsequent rescaling
         self.scale_factor = soc_freq/core_freq
@@ -224,9 +235,6 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             subdir, fpat = '/'.join(compiler_log.split('/')[:-1]), compiler_log.split('/')[-1]
             compiler_log_name = list(pathlib.Path(subdir).rglob(fpat))[0]
             self.extract_tables(compiler_log=compiler_log_name)
-            # with a single table, we won't need to respect any fingerprinting
-            if self.multi_table == 0:
-                _, self.kernel_cycles[0] = self.kernel_cycles.popitem()
         except Exception as e:
             aiulog.log(aiulog.ERROR, "UTL: Unable to open/parse log file.", compiler_log, e)
 
@@ -389,7 +397,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
     def extract_tables(self, compiler_log: str):
 
-        parse_mode = RCUTableParseMode(0)
+        parse_mode = RCUTableParseMode(RCUTableParseMode.UNKNOWN)
         self.multi_table = -1  # track if there might be multiple tables in the log
         current_table = {}
         fprint = None  # fingerprints created when a new table is detected
@@ -481,7 +489,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
     def get_cycles(self, kernel: str, fprint: int) -> int:
         if len(self.kernel_cycles):
-            rval = self.kernel_cycles[fprint * self.use_fprint].get(kernel, 0)
+            rval = self.kernel_cycles[fprint].get(kernel, 0)
             return rval
         else:
             return 0
