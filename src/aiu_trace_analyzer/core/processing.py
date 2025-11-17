@@ -70,7 +70,7 @@ class EventProcessor:
         for check in _MINREQKEYS:
             if check not in event:
                 aiulog.log(aiulog.ERROR, "Event failed sanityCheck: ", check, "is not in", event)
-                return []    # TODO: should be exception
+                return []
         return [event]
 
     def process(self, event: TraceEvent) -> list[aiuev.AbstractEventType]:

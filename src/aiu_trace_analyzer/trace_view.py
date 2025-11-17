@@ -124,7 +124,6 @@ class AbstractEventType(object):
                                       args=event["args"],
                                       )
         elif etype in ["b", "e"]:
-            # TODO: AsyncEvents needs extension
             new_event = AsyncEvents(ph=event["ph"],
                                     ts=event["ts"],
                                     pid=event["pid"],

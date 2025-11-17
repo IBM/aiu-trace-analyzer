@@ -99,7 +99,7 @@ class MpTsCalibV2Context(EventPairDetectionContext):
         compute the minimal and maximal timestamps for each group from each rank.
 
         Ack:  experimentation stage
-        TODO: use numpy
+        consider using numpy
         '''
 
         # <min, max> dev-ts ranges for each coll-group on each rank/proc, <min> is not in effect in mp_sync_v2

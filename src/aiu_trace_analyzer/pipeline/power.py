@@ -128,7 +128,6 @@ class PowerExtractionContext(AbstractHashQueueContext):
                 self.bad_events += 1
                 new_val = 0
 
-        # TODO: remove these statements
         # check if power value is huge
         if self.skip_events is True:
             #

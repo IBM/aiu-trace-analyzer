@@ -73,7 +73,7 @@ class MpTsCalibContext(EventPairDetectionContext):
         compute the minimal and maximal timestamps for each group from each rank.
 
         Ack:  experimentation stage
-        TODO: use numpy
+        consider using numpy
         '''
         ts_ranges = {}
         ts_delta_host_device = {}

@@ -16,10 +16,8 @@ class TIDMappingContext(AbstractContext):
         self.tid_original = []
         self.tid_remap = []
 
-        # TODO this could be made more flexible without a pre-defined/limited list of available mappings
         # Let's initialize the tid_remap list
         for rid in range(remap_size):
-            # remapped tid = remap_start + rid*remap_step
             self.tid_remap.append(remap_start + (rid * remap_step))
 
 
