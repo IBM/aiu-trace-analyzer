@@ -50,7 +50,7 @@ The `-c` argument provides the tool with the log file which is being processed f
 acelyzer -i "${TRACE_DIR}/hap-json-files/hap-bs8-seq256-autopilot-0-34707-job-*.json" -c ${TRACE_GIT}/hap-json-files/hap-bs8-seq256-autopilot-0.log -o hap_trace.json
 ```
 
-An evolving feature is the use of processing profiles (option `-P`) to allow control which processing stages are enabled. By default, the `everything.json` profile (or `default.json`) is used. Note that the cmdline still overrides the deactivation of stages so that if a stage is not requested via cmdline, its activation in the profile has no effect. When creating a profile, it's currently necessary to start from the everything-profile and set unwanted stages to `false`. If the provided profile file is not found at the given path, the tool will lookup a file with that name at the location of the other predefined profiles (`<install_or_src_path>/src/aiu-trace-analyzer/profiles`).
+An evolving feature is the use of processing profiles (option `-P`) to allow control which processing stages are enabled. By default, the `everything.json` profile (or `default.json`) is used. Note that the cmdline still overrides the deactivation of stages so that if a stage is not requested via cmdline, its activation in the profile has no effect. When creating a profile, it's currently necessary to start from the everything-profile and set unwanted stages to `false`. If the provided profile file is not found at the given path, the tool will lookup a file with that name at the location of the other predefined profiles (`<install_or_src_path>/src/aiu_trace_analyzer/profiles`).
 
 ### Input Files
 
