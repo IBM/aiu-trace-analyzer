@@ -50,7 +50,7 @@ The `-c` argument provides the tool with the log file which is being processed f
 acelyzer -i "${TRACE_DIR}/hap-json-files/hap-bs8-seq256-autopilot-0-34707-job-*.json" -c ${TRACE_GIT}/hap-json-files/hap-bs8-seq256-autopilot-0.log -o hap_trace.json
 ```
 
-An evolving feature is the use of processing profiles (option `-P`) to allow control which processing stages are enabled. By default, the `everything.json` profile is used. Note that the cmdline still overrides the deactivation of stages so that if a stage is not requested via cmdline, its activation in the profile has no effect. When creating a profile, it's currently necessary to start from the everything-profile and set unwanted stages to `false`.
+An evolving feature is the use of processing profiles (option `-P`) to allow control which processing stages are enabled. By default, the `everything.json` profile (or `default.json`) is used. Note that the cmdline still overrides the deactivation of stages so that if a stage is not requested via cmdline, its activation in the profile has no effect. When creating a profile, it's currently necessary to start from the everything-profile and set unwanted stages to `false`. If the provided profile file is not found at the given path, the tool will lookup a file with that name at the location of the other predefined profiles (`<install_or_src_path>/src/aiu-trace-analyzer/profiles`).
 
 ### Input Files
 
@@ -308,6 +308,9 @@ The output json file can be viewed in chrome, perfetto, or tensorboard.
 *TensorBoard* is a standalone dashboard visualization toolkit for performance trace data in JSON format. To run on user workstation or settings with support to graphic web-browsers. Given its popularity, PyTorch has maintained a torch-profiler plugin to TensorBoard, often referred as TensorBoard-tp-plugin. Note that in this document, we often refer to TensorBoard-tp-plugin as TensorBoard for brevity.
 
 It is necessary to install tensorboard. To get started you may check [here](https://pytorch.org/tutorials/intermediate/tensorboard_profiler_tutorial.html#use-tensorboard-to-view-results-and-analyze-model-performance) or [here](https://stackoverflow.com/questions/33634008/how-do-i-install-tensorflows-tensorboard%20and%20https:/medium.com/red-buffer/getting-started-with-tensorboard-544016ba015f).
+
+
+The command line option `--tb` enables additional post-processing steps for better integration with TensorBoard. NOTE: by default, this option switches from the default stage profile to a `torch_minimal.json` stage profile which skips several stages to speed up the processing. This works best with torch.profiler traces. For flex traces, it's recommended to override this by `-P everything.json`
 
 
 ### Perfetto

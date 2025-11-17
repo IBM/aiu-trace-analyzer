@@ -16,6 +16,9 @@ class StageProfile:
 
     @classmethod
     def from_json(cls, file: Path):
+        if not os.path.isfile(file):
+            # try find profile file in default install location
+            file = os.path.join(os.path.dirname(__file__), "../profiles/", file)
         with open(file, 'r') as config_fd:
             profile_data = json.load(config_fd)
         with open(cls._everything_profile, 'r') as all_fd:

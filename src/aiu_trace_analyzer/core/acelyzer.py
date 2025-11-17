@@ -98,7 +98,7 @@ class Acelyzer:
         "time_unit": "ns",
 
         # name of a processing profile
-        "stage_profile": os.path.join(os.path.dirname(__file__), "../profiles/everything.json")
+        "stage_profile": os.path.join(os.path.dirname(__file__), "../profiles/default.json")
     }
 
     # define default event sort key: timestamp + reverse_duration
@@ -235,7 +235,7 @@ class Acelyzer:
                             choices=["drop", "tid", "async", "warn", "shift"],
                             help="How to resolve overlapping/non-displayable events )")
 
-        parser.add_argument("-P", "--profile", type=str, default=self.defaults["stage_profile"],
+        parser.add_argument("-P", "--profile", type=str, default="not_set",
                             help="Name of a processing profile json that lists"
                             " the active processing stages to run")
 
@@ -275,7 +275,8 @@ class Acelyzer:
                             help="To use Chrome-trace to render timeline, disable TB refinement")
 
         parser.add_argument("--tb", dest="tb", action="store_true", default=self.defaults["tb"],
-                            help="Enable output files for tensorboard.")
+                            help="Enable output files for tensorboard. "
+                            "IMPORTANT NOTE: Switches to 'torch_minimal' profile (use -P to override)!")
 
         parser.add_argument("--disable_file", dest="save_to_file", action="store_false", default=True,
                             help="Disable output to file (primarily for TensorBoard integration)."
@@ -326,6 +327,13 @@ class Acelyzer:
             except ValueError:
                 print('ERROR: Frequency setting requires float values.')
                 sys.exit(1)
+
+        if parsed_args.profile == "not_set":
+            # update the default profile depending on --tb argument
+            if parsed_args.tb is True:
+                parsed_args.profile = os.path.join(os.path.dirname(__file__), "../profiles/torch_minimal.json")
+            else:
+                parsed_args.profile = self.defaults["stage_profile"]
         return parsed_args
 
     def get_output_data(self) -> str:
