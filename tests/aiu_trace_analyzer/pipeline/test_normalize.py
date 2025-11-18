@@ -57,22 +57,29 @@ def test_tsx_32bit_global_correction(event, result, normalization_ctx):
         assert normalization_ctx.tsx_32bit_global_correction(0, event) == result
 
 
-@pytest.fixture
-def normalization_ctx_ign_crit():
-    return NormalizationContext(soc_frequency=1000.0,
-                                ignore_crit=True)
-
-
 ts_seq_ign_err_test_events = [
     ({'name': 'testevent', 'ph': 'X', 'ts': 3.141,
       'args': {'TS1': '1', 'TS2': '2', 'TS3': '2', 'TS4': '3', 'TS5': '5', 'jobhash': 0}},
-     {'TS1': '1', 'TS2': '2', 'TS3': '2', 'TS4': '3', 'TS5': '5', 'jobhash': 0, 'OVC': 0}),
+     {'TS1': '1', 'TS2': '2', 'TS3': '2', 'TS4': '3', 'TS5': '5', 'jobhash': 0, 'OVC': 0},
+     False),
     ({'name': 'testevent', 'ph': 'X', 'ts': 3.141,
       'args': {'TS1': '1', 'TS2': '2', 'TS3': '1', 'TS4': '3', 'TS5': '5', 'jobhash': 0}},
-     {'TS1': '1', 'TS2': '2', 'TS3': '1', 'TS4': '3', 'TS5': '5', 'jobhash': 0, 'OVC': 0}),
+     {'TS1': '1', 'TS2': '2', 'TS3': '1', 'TS4': '3', 'TS5': '5', 'jobhash': 0, 'OVC': 0},
+     True),
 ]
 
 
-@pytest.mark.parametrize("event,result", ts_seq_ign_err_test_events)
-def test_tsx_32bit_global_correction_ign(event, result, normalization_ctx_ign_crit):
+@pytest.mark.parametrize("event,result,expect_warning", ts_seq_ign_err_test_events)
+def test_tsx_32bit_global_correction_ign(event, result, expect_warning, capsys):
+    normalization_ctx_ign_crit = NormalizationContext(
+        soc_frequency=1000.0,
+        ignore_crit=True)
     assert normalization_ctx_ign_crit.tsx_32bit_global_correction(0, event) == result
+
+    # check whether an error is being issued when detecting out-of-sequence TS
+    if expect_warning:
+        assert normalization_ctx_ign_crit.warnings["ts_seq_err"].has_warning() is True
+        del normalization_ctx_ign_crit
+        output = capsys.readouterr()
+        assert "ERROR" in output.out
+        assert "OVC: local_correction fix has missed" in output.out
