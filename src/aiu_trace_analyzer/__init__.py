@@ -1,6 +1,6 @@
 # Copyright 2024-2025 IBM Corporation
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 
 from aiu_trace_analyzer.trace_view import AbstractEventType
 from aiu_trace_analyzer import *
