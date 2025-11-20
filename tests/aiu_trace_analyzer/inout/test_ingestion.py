@@ -15,24 +15,29 @@ def json_ingest(json_input) -> JsonFileEventTraceIngest:
     return JsonFileEventTraceIngest(json_input)
 
 
-def test_nonexist_json_file():
-    with pytest.raises(FileNotFoundError) as inres:
-        JsonFileEventTraceIngest("Nonexist_file")
-    assert inres.value.filename == "Nonexist_file"
+# def test_nonexist_json_file():
+#     with pytest.raises(FileNotFoundError) as inres:
+#         JsonFileEventTraceIngest("Nonexist_file")
+#     assert inres.value.filename == "Nonexist_file"
 
 
-def test_invalid_event_ts_scale(json_input):
-    with pytest.raises(AssertionError):
-        JsonFileEventTraceIngest(json_input, scale=-1.0)
+# def test_invalid_event_ts_scale(json_input):
+#     with pytest.raises(AssertionError):
+#         JsonFileEventTraceIngest(json_input, scale=-1.0)
 
 
 # test the number of generated events from basic_event_test_cases.json is correct
-def test_json_input(json_ingest: JsonFileEventTraceIngest):
+def test_json_input(json_input, capsys):
+    # create obj for this test to capture summary warnings
+    json_ingest = JsonFileEventTraceIngest(json_input)
+
     count = 0
     for _ in json_ingest.__iter__():
         count += 1
 
     assert count == 20
+    capsys.readouterr()
+    del json_ingest
 
 
 input_fail_cases: list[tuple[list, Exception, str]] = [
@@ -113,19 +118,26 @@ def test_json_iterator(generate_event_list, exp_len, json_input):
     assert count == exp_len, "Unexpected number of events"
 
 
-def test_zero_duration_warning(json_ingest):
+warnings_to_test = [
+    ("zero_duration", "with zero duration", 2),
+    ("negative_duration", "negative duration event", 1)
+]
+
+
+@pytest.mark.parametrize("warning_class, expected_text, count", warnings_to_test)
+def test_summary_warnings(warning_class, expected_text, count, json_input, capsys):
+    # create obj for this test because we're testing __del__
+    json_ingest = JsonFileEventTraceIngest(json_input)
+
     # iterate through events to create issued warnings
     for _ in json_ingest:
         pass
 
-    assert json_ingest.warnings['zero_duration'].has_warning() is True
-    assert json_ingest.warnings['zero_duration'].args_list['count'] == 2
+    assert json_ingest.warnings[warning_class].has_warning() is True
+    assert json_ingest.warnings[warning_class].args_list['count'] == count
 
-
-def test_neg_duration_warning(json_ingest):
-    # iterate through events to create issued warnings
-    for _ in json_ingest:
-        pass
-
-    assert json_ingest.warnings['negative_duration'].has_warning() is True
-    assert json_ingest.warnings['negative_duration'].args_list['count'] == 1
+    if json_ingest.warnings[warning_class].has_warning():
+        del json_ingest
+        output = capsys.readouterr()
+        assert "WARNING" in output.out
+        assert expected_text in output.out

@@ -12,7 +12,7 @@ description = "Event Profile/Trace Analyzer (acelyzer) for post-processing, comb
 license = "Apache-2.0"
 license-files = ["LICEN[CS]E*"]
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "pandas"
