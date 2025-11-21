@@ -160,9 +160,14 @@ class Acelyzer:
                 self.exporter = output.DataframeExporter(target_uri=self.args.output,
                                                          timescale=self.args.time_unit,
                                                          settings=vars(self.args))
-            else:
+            elif self.args.format == "proto":
                 self.exporter = output.ProtobufTraceExporter(target_uri=self.args.output,
                                                              settings=vars(self.args))
+            else:
+                aiulog.log(
+                    aiulog.ERROR,
+                    "Unrecognized export format. Available options: json or pddf (and unsupported: proto)")
+                return -1
         self.exporter.export_meta(importer.get_passthrough_meta())
 
         self.register_processing_functions(process, self.args, self.exporter)
