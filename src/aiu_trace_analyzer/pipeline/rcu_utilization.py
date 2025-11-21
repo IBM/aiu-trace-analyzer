@@ -730,6 +730,8 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
                 cmpt_dur,
                 job_fingerprint)
         util_counter = context.make_utilization_event(event, utilization*100.0)
+        if utilization > 0.0:
+            event["args"]["pt_active"] = utilization
         return [event] + util_counter
 
     return [event]

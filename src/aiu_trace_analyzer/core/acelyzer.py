@@ -156,6 +156,10 @@ class Acelyzer:
                 self.exporter = output.JsonFileTraceExporter(target_uri=self.args.output,
                                                              timescale=self.args.time_unit,
                                                              settings=vars(self.args))
+            elif self.args.format == "pddf":
+                self.exporter = output.DataframeExporter(target_uri=self.args.output,
+                                                         timescale=self.args.time_unit,
+                                                         settings=vars(self.args))
             else:
                 self.exporter = output.ProtobufTraceExporter(target_uri=self.args.output,
                                                              settings=vars(self.args))
@@ -336,11 +340,8 @@ class Acelyzer:
                 parsed_args.profile = self.defaults["stage_profile"]
         return parsed_args
 
-    def get_output_data(self) -> str:
-        if self.args.tb and self.args.tb_refinement:
-            return self.exporter.get_data()
-        else:
-            return "Only supported for TensorBoard exporter."
+    def get_output_data(self):
+        return self.exporter.get_data()
 
     def _args_sanity_check(self, args) -> bool:
         assert math.isclose(args.freq_scaling, 0.0, abs_tol=1e-9), \

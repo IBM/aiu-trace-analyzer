@@ -3,6 +3,9 @@
 import sys
 import os
 from collections import defaultdict
+from typing import Optional
+
+import pandas as pd
 
 import aiu_trace_analyzer.logger as aiulog
 import aiu_trace_analyzer.trace_view as tv
@@ -52,6 +55,9 @@ class AbstractTraceExporter:
     def flush(self):
         raise NotImplementedError("Class %s doesn't implement flush()" % (self.__class__.__name__))
 
+    def get_data(self):
+        raise NotImplementedError("Class %s doesn't implement get_data()" % (self.__class__.__name__))
+
 
 class JsonFileTraceExporter(AbstractTraceExporter):
     '''
@@ -73,6 +79,10 @@ class JsonFileTraceExporter(AbstractTraceExporter):
     # append a raw event (dictionary as is) to the traceview
     def export_raw(self, data: dict):
         self.traceview.append_trace_event(data)
+
+    # return traceview data as a json string
+    def get_data(self) -> str:
+        return self.traceview.dump(fp=None)
 
     # write the traceview to file
     def flush(self):
@@ -169,9 +179,6 @@ class TensorBoardFileTraceExporter(JsonFileTraceExporter):
             with open(file_name, 'w') as json_new_pids_file:
                 self.traceview.dump(fp=json_new_pids_file)
 
-    def get_data(self) -> str:
-        return self.traceview.dump(fp=None)
-
     def get_tb_data(self, worker) -> str:
         return self.traceview_by_rank[worker].dump(fp=None)
 
@@ -204,3 +211,81 @@ class TensorBoardFileTraceExporter(JsonFileTraceExporter):
             return
 
         self._save_events_by_id()
+
+
+class DataframeExporter(AbstractTraceExporter):
+    def __init__(
+            self, target_uri, timescale="ms", settings=None,
+            data_map: dict = None):
+        super().__init__(target_uri=target_uri, settings=settings)
+        self.vertical_view = []
+        self.df = None
+
+        # mapping from event entry to dataframe column
+        # only entries that appear are picked up
+        if not data_map:
+            self.data_map = {
+                "ts": ("Timestamp", 0.0),
+                "dur": ("Duration", 0.0),
+                "cat": ("Category", "other"),
+                "name": ("Event Name", "NoName"),
+                "args.pt_active": ("PT_Active", 0.0)}
+        else:
+            self.data_map = data_map
+
+    def add_device(self, id, data: dict):
+        devdata = {"id": id}
+        for k, v in data.items():
+            devdata[k] = v
+        self.device_data.append(devdata)
+
+        assert isinstance(self.device_data, list)
+
+    def export_meta(self, meta_data: dict) -> None:
+        # no metadata for this exporter type
+        return
+
+    def _extract_value(self, key_path: str, event: dict) -> str:
+        try:
+            default = self.data_map[key_path][1]
+        except KeyError:
+            return "N/A"
+
+        keys = key_path.split('.')
+        value = event
+        for k in keys:
+            if isinstance(value, dict) and k in value:
+                value = value[k]
+            else:
+                return default
+        return value
+
+    def _convert_trace_event(self, event_dict: tv.AbstractEventType) -> Optional[tuple]:
+        if event_dict.ph != "X":
+            return None
+
+        rval = []
+        for jpath in self.data_map.keys():
+            rval.append(self._extract_value(jpath, event_dict.json()))
+
+        return tuple(rval)
+
+    # export (a list) of events to the configured target
+    def export(self, data: list[tv.AbstractEventType]):
+        for event in data:
+            if not isinstance(event, tv.CompleteEvents):
+                continue
+
+            event_line = self._convert_trace_event(event)
+            if event_line:
+                self.vertical_view.append(event_line)
+
+    def flush(self):
+        title_row = [v[0] for v in self.data_map.values()]
+        self.df = pd.DataFrame(self.vertical_view, columns=title_row)
+
+        with open(self.target_uri, 'w') as f:
+            f.write(self.df.to_string(index=False))
+
+    def get_data(self) -> pd.DataFrame:
+        return self.df
