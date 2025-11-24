@@ -17,6 +17,13 @@ import aiu_trace_analyzer.pipeline as event_pipe
 from aiu_trace_analyzer import __version__
 
 
+class AcelyzerArgsFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
+    """
+    Combine argsparse formatting for preserved line breaks and including default values
+    """
+    pass
+
+
 class Acelyzer:
 
     defaults = {
@@ -181,7 +188,7 @@ class Acelyzer:
 
     def parse_inputs(self, args=None):
         # to include default value in --help output
-        parser = argparse.ArgumentParser(prog="acelyzer", formatter_class=argparse.RawTextHelpFormatter)
+        parser = argparse.ArgumentParser(prog="acelyzer", formatter_class=AcelyzerArgsFormatter)
         required_group = parser.add_mutually_exclusive_group(required=True)
         parser.add_argument("-C", "--counter", type=str, nargs='*', default=self.defaults["counter"],
                             choices=["power_ts4", "power_ts3", "coll_bw", "bandwidth", "prep_queue", "rcu_util"],
@@ -208,7 +215,8 @@ class Acelyzer:
                             help="List of event types to keep. E.g. 'C' to just keep counters.")
 
         parser.add_argument("-f", "--format", type=str, default=self.defaults["format"],
-                            help="Type of output format (json, protobuf)")
+                            choices=["json", "pddf", "protobuf"],
+                            help="Type of output format")
 
         parser.add_argument("--freq", type=str, default=':'.join([str(self.defaults["freq"]),
                                                                   str(self.defaults["ideal_freq"])]),

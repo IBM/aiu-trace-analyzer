@@ -57,7 +57,7 @@ An evolving feature is the use of processing profiles (option `-P`) to allow con
 
 The tool is capable of ingesting these types of input files:
 
- * json traces (`-f json`): So far this is the primary and supported option. It can be a json file that contains a list of events or another trace file that's formatted after the Trace Event Format. The tool is also capable of processing torch profiler trace files. It attempts to detect the input 'dialect' and adjusts event treatment accordingly.
+ * json traces: So far this is the primary and supported option. It can be a json file that contains a list of events or another trace file that's formatted after the Trace Event Format. The tool is also capable of processing torch profiler trace files. It attempts to detect the input 'dialect' and adjusts event treatment accordingly.
  * perfetto protobuf files: so far it's able to extract trace events and their arguments from those files. It's not reading counters or other more sophisticated things yet (limited functionality).
 
 There's a basic autodetect function for the file type built in. If the filename extension doesn't indicate the type, it detects log files by their lines with time stamps, it detects json files by finding the initial open parenthesis, and for everything else, it assumes binary format of perfetto.
