@@ -124,7 +124,7 @@ _TYPE_COMP = "comp"
 _TYPE_COMM = "comm"
 
 
-class EventStatsTrackerContext(PipelineContextTool):
+class EventStatsTrackerContext(AbstractContext, PipelineContextTool):
     def __init__(self, stats_filename: str, stat_metrics: dict) -> None:
         super().__init__()
         self.stats_filename = stats_filename
