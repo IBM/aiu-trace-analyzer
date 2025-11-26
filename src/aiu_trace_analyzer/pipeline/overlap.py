@@ -3,16 +3,22 @@
 import copy
 
 import aiu_trace_analyzer.logger as aiulog
-from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionContext
+from aiu_trace_analyzer.pipeline import AbstractContext, AbstractHashQueueContext, TwoPhaseWithBarrierContext
 from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
 
 
 class OverlapTracking(tuple[float, bool, list[float]]):
+    """
+    tuple of:
+      float:  the ts of the currently 'active' event
+      bool:   whether this event stream/queue is blocked or not (has active event)
+      list[float]: list of end-ts for the stack of active events
+    """
     pass
 
 
-class OverlapDetectionContext(EventPairDetectionContext):
+class OverlapDetectionContext(TwoPhaseWithBarrierContext):
     '''
     Management structures and functions to deal with overlapping events.
     Solves without storing the events themselves, just keeps track of
@@ -35,7 +41,8 @@ class OverlapDetectionContext(EventPairDetectionContext):
 
     def __init__(self,
                  overlap_resolve=OVERLAP_RESOLVE_DROP,
-                 ts_shift_threshold=0.0
+                 ts_shift_threshold=0.0,
+                 max_tid_streams=5,
                  ) -> None:
         super().__init__()
         self.overlap_resolve = overlap_resolve
@@ -43,6 +50,8 @@ class OverlapDetectionContext(EventPairDetectionContext):
         self.async_id = 0
         self.async_queues = {}
         self.ts_shift_threshold = ts_shift_threshold
+        self.tid_space = {}
+        self.max_tid_streams = max_tid_streams
 
     def __del__(self) -> None:
         level = aiulog.WARN if self.resolved else aiulog.INFO
@@ -54,7 +63,7 @@ class OverlapDetectionContext(EventPairDetectionContext):
     def overlap_detection(self, event: TraceEvent) -> list[TraceEvent]:
 
         tid = event["tid"] if "tid" in event else 0
-        queue_id = self.queue_hash(event["pid"], tid)
+        queue_id = self.event_data_hash(event, ["pid", "tid"], ignore_missing=True)
         if queue_id not in self.queues:
             self.queues[queue_id] = (0.0, False, [])
 
@@ -113,6 +122,14 @@ class OverlapDetectionContext(EventPairDetectionContext):
                 overlap_time = max(overlap_time, e - ts)
         return overlap_time
 
+    def find_next_tid(self, event: TraceEvent) -> int:
+        if event["tid"] not in self.tid_space[event["pid"]]:
+            aiulog.log(
+                aiulog.ERROR,
+                "POD: insufficient dynamic range for tid-based overlap resolution. Increase max_tid_space.")
+        new_tid = self.tid_space[event["pid"]][event["tid"]]
+        return new_tid
+
     # solve a detected overlap between a pair of pairs
     def handle_overlap(self,
                        oevent: TraceEvent,
@@ -151,7 +168,7 @@ class OverlapDetectionContext(EventPairDetectionContext):
             self.resolved += 1
             return rlist
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_TID:
-            oevent["tid"] += 1
+            oevent["tid"] = self.find_next_tid(oevent)
             # feed offending event back into the detector with the new TID to make sure
             # there are no collisions there either
             rlist = self.overlap_detection(oevent)
@@ -194,16 +211,65 @@ class OverlapDetectionContext(EventPairDetectionContext):
         self.async_queues[queueID] = remain
         return rlist
 
+    def collect_tid_space(self, event: TraceEvent) -> None:
+        pid, tid = event["pid"], event["tid"]
+        if pid not in self.tid_space:
+            self.tid_space[pid] = {-1: set()}
+
+        # collect all detected tids under key `-1`
+        self.tid_space[pid][-1].add(tid)
+
+        if tid not in self.tid_space[pid]:
+            self.tid_space[pid][tid] = []
+
+    def _create_tid_space(self, tid: int, exclude: list[int]) -> list[int]:
+        tlist = []
+        next_tid = tid
+        while len(tlist) < self.max_tid_streams:
+            next_tid += 1
+            if next_tid not in exclude:
+                tlist.append(next_tid)
+        return tlist
+
     def drain(self):
-        revents = []
-        # make sure to drain the queue of async 'e' events that might have been hold
-        # back past the end of the last main event of a stream
-        while len(self.async_queues) > 0:
-            _, aq = self.async_queues.popitem()
-            # make sure to keep everything sorted
-            aq.sort(key=lambda e: e['ts'])
-            revents += aq
-        return revents
+        if self.overlap_resolve == self.OVERLAP_RESOLVE_TID and self.phase == self._COLLECTION_PHASE:
+            new_tspace = {}
+            for pid, tspace in self.tid_space.items():
+                new_tspace = {}
+                # collect candidate lists for each known tid from input
+                exclude: set = tspace[-1]
+                for tid in tspace.keys():
+                    if tid == -1:
+                        continue
+                    tcandidates = self._create_tid_space(tid, exclude)
+                    self.tid_space[pid][tid] = tcandidates
+                    exclude.update(tcandidates)
+                    new_tspace[tid] = tcandidates[0]
+                    for src_tid, next_tid in zip(tcandidates[:-1], tcandidates[1:]):
+                        new_tspace[src_tid] = next_tid
+
+                aiulog.log(aiulog.TRACE, "POD: total tid_space:", self.tid_space[pid])
+                self.tid_space[pid] = copy.deepcopy(new_tspace)
+                aiulog.log(aiulog.TRACE, "POD: tid neighbors:", new_tspace)
+            return super().drain()
+        else:
+            revents = []
+            # make sure to drain the queue of async 'e' events that might have been hold
+            # back past the end of the last main event of a stream
+            while len(self.async_queues) > 0:
+                _, aq = self.async_queues.popitem()
+                # make sure to keep everything sorted
+                aq.sort(key=lambda e: e['ts'])
+                revents += aq
+            return revents
+
+
+def detect_partial_overlap_tids(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
+    assert isinstance(context, OverlapDetectionContext)
+
+    if event["ph"] in "X":
+        context.collect_tid_space(event)
+    return [event]
 
 
 # mapping function callback
@@ -218,7 +284,7 @@ def detect_partial_overlap_events(event: TraceEvent, context: AbstractContext) -
 
 ###################################################################
 # Timestamps sequence checking to make sure time stamps stay sorted
-class TSSequenceContext(EventPairDetectionContext):
+class TSSequenceContext(AbstractHashQueueContext):
     def __init__(self, ts3check: bool = False):
         super().__init__()
         self.TS_cmpt_end = {}
@@ -236,7 +302,7 @@ class TSSequenceContext(EventPairDetectionContext):
 
     def insert(self, event: TraceEvent, queue_id=None):
         if not queue_id:
-            queue_id = self.queue_hash(event["pid"], event["tid"])
+            queue_id = self.event_data_hash(event, ["pid", "tid"], ignore_missing=True)
 
         if queue_id not in self.queues:
             self.queues[queue_id] = (0.0, 1e99)

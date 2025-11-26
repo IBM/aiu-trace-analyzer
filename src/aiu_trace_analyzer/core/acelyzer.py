@@ -485,8 +485,12 @@ class Acelyzer:
         process.register_stage(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_a)
 
         # register pre-processing: resolve overlap conflicts caused by partially overlapping slices
-        overlap_ctx = event_pipe.OverlapDetectionContext(overlap_resolve=self._overlap_option_from_arg(args.overlap),
+        overlap_arg = self._overlap_option_from_arg(args.overlap)
+        overlap_ctx = event_pipe.OverlapDetectionContext(overlap_resolve=overlap_arg,
                                                          ts_shift_threshold=self.defaults["ts_shift_threshold"])
+        if overlap_arg == event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_TID:
+            process.register_stage(callback=event_pipe.detect_partial_overlap_tids, context=overlap_ctx)
+            process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
         process.register_stage(callback=event_pipe.detect_partial_overlap_events, context=overlap_ctx)
 
         # validate that the overlap has not messed up the event stream ordering
