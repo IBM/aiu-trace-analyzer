@@ -23,10 +23,26 @@ class AbstractContext:
     '''
     def __init__(self, warnings: list[TraceWarning] = None) -> None:
         self.warnings: dict[str, TraceWarning] = {}
+        self.is_enabled = False
 
         if warnings is not None:
             for w in warnings:
                 self.add_warning(w)
+
+    def enable(self) -> bool:
+        self.is_enabled = True
+        return self.is_enabled
+
+    def disable(self) -> bool:
+        # use OR to make sure any previous activation cannot be overwritten
+        self.is_enabled |= False
+        if not self.is_enabled:
+            self._disable_warnings()
+        return self.is_enabled
+
+    def _disable_warnings(self) -> None:
+        for _, w in self.warnings.items():
+            w.occurred = False
 
     def print_warnings(self) -> None:
         for _, w in self.warnings.items():
