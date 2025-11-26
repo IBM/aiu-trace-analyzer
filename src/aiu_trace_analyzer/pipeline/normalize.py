@@ -137,7 +137,10 @@ class NormalizationContext(AbstractHashQueueContext):
                 aiulog.log(aiulog.WARN, "FLTR: key:regex pattern not found in event filter. Skipping", fstr)
                 continue
             event_filters[key_regex[0]] = re.compile(rf"{key_regex[1]}")
-        aiulog.log(aiulog.INFO, f"FLTR: Event filtering is active. {len(event_filters)} filters enabled.")
+        aiulog.log(
+            aiulog.INFO,
+            f"FLTR: Event filtering is active. {len(event_filters)} filters enabled:",
+            event_filters)
         return event_filters
 
     def event_filtered(self, event: TraceEvent) -> bool:

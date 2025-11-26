@@ -17,6 +17,13 @@ import aiu_trace_analyzer.pipeline as event_pipe
 from aiu_trace_analyzer import __version__
 
 
+class AcelyzerArgsFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
+    """
+    Combine argsparse formatting for preserved line breaks and including default values
+    """
+    pass
+
+
 class Acelyzer:
 
     defaults = {
@@ -156,9 +163,18 @@ class Acelyzer:
                 self.exporter = output.JsonFileTraceExporter(target_uri=self.args.output,
                                                              timescale=self.args.time_unit,
                                                              settings=vars(self.args))
-            else:
+            elif self.args.format == "pddf":
+                self.exporter = output.DataframeExporter(target_uri=self.args.output,
+                                                         timescale=self.args.time_unit,
+                                                         settings=vars(self.args))
+            elif self.args.format == "proto":
                 self.exporter = output.ProtobufTraceExporter(target_uri=self.args.output,
                                                              settings=vars(self.args))
+            else:
+                aiulog.log(
+                    aiulog.ERROR,
+                    "Unrecognized export format. Available options: json or pddf (and unsupported: proto)")
+                return -1
         self.exporter.export_meta(importer.get_passthrough_meta())
 
         self.register_processing_functions(process, self.args, self.exporter)
@@ -172,7 +188,7 @@ class Acelyzer:
 
     def parse_inputs(self, args=None):
         # to include default value in --help output
-        parser = argparse.ArgumentParser(prog="acelyzer", formatter_class=argparse.RawTextHelpFormatter)
+        parser = argparse.ArgumentParser(prog="acelyzer", formatter_class=AcelyzerArgsFormatter)
         required_group = parser.add_mutually_exclusive_group(required=True)
         parser.add_argument("-C", "--counter", type=str, nargs='*', default=self.defaults["counter"],
                             choices=["power_ts4", "power_ts3", "coll_bw", "bandwidth", "prep_queue", "rcu_util"],
@@ -199,7 +215,8 @@ class Acelyzer:
                             help="List of event types to keep. E.g. 'C' to just keep counters.")
 
         parser.add_argument("-f", "--format", type=str, default=self.defaults["format"],
-                            help="Type of output format (json, protobuf)")
+                            choices=["json", "pddf", "protobuf"],
+                            help="Type of output format")
 
         parser.add_argument("--freq", type=str, default=':'.join([str(self.defaults["freq"]),
                                                                   str(self.defaults["ideal_freq"])]),
@@ -336,11 +353,8 @@ class Acelyzer:
                 parsed_args.profile = self.defaults["stage_profile"]
         return parsed_args
 
-    def get_output_data(self) -> str:
-        if self.args.tb and self.args.tb_refinement:
-            return self.exporter.get_data()
-        else:
-            return "Only supported for TensorBoard exporter."
+    def get_output_data(self):
+        return self.exporter.get_data()
 
     def _args_sanity_check(self, args) -> bool:
         assert math.isclose(args.freq_scaling, 0.0, abs_tol=1e-9), \

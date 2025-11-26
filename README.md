@@ -52,6 +52,7 @@ acelyzer -i "${TRACE_DIR}/hap-json-files/hap-bs8-seq256-autopilot-0-34707-job-*.
 
 An evolving feature is the use of processing profiles (option `-P`) to allow control which processing stages are enabled. By default, the `everything.json` profile (or `default.json`) is used. Note that the cmdline still overrides the deactivation of stages so that if a stage is not requested via cmdline, its activation in the profile has no effect. When creating a profile, it's currently necessary to start from the everything-profile and set unwanted stages to `false`. If the provided profile file is not found at the given path, the tool will lookup a file with that name at the location of the other predefined profiles (`<install_or_src_path>/src/aiu_trace_analyzer/profiles`).
 
+
 ### Input Files
 
 The tool is capable of ingesting these types of input files:
@@ -60,7 +61,6 @@ The tool is capable of ingesting these types of input files:
  * perfetto protobuf files: so far it's able to extract trace events and their arguments from those files. It's not reading counters or other more sophisticated things yet (limited functionality).
 
 There's a basic autodetect function for the file type built in. If the filename extension doesn't indicate the type, it detects log files by their lines with time stamps, it detects json files by finding the initial open parenthesis, and for everything else, it assumes binary format of perfetto.
-
 
 
 ### Output Files
@@ -81,6 +81,9 @@ the stdout log files associated with a profiling run). For example, the `bmm*` c
 operations using the PT-arrays in AIU’s Rapid-Cores, while other categories are primarily responsible
 for vector computations that do not involve the PT-array.
 
+ * Pandas dataframe export (`-f pddf`): Allows [integration](#integration-into-other-tools) into other post processing scripts like Jupyter notebooks. If the output to file is not disabled, the data is also exported as a text file table.
+
+
 **Table: Available Performance Metrics/Views**
 | Metrics/Features | Description | Details |
 |------------------|-------------|---------|
@@ -93,6 +96,7 @@ for vector computations that do not involve the PT-array.
 | Kernel time breakdown by categories | Breakdown of execution times over a handful of categories of kernels, where different categories representing different types of computation operations on AIU | Available in text and csv format for autopilot-off profiling mode. Additional run to support autopilot-on mode. |
 | Kernel time breakdown | Function profile of execution time and occurrences of device-residing computation kernels | Available in text and csv format for autopilot-off profiling mode |
 | Elapsed time per inference iteration | Averaged elapsed time of an inference iteration | Available in console output for autopilot-off profiling mode, only if autodetection succeeded |
+
 
 ### Important Kernel Profile Statistics
 
@@ -121,12 +125,15 @@ There are 3 types of time stamps synchronization involved:
 
 When running `acelyzer`, the progress and basic processing information is printed to the console. This includes information about the input/output files and events as well as essential warnings and errors. The event processing is happening in stages and each stage has a short identifier like OVC (overflow correction) or PEC (power extraction and computation), etc. This helps to identify problems and categorize any warnings.  It is recommended to pay some attention to the warnings before diving into further analysis or visualization because they can point to certain problems with the input or output data which may render useless the visualized data. For example if the tool detects an effective frequency that wildly differs from what's used on the cmdline, your event durations and timestamps could be unrealistic/unreliable. More about this can be found in the [troubleshooting](#understanding-and-troubleshooting-the-results) section.
 
+
 ## Options/Event Processing in Detail
 
 This section explains some of the command line options in more detail.
 
+
 ### compiler_log
 This option allows to pass the compiler log output into `acelyzer` and allows for additional data augmentation and PT-Array utilization data. For multi-AIU workloads, one file per process should be provided to avoid intermingled data inside the log. Also it is important that multi-AIU logfiles be provided in the order of the process ranks to properly map each log file to its rank.
+
 
 ### flow
 For multi-AIU workloads, this option enables a detection of communication calls and collective operations.
@@ -135,13 +142,16 @@ Limitations:
  * It strongly depends on the available flex data and might just not be able to find communication primitives or the necessary information to correlate sends and receives to establish flow events.
  * If collective events are not detected, it also prevents computation of collective bandwidth and the distributed view data in TensorBoard.
 
+
 ### build_coll_event
 
 This feature relies on successful flow detection to create an event stream where each event spans the duration of collective operations and allows for computation of effective bandwidth for these collectives. This can be useful for analysis of distributed workloads.
 
+
 ### comm_summarize_seq
 
 Somewhat similar to [build_coll_event](#build_coll_event), but doesn't require flow detection. It creates a communication event for each detected pair of send-receive events. This is useful to increase the visual comprehension of communication steps and reduce the amount of events for cases where a single send or receive operation consists of multiple sub-steps.
+
 
 ### flex_ts_fix
 Acelyzer is attempting to detect cycle-to-wallclock mapping differences between jobs of the input. There are 2 problems that it tries to address:
@@ -161,6 +171,7 @@ Consequences when in use:
  * the same offset is applied to all events of a job
  * the amount of adjustment is added to the event metadata, so have immediate information that the event was shifted and by how much.
 
+
 ### comm_summarize_seq
 
 This option replaces the individual events of a Flex communication with a single combined send or recv event spanning the time of the separate items. While this removes detail from the result, it reduces 'clutter' and allows better visual clarity to follow a communication protocol at a higher level.
@@ -168,6 +179,7 @@ This option replaces the individual events of a Flex communication with a single
 Consequences when in use:
  * removes detailed sub-steps that show when and how interactions with the host appear
  * spans the entire time from posting of the communication to the completion, this can exaggerate communication time e.g. if a recv is posted early for later completion
+
 
 ### freq
 
@@ -213,10 +225,10 @@ Consequences when in use:
  * nothing negative other than the increased number of events
 
 
-
 ## Understanding and Troubleshooting the Results
 
 Sometimes the input data results in strange results. Some cases are being discussed below:
+
 
 ### Misaligned Events: with Gap
 
@@ -254,6 +266,7 @@ Causes other problems:
 What can be done:
  * the option `--flex_ts_fix` should be able to alleviate this problem (see [here](#flex_ts_fix) for details and consequences).
  * worst case: rerunning the experiment can help
+
 
 ### Misaligned Event: Stretched
 
@@ -294,6 +307,7 @@ What can be done:
 
 The output json file can be viewed in chrome, perfetto, or tensorboard.
 
+
 ### Chrome
 
  * Open url `chrome://tracing` and click the `load` button (or drag and drop the json file onto the tracing window)
@@ -317,6 +331,33 @@ The command line option `--tb` enables additional post-processing steps for bett
 
 Go to `https://ui.perfetto.dev/` and select `open trace file` (or drag and drop the json file onto the tracing window). Note that this is an online service even if the current claim is that everything runs locally in your browser.
 
+
+### Integration Into Other Tools
+
+The cmdline args `-i api://jsonbuffer` and/or `--disable_file` allow to inject and extract data via memory instead of files. This enables integration with other post processing scripts or tools. Below is an example for use in Jupyter notebooks using Pandas dataframe export format:
+
+```
+from aiu_trace_analyzer.core.acelyzer import Acelyzer
+
+# adjust pointing to a trace data base-directory
+TRACE_BASE = "../data/traces"
+# adjust to pick a sub-directory of the base dir
+TRACE_NAME = "mymodel_trace"
+# define the output format (pddf=pandas.dataframe, json=json string)
+output_format = "pddf"
+
+# acelyzer args
+args = [
+    "-i", f"{TRACE_BASE}/{TRACE_NAME}/*rank_*-of_4-job-[345].json",
+    "-c", f"{TRACE_BASE}/{TRACE_NAME}/compiler-log.txt",
+    "--disable_file",
+    "-f", output_format]
+
+# create, run, and extract the result trace data
+ace = Acelyzer(args)
+ace.run()
+trace_data = ace.get_output_data()
+```
 
 
 ## Developer Info
