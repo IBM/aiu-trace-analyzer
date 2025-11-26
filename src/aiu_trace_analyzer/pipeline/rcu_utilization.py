@@ -547,8 +547,8 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                 name="uncertain_match",
                 text="UTL: Detected uncertain Ideal Cycles table match for {d[count]} "
                      "jobs: {d[joblist]}",
-                data={"count": 0, "joblist": []},
-                update_fn={"count": int.__add__, "joblist": list.__add__}
+                data={"count": 0, "joblist": set()},
+                update_fn={"count": int.__add__, "joblist": set.union}
             )
         ])
 
@@ -638,12 +638,12 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             job_fprint, similar = matching_fprints[0]
             if similar < 0.8:
                 # warn about low similarity value
-                self.warnings["uncertain_match"].update({"count": 1, "joblist": [job]})
+                self.warnings["uncertain_match"].update({"count": 1, "joblist": [f"{job}:{similar:.2}"]})
             elif len(matching_fprints) > 1 and isclose(similar,
                                                        matching_fprints[1][1],
                                                        abs_tol=self._similarity_tolerance):
                 # at least 2 tables with the same best similarity value (spit a warning)
-                self.warnings["uncertain_match"].update({"count": 1, "joblist": [job]})
+                self.warnings["uncertain_match"].update({"count": 1, "joblist": [f"{job}:mm={len(matching_fprints)}"]})
             else:
                 pass
 
