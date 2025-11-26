@@ -147,8 +147,6 @@ class RCUKernelCategoryMap():
                 aiulog.WARN,
                 "UTL: Kernel->Category map already has an entry with different category:",
                 key, value, self.kernel_cat_map[key])
-        else:
-            pass
         return self.kernel_cat_map[key]
 
     def values(self):
