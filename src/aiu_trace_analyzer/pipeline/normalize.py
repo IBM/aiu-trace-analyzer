@@ -152,7 +152,7 @@ class NormalizationContext(AbstractHashQueueContext):
                     break
                 e = e[a]
 
-            if not isinstance(e, dict) and regex.search(e) is not None:
+            if not isinstance(e, dict) and regex.search(str(e)) is not None:
                 return True
         return False
 
