@@ -43,9 +43,13 @@ class EventProcessor:
     def register_stage(self, callback, context: procCTX.AbstractContext = None, **kwargs):
         if not self.stage_check.fwd_find_stage(callback.__name__):
             aiulog.log(aiulog.INFO, "DAH: Skipping registration of", callback.__name__, ": disabled in profile.")
+            if context:
+                context.disable()
             return
         else:
             aiulog.log(aiulog.DEBUG, "DAH: registering: ", callback.__name__)
+            if context:
+                context.enable()
 
         self.stages.append((callback, context, kwargs))
 
