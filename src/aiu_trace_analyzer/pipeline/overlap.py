@@ -69,7 +69,10 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
 
         current_ts, blocked, end_ts = self.queues[queue_id]
 
-        assert current_ts <= event["ts"]  # make sure ts is monotonic increasing
+        # make sure ts is monotonic increasing
+        assert current_ts <= event["ts"], (
+            f"Events out-of-order[{event["tid"]}]: {current_ts},"
+            f" {event["ts"]}, {self.queues[queue_id]}")
 
         event_ts = event["ts"]
         event_end = round(event["ts"] + event["dur"], 4)
@@ -305,7 +308,7 @@ class TSSequenceContext(AbstractHashQueueContext):
             queue_id = self.event_data_hash(event, ["pid", "tid"], ignore_missing=True)
 
         if queue_id not in self.queues:
-            self.queues[queue_id] = (0.0, 1e99)
+            self.queues[queue_id] = (-1.99, 1e99)
 
         if self.queues[queue_id][0] > event['ts']:
             aiulog.log(aiulog.ERROR, "Events out of order:", self.queues[queue_id], ">", event['ts'])

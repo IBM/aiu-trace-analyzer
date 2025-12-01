@@ -2,7 +2,6 @@
 
 ## Preparation
 
-You might consider creating a conda or other python venv with some recent version of Python (>=3.9) to install the Python package and dependencies.
 There are two ways to get started:
 
 1) Use `pip` to install into your Python environment:

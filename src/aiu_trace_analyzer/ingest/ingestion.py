@@ -248,10 +248,8 @@ class JsonEventTraceIngest(AbstractTraceIngest):
         def _torch_prof_or_none(name, evtype) -> TraceEvent:
             if evtype == "M":
                 return event
-            elif "PyTorch Profiler" not in name:
-                return self.sane_event(event)
             else:
-                return None
+                return self.sane_event(event)
 
         event = self.get_next_event()
         if not event:
