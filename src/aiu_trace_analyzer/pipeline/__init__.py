@@ -59,6 +59,7 @@ from aiu_trace_analyzer.pipeline.mappings import map_complete_to_duration, remov
 from aiu_trace_analyzer.pipeline.normalize import normalize_phase1, normalize_phase2
 from aiu_trace_analyzer.pipeline.correctness import event_sanity_checks
 from aiu_trace_analyzer.pipeline.overlap import (
+    detect_partial_overlap_tids,
     detect_partial_overlap_events,
     assert_ts_sequence,
     assert_global_ts_sequence,

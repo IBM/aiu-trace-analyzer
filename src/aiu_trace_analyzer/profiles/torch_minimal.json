@@ -23,6 +23,8 @@
         {"recombine_cpu_events": false},
         {"sort_events": true},
         {"assert_ts_sequence": false},
+        {"detect_partial_overlap_tids": true},
+        {"pipeline_barrier": true},
         {"detect_partial_overlap_events": true},
         {"assert_ts_sequence": true},
         {"collect_iteration_stats": true},
