@@ -78,7 +78,11 @@ class NormalizationContext(AbstractHashQueueContext):
                      "This indicates events with 0.0-timestamps or out-of-order input events. "
                      "(pid={d[pid]}, job={d[job]}, start={d[epoch_start]})",
                 data={"count": 0, "pid": set([]), "job": set([]), "epoch_start": 0.0},
-                update_fn={"count": int.__add__, "pid": set.union, "job": set.union, "epoch_start": lambda x, y: min(x,y)}
+                update_fn={
+                    "count": int.__add__,
+                    "pid": set.union,
+                    "job": set.union,
+                    "epoch_start": min}
             )
         ])
         self.soc_frequency = soc_frequency
