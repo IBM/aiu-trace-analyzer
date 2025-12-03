@@ -230,7 +230,10 @@ class DataframeExporter(AbstractTraceExporter):
                 "dur": ("Duration", 0.0),
                 "cat": ("Category", "other"),
                 "name": ("Event Name", "NoName"),
-                "args.pt_active": ("PT_Active", 0.0)}
+                "args.pt_active": ("PT_Active", 0.0),
+                "args.class": ("Event CLass", "UNKNOWN"),
+                "args.jobname": ("Job", "Unknown"),
+                }
         else:
             self.data_map = data_map
 
