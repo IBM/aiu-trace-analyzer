@@ -196,60 +196,61 @@ class NormalizationContext(AbstractHashQueueContext):
         return elapsed_epochs, drift, actual_freq
 
     def tsx_32bit_local_correction(self, event: TraceEvent) -> dict:
-        if "TS1" in event["args"]:
-            args = event["args"]
-            prev = -(1 << 48)  # set something very small to cover for some negative overflow epochs to happen
-            for ts in ["TS1", "TS2", "TS3", "TS4", "TS5"]:
-                curr = int(args[ts], 0)
-                if curr < prev:
-                    if "TSxOF" not in event["args"]:
-                        event["args"]["TSxOF"] = ts
-                    aiulog.log(aiulog.TRACE, "OVC: intra-event TSx overflow:", event["args"])
-                    # currently hard-coded 1 epoch
-                    # event-duration-based epochs require analysis of circular dependency
-                    # between cycle->time and time->cycle conversions
-                    curr += 1 << 32
-                args[ts] = str(curr)
-                prev = curr
+        if "TS1" not in event["args"]:
+            return event["args"]
 
-            if event["dur"] > self.OVERFLOW_TIME_SPAN_US:
-                self.warnings["long_dur"].update()
+        args = event["args"]
+        prev = -(1 << 48)  # set something very small to cover for some negative overflow epochs to happen
+        for ts in ["TS1", "TS2", "TS3", "TS4", "TS5"]:
+            curr = int(args[ts], 0)
+            if curr < prev:
+                if "TSxOF" not in event["args"]:
+                    event["args"]["TSxOF"] = ts
+                aiulog.log(aiulog.TRACE, "OVC: intra-event TSx overflow:", event["args"])
+                # currently hard-coded 1 epoch
+                # event-duration-based epochs require analysis of circular dependency
+                # between cycle->time and time->cycle conversions
+                curr += 1 << 32
+            args[ts] = str(curr)
+            prev = curr
 
-            if "Cmpt Exec" not in event["name"]:
-                return args
+        if event["dur"] > self.OVERFLOW_TIME_SPAN_US:
+            self.warnings["long_dur"].update()
 
-            # compute anticipated frequency based on duration
-            qid = self.queue_hash(event)
-            if qid not in self.prev_event_data:
-                self.prev_event_data[qid] = {
-                    self._DURATION_KEY: EventStats(),
-                    self._INTERVAL_KEY: EventStats()}
+        if "Cmpt Exec" in event["name"]:
+            self.frequency_stats(event)
+        return args
 
-            ts_a, ts_b = self.flex_name_ts_map[event["name"]]
-            dur_cycles = int(event["args"][ts_b]) - int(event["args"][ts_a])
-            dur_freq = float(dur_cycles) / event["dur"]
-            aiulog.log(aiulog.TRACE,
-                       f"{event['args'][ts_a]:10} {event['args'][ts_b]:10} {dur_cycles:10}"
-                       f" {event['dur']:15} {dur_freq:12.3f} |{event['name']}")
-            self.prev_event_data[qid][self._DURATION_KEY].update(
-                (int(event["args"][ts_a]), int(event["args"][ts_b])),
-                (event["ts"], event["dur"]),
-                dur_freq)
+    def frequency_stats(self, event: TraceEvent) -> None:
+        # compute anticipated frequency based on duration
+        qid = self.queue_hash(event)
+        if qid not in self.prev_event_data:
+            self.prev_event_data[qid] = {
+                self._DURATION_KEY: EventStats(),
+                self._INTERVAL_KEY: EventStats()}
 
-            # compute anticipated frequency based on event interval to previous event
-            if self.prev_event_data[qid][self._INTERVAL_KEY].count > 0:
-                gap_cycles = int(event["args"][ts_a]) - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_cycle()
-                gap_time = event["ts"] - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_ts()
-                gap_freq = float(gap_cycles) / gap_time
-            else:
-                gap_freq = dur_freq
-            self.prev_event_data[qid][self._INTERVAL_KEY].update(
-                (int(event["args"][ts_a]), int(event["args"][ts_b])),
-                (event["ts"], event["dur"]),
-                gap_freq)
+        ts_a, ts_b = self.flex_name_ts_map[event["name"]]
+        dur_cycles = int(event["args"][ts_b]) - int(event["args"][ts_a])
+        dur_freq = float(dur_cycles) / event["dur"]
+        aiulog.log(aiulog.TRACE,
+                   f"{event['args'][ts_a]:10} {event['args'][ts_b]:10} {dur_cycles:10}"
+                   f" {event['dur']:15} {dur_freq:12.3f} |{event['name']}")
+        self.prev_event_data[qid][self._DURATION_KEY].update(
+            (int(event["args"][ts_a]), int(event["args"][ts_b])),
+            (event["ts"], event["dur"]),
+            dur_freq)
 
-            return args
-        return event["args"]
+        # compute anticipated frequency based on event interval to previous event
+        if self.prev_event_data[qid][self._INTERVAL_KEY].count > 0:
+            gap_cycles = int(event["args"][ts_a]) - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_cycle()
+            gap_time = event["ts"] - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_ts()
+            gap_freq = float(gap_cycles) / gap_time
+        else:
+            gap_freq = dur_freq
+        self.prev_event_data[qid][self._INTERVAL_KEY].update(
+            (int(event["args"][ts_a]), int(event["args"][ts_b])),
+            (event["ts"], event["dur"]),
+            gap_freq)
 
     def tsx_32bit_global_correction(self, qid, event: TraceEvent) -> dict:
         if "TS1" in event["args"]:
