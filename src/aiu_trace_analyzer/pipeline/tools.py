@@ -40,6 +40,18 @@ class PipelineContextTool:
         return GlobalIngestData.get_dialect(event["args"]["jobhash"])
 
     @staticmethod
+    def get_context_id(event: TraceEvent) -> int:
+        dialect = PipelineContextTool.get_dialect_of_event(event)
+        if dialect is None:
+            return None
+        if dialect.get("NAME") == "FLEX":
+            return event["args"]["jobhash"]
+        elif dialect.get("NAME") == "TORCH":
+            return event["args"]["correlation"]
+        else:
+            return None
+
+    @staticmethod
     def is_flex_event(event: TraceEvent) -> bool:
         '''
         Returns True for events that do not contain the information that torch profiler would add
@@ -88,7 +100,6 @@ class PipelineContextTool:
         else:
             aiulog.log(aiulog.WARN, f"Dialect entry for {category} has unknown operator:", classifier[0])
         return False
-
 
 
 class AutopilotDetail:

@@ -127,15 +127,15 @@ class InputDialectTORCH(InputDialect):
         "acc_filetransfer_MtoF": "aiuFileTransferMtoF",
         "acc_filetransfer_FtoD": "aiuFileTransferFtoD",
         "acc_filetransfer_FtoM": "aiuFileTransferFtoM",
-        "acc_datatransfer_DtoH": "is.name.DtoH",
-        "acc_datatransfer_HtoD": "is.name.HtoD",
+        "acc_datatransfer_DtoH": "is.name.[Mm]emcpy \(DtoH\)",
+        "acc_datatransfer_HtoD": "is.name.[Mm]emcpy \(HtoD\)",
         "acc_clock_calibration": "aiuClockCalibration",
         "acc_compile_graph": "aiuCompileGraph",
         "acc_category_kernel": "kernel",
         "acc_category_runtime": "cuda_runtime",
         "acc_compute_prep": "Cmpt Prep$",
         "acc_kernel": "is.cat.kernel",
-        "acc_event_cat": "is.cat.kernel",
+        "acc_event_cat": "is.cat.gpu|kernel",
         "acc_collective": "is.name.HCOLL",
     }
 
