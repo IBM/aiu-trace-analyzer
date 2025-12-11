@@ -7,7 +7,6 @@ from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
 from aiu_trace_analyzer.pipeline.barrier import TwoPhaseWithBarrierContext
-from aiu_trace_analyzer.types import GlobalIngestData, InputDialect
 
 
 #################################################
@@ -253,6 +252,41 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
             event["args"]["class"] = str(self.second_pass_classify(event))
         return event
 
+    _transfer_classes = [
+        str(EventClass.DATA_IN),
+        str(EventClass.DATA_OUT),
+        str(EventClass.MAIU_PROTOCOL_RECV_DATA),
+        str(EventClass.MAIU_PROTOCOL_SEND_DATA),
+    ]
+
+    def enhanced_events(self, event: TraceEvent) -> list[TraceEvent]:
+        if "class" not in event["args"]:
+            return [event]
+
+        if event["args"]["class"] in self._transfer_classes:
+            try:
+                bw = event["args"]["memory bandwidth (GB/s)"]
+            except KeyError:
+                bw = 0.0
+
+            if bw > 0.0:
+                bw_counters = [{
+                        "ph": "C",
+                        "ts": event["ts"],
+                        "pid": event["pid"],
+                        "name": "TransferBW",
+                        "args": {"GB/s": bw},
+                    },
+                    {
+                        "ph": "C",
+                        "ts": event["ts"]+event["dur"],
+                        "pid": event["pid"],
+                        "name": "TransferBW",
+                        "args": {"GB/s": 0.0}
+                    }]
+                return [event] + bw_counters
+        return [event]
+
     def drain(self) -> list[TraceEvent]:
         return super().drain()
 
@@ -275,4 +309,4 @@ def event_categorizer_update(event: TraceEvent, context: AbstractContext) -> lis
 
     event = context.apply_stats(event)
 
-    return [event]
+    return context.enhanced_events(event)
