@@ -126,10 +126,14 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
         return overlap_time
 
     def find_next_tid(self, event: TraceEvent) -> int:
+        if self.max_tid_streams == -1:
+            return event["tid"] + 1
+
         if event["tid"] not in self.tid_space[event["pid"]]:
             aiulog.log(
                 aiulog.ERROR,
-                "POD: insufficient dynamic range for tid-based overlap resolution. Increase max_tid_space.")
+                f"POD: insufficient dynamic range for tid-based overlap resolution ({self.max_tid_streams})",
+                f"of job: {event['args']['jobname']}. Increase max_tid_space.")
         new_tid = self.tid_space[event["pid"]][event["tid"]]
         return new_tid
 
@@ -228,7 +232,7 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
     def _create_tid_space(self, tid: int, exclude: list[int]) -> list[int]:
         tlist = []
         next_tid = tid
-        while len(tlist) < self.max_tid_streams:
+        while len(tlist) < max(self.max_tid_streams, 1):
             next_tid += 1
             if next_tid not in exclude:
                 tlist.append(next_tid)
