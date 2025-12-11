@@ -114,14 +114,21 @@ class AbstractTraceIngest:
         if "dur" in event:
             event["dur"] = float(event["dur"] * self.scale)
         dialect = GlobalIngestData.get_dialect(self.jobhash)
-        if self.rank_pid >= 0 and not isinstance(dialect, InputDialectTORCH):
-            event["pid"] = self.rank_pid
 
         the_args = "args"
         if "attr" in event:
             the_args = "attr"
         if the_args not in event:
             event[the_args] = {}
+
+        if isinstance(dialect, InputDialectTORCH):
+            event[the_args]["rank"] = self.rank_pid
+            if event["pid"] == 0:
+                event["pid"] = self.rank_pid
+        elif isinstance(dialect, InputDialectFLEX):
+            event[the_args]["rank"] = self.rank_pid
+            if self.rank_pid >= 0:
+                event["pid"] = self.rank_pid
 
         # make sure the pid/tid entries are numbers
         try:
@@ -198,6 +205,7 @@ class JsonEventTraceIngest(AbstractTraceIngest):
 
         if "distributedInfo" in self.data and "rank" in self.data["distributedInfo"]:
             self.rank_pid = self.data["distributedInfo"]["rank"]
+#            self.check_update_device_properties(self.rank_pid)
             aiulog.log(aiulog.DEBUG, "INGEST: Detected distributedInfo Rank", self.rank_pid)
 
         if "otherData" in self.data and \
