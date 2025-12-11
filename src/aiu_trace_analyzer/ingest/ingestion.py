@@ -63,6 +63,20 @@ class AbstractTraceIngest:
     def is_torch_profile(self, data: dict) -> bool:
         return ("deviceProperties" in data)
 
+    def set_rank_pid(self, rank: int) -> None:
+        self.rank_pid = rank
+        if "deviceProperties" not in self.other_metadata:
+            return
+
+        if not isinstance(self.other_metadata["deviceProperties"], list) and \
+                "id" in self.other_metadata["deviceProperties"]:
+            self.other_metadata["deviceProperties"]["id"] = rank
+            return
+
+        for entry in self.other_metadata["deviceProperties"]:
+            if "id" in entry:
+                entry["id"] = rank
+
     def __iter__(self):
         raise NotImplementedError("Class %s doesn't implement __iter__" % (self.__class__.__name__))
 
@@ -99,7 +113,21 @@ class AbstractTraceIngest:
         return prl[ftype]
 
     def combine_metadata(self, metadata):
+        # special treatment of deviceProperties list
+        current_dev_properties = self.other_metadata.pop("deviceProperties", [])
+        additional_dev_properties = metadata.pop("deviceProperties", [{}])
+        assert len(additional_dev_properties) == 1, \
+            f"Combining incoming metadata with multiple deviceProperties is not supported {additional_dev_properties}"
+
+        if "id" in additional_dev_properties[0]:
+            new_id = additional_dev_properties[0]["id"]
+            for entry in current_dev_properties:
+                if "id" in entry and entry["id"] == new_id:
+                    additional_dev_properties = []
+                    break
+
         self.other_metadata.update(metadata)
+        self.other_metadata["deviceProperties"] = current_dev_properties + additional_dev_properties
 
     def get_passthrough_meta(self) -> dict:
         return self.other_metadata
@@ -200,13 +228,9 @@ class JsonEventTraceIngest(AbstractTraceIngest):
         metadata_keys = list(self.data.keys())
         for k in metadata_keys:
             if k in processing_keys:
+                # only copy entries that are not processed otherwise
                 continue
             self.other_metadata[k] = deepcopy(self.data.pop(k))
-
-        if "distributedInfo" in self.data and "rank" in self.data["distributedInfo"]:
-            self.rank_pid = self.data["distributedInfo"]["rank"]
-#            self.check_update_device_properties(self.rank_pid)
-            aiulog.log(aiulog.DEBUG, "INGEST: Detected distributedInfo Rank", self.rank_pid)
 
         if "otherData" in self.data and \
             "Application" in self.data["otherData"] and \
@@ -218,6 +242,11 @@ class JsonEventTraceIngest(AbstractTraceIngest):
                     "Dropping ALL Events from file",
                     self.source_uri)
                 self.data["traceEvents"] = []
+
+        if "distributedInfo" in self.data and "rank" in self.data["distributedInfo"]:
+            self.set_rank_pid(self.data["distributedInfo"]["rank"])
+#            self.check_update_device_properties(self.rank_pid)
+            aiulog.log(aiulog.DEBUG, "INGEST: Detected distributedInfo Rank", self.rank_pid)
 
         if "traceEvents" in self.data:
             self.data = self.data["traceEvents"]
