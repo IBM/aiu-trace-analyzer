@@ -31,7 +31,7 @@ class PipelineContextTool:
         return '.'.join(fcomponents)
 
     @staticmethod
-    def is_FLEX_event(event: TraceEvent) -> bool:
+    def is_flex_event(event: TraceEvent) -> bool:
         '''
         Returns True for events that do not contain the information that torch profiler would add
         '''
