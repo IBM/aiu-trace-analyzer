@@ -93,7 +93,7 @@ class AbstractEventType(object):
         return self.__dict__
 
     @classmethod
-    def from_dict(self, event):
+    def from_dict(cls, event):
         """
         convert an event in the form of a python dictionary into TraceView events
         """

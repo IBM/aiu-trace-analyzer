@@ -30,6 +30,7 @@ class PipelineContextTool:
 
         return '.'.join(fcomponents)
 
+    @staticmethod
     def is_FLEX_event(event: TraceEvent) -> bool:
         '''
         Returns True for events that do not contain the information that torch profiler would add
@@ -37,6 +38,7 @@ class PipelineContextTool:
         is_torch = "args" in event and ("External id" in event["args"] or "Python id" in event["args"])
         return (is_torch is False)
 
+    @staticmethod
     def is_acc_event(event: TraceEvent) -> bool:
         if "args" not in event:
             return False
@@ -66,6 +68,7 @@ class PipelineContextTool:
             return True
         return False
 
+    @staticmethod
     def is_acc_kernel(event: TraceEvent) -> bool:
         if "args" not in event:
             return False
