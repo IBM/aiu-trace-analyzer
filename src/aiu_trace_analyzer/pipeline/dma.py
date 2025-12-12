@@ -171,15 +171,13 @@ def extract_data_transfer_event(event: TraceEvent, context: AbstractContext) -> 
             # If event name contains " DmaO" use TS4
             elif " DmaO" in event['name']:
                 ts = int(get_cycle_ts_as_clock(4, event["args"]["ts_all"]))
+            else:
+                return [event]
 
             counter = {
                 "ph": "C",
                 "pid": event["pid"],
                 "ts": ts,
-                "DmaI_start": get_cycle_ts_as_clock(1, event["args"]['ts_all']),
-                "DmaI_end": get_cycle_ts_as_clock(2, event["args"]['ts_all']),
-                "DmaO_start": get_cycle_ts_as_clock(4, event["args"]['ts_all']),
-                "DmaO_end": get_cycle_ts_as_clock(5, event["args"]['ts_all']),
                 "cat": event['name'],
                 "name": "BW",
                 "args": {
