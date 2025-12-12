@@ -126,10 +126,14 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
         return overlap_time
 
     def find_next_tid(self, event: TraceEvent) -> int:
+        if self.max_tid_streams == -1:
+            return event["tid"] + 1
+
         if event["tid"] not in self.tid_space[event["pid"]]:
             aiulog.log(
                 aiulog.ERROR,
-                "POD: insufficient dynamic range for tid-based overlap resolution. Increase max_tid_space.")
+                f"POD: insufficient dynamic range for tid-based overlap resolution ({self.max_tid_streams})",
+                f"of job: {event['args']['jobname']}. Increase max_tid_space.")
         new_tid = self.tid_space[event["pid"]][event["tid"]]
         return new_tid
 
@@ -228,33 +232,39 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
     def _create_tid_space(self, tid: int, exclude: list[int]) -> list[int]:
         tlist = []
         next_tid = tid
-        while len(tlist) < self.max_tid_streams:
+        while len(tlist) < max(self.max_tid_streams, 1):
             next_tid += 1
             if next_tid not in exclude:
                 tlist.append(next_tid)
         return tlist
 
-    def drain(self):
-        if self.overlap_resolve == self.OVERLAP_RESOLVE_TID and self.phase == self._COLLECTION_PHASE:
+    def _collect_and_build_tid_space(self) -> None:
+        new_tspace = {}
+        for pid, tspace in self.tid_space.items():
             new_tspace = {}
-            for pid, tspace in self.tid_space.items():
-                new_tspace = {}
-                # collect candidate lists for each known tid from input
-                exclude: set = tspace[-1]
-                for tid in tspace.keys():
-                    if tid == -1:
-                        continue
-                    tcandidates = self._create_tid_space(tid, exclude)
-                    self.tid_space[pid][tid] = tcandidates
-                    exclude.update(tcandidates)
-                    new_tspace[tid] = tcandidates[0]
-                    for src_tid, next_tid in zip(tcandidates[:-1], tcandidates[1:]):
-                        new_tspace[src_tid] = next_tid
+            # collect candidate lists for each known tid from input
+            exclude: set = tspace[-1]
+            for tid in tspace.keys():
+                if tid == -1:
+                    continue
+                tcandidates = self._create_tid_space(tid, exclude)
+                self.tid_space[pid][tid] = tcandidates
+                exclude.update(tcandidates)
+                new_tspace[tid] = tcandidates[0]
+                for src_tid, next_tid in zip(tcandidates[:-1], tcandidates[1:]):
+                    new_tspace[src_tid] = next_tid
 
-                aiulog.log(aiulog.TRACE, "POD: total tid_space:", self.tid_space[pid])
-                self.tid_space[pid] = copy.deepcopy(new_tspace)
-                aiulog.log(aiulog.TRACE, "POD: tid neighbors:", new_tspace)
-            return super().drain()
+            aiulog.log(aiulog.TRACE, "POD: total tid_space:", self.tid_space[pid])
+            self.tid_space[pid] = copy.deepcopy(new_tspace)
+            aiulog.log(aiulog.TRACE, "POD: tid neighbors:", new_tspace)
+
+    def drain(self):
+        if self.overlap_resolve == self.OVERLAP_RESOLVE_TID:
+            if self.phase == self._COLLECTION_PHASE:
+                self._collect_and_build_tid_space()
+                return super().drain()
+            else:
+                return []
         else:
             revents = []
             # make sure to drain the queue of async 'e' events that might have been hold
