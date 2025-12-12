@@ -108,79 +108,87 @@ class RefinementContext(AbstractHashQueueContext):
         event = self._update_for_collective(event)
         return event
 
-    def _queue_add_device(self, pid, ts, is_acc: bool = True):
-        if pid not in self.queues:
+    def _queue_add_device(self, dev_id, ts, is_acc: bool = True):
+        if dev_id not in self.queues:
             if is_acc:
-                self.queues[pid] = ("AIU Device"+str(pid), pid*2+1, "AIU", ts)
+                self.queues[dev_id] = ("AIU Device"+str(dev_id), dev_id*2+1, "AIU", ts)
                 self.exporter.add_device(
-                    pid,
+                    dev_id,
                     {"type": "AIU",
                      "name": "AIU",
                      "core": "PT Array"})
             else:
-                self.queues[pid] = ("Host"+str(pid), pid*2, "cpu", ts)
+                self.queues[dev_id] = ("Host"+str(dev_id), dev_id*2, "cpu", ts)
+
+    def _cat_for_regular_event(self, event: TraceEvent) -> str:
+        # Use DmaI and DmaO with Sen to check memcpy event
+        if DmaI in event["name"] or DmaO in event["name"]:
+            # if no RDMA, a memory copy event
+            # else RDMA send and recv event
+            if RDMA not in event["name"]:
+                return "gpu_memcpy"
+            else:
+                return "user_annotation"
+
+        else:
+            if AllReduce in event["name"] and 'Cmpt Exec' in event["name"]:
+                return "user_annotation"
+            else:
+                return self.dialect.get("acc_category_kernel")
+
+    @staticmethod
+    def _update_collective_event(event: TraceEvent) -> TraceEvent:
+        # if collective call block, change 'cat'
+        # and 'name' for communication tb calculation
+        if "args" in event and Coll_data_size in event["args"] and AllReduce in event["name"]:
+            event["cat"] = event["cat"] if "cat" in event else "user_annotation"
+            event["args"]["orig_name"] = event["name"]
+            event["name"] = "gloo:all_reduce"
+            event["external id"] = re.search(r"_(\d+)", event["args"]["orig_name"]).group(1)
+        else:
+            event["cat"] = event["cat"] if "cat" in event else "cpu_op"
+        return event
+
+    @staticmethod
+    def _resolve_string_pids(pid) -> int:
+        if isinstance(pid, str):
+            aiulog.log(aiulog.WARN, f'TBR: input pid is string: {pid}')
+            try:
+                return int(pid)
+            except (ValueError, TypeError):
+                return hash(pid) % 10000 + 10000
+        return pid
+
+    @staticmethod
+    def _restore_pid_tid(event: TraceEvent) -> TraceEvent:
+        if "opid" in event["args"]:
+            event["pid"] = event["args"]["opid"]
+            event["args"].pop("opid")
+        if "otid" in event["args"]:
+            event["tid"] = event["args"]["otid"]
+            event["args"].pop("otid")
+        return event
 
     def update_event_data_light(self, event) -> TraceEvent:
-
-        def _cat_for_regular_event(event: TraceEvent) -> str:
-            # Use DmaI and DmaO with Sen to check memcpy event
-            if DmaI in event["name"] or DmaO in event["name"]:
-
-                # if no RDMA, a memory copy event
-                # else RDMA send and recv event
-                if RDMA not in event["name"]:
-                    return "gpu_memcpy"
-                else:
-                    return "user_annotation"
-
-            else:
-                if AllReduce in event["name"] and 'Cmpt Exec' in event["name"]:
-                    return "user_annotation"
-                else:
-                    return self.dialect.get("acc_category_kernel")
-
-        def _update_collective_event(event: TraceEvent) -> TraceEvent:
-            # if collective call block, change 'cat'
-            # and 'name' for communication tb calculation
-            if "args" in event and Coll_data_size in event["args"] and AllReduce in event["name"]:
-                event["cat"] = event["cat"] if "cat" in event else "user_annotation"
-                event["args"]["orig_name"] = event["name"]
-                event["name"] = "gloo:all_reduce"
-                event["external id"] = re.search(r"_(\d+)", event["args"]["orig_name"]).group(1)
-            else:
-                event["cat"] = event["cat"] if "cat" in event else "cpu_op"
-            return event
-
-        def _resolve_string_pids(pid) -> int:
-            if isinstance(pid, str):
-                aiulog.log(aiulog.WARN, f'TBR: input pid is string: {pid}')
-                try:
-                    return int(pid)
-                except (ValueError, TypeError):
-                    return hash(pid) % 10000 + 10000
-            return pid
 
         self.dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
 
         if self.dialect.get("NAME") == "TORCH":
-            if "opid" in event["args"]:
-                event["pid"] = event["args"]["opid"]
-                event["args"].pop("opid")
-            if "otid" in event["args"]:
-                event["tid"] = event["args"]["otid"]
-                event["args"].pop("otid")
+            event = RefinementContext._restore_pid_tid(event)
+            if PipelineContextTool.is_acc_event(event):
+                self._queue_add_device(event["args"]["rank"], event["ts"], is_acc=True)
             return event
 
-        pid = _resolve_string_pids(event["pid"])
+        pid = RefinementContext._resolve_string_pids(event["pid"])
 
         if PipelineContextTool.is_acc_event(event):
-            event["cat"] = _cat_for_regular_event(event)
+            event["cat"] = self._cat_for_regular_event(event)
 
-            event["args"]["device"] = pid
-            self._queue_add_device(pid, event["ts"], is_acc=True)
+            event["args"]["device"] = event["args"]["rank"]
+            self._queue_add_device(event["args"]["rank"], event["ts"], is_acc=True)
 
         else:
-            event = _update_collective_event(event)
+            event = self._update_collective_event(event)
             event["pid"] = pid + 1000
 
             self._queue_add_device(pid, event["ts"], is_acc=False)
