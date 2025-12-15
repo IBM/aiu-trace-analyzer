@@ -153,6 +153,8 @@ class AbstractTraceIngest:
             event[the_args]["rank"] = self.rank_pid
             if event["pid"] == 0:
                 event["pid"] = self.rank_pid
+            if "device" in event["args"]:
+                event["args"]["device"] = self.rank_pid
         elif isinstance(dialect, InputDialectFLEX):
             event[the_args]["rank"] = self.rank_pid
             if self.rank_pid >= 0:
