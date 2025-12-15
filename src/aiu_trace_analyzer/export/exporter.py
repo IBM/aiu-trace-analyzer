@@ -233,14 +233,6 @@ class DataframeExporter(AbstractTraceExporter):
         else:
             self.data_map = data_map
 
-    def add_device(self, id, data: dict):
-        devdata = {"id": id}
-        for k, v in data.items():
-            devdata[k] = v
-        self.device_data.append(devdata)
-
-        assert isinstance(self.device_data, list)
-
     def export_meta(self, meta_data: dict) -> None:
         # no metadata for this exporter type
         return
