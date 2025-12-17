@@ -372,7 +372,8 @@ class Acelyzer:
 
         return True
 
-    def _overlap_option_from_arg(self, inarg: str) -> int:
+    @staticmethod
+    def _overlap_option_from_arg(inarg: str) -> int:
         if inarg == "drop":
             return event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_DROP
         elif inarg == "tid":
@@ -384,7 +385,7 @@ class Acelyzer:
         elif inarg == "shift":
             return event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_SHIFT
         else:
-            raise ValueError("UNRECOGNIZED Overlap Option (drop, tid, async).")
+            raise ValueError("UNRECOGNIZED Overlap Option (drop, tid, async, warn, shift).")
 
     def register_processing_functions(self,
                                       process: processor.EventProcessor,
