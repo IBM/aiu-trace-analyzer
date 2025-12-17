@@ -419,6 +419,13 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 if not keep_parsing:
                     break
 
+    @staticmethod
+    def _compute_row_stats(dur, total, ideal, ideal_total):
+        dur_frac = 0 if isclose(total, 0.0, abs_tol=1e-9) else round(dur / total, 4)
+        ideal_frac = 0 if isclose(ideal_total, 0.0, abs_tol=1e-9) else round(ideal / ideal_total, 4)
+        pt_util = 0 if isclose(dur, 0.0, abs_tol=1e-9) else round(ideal / dur, 4)
+        return dur_frac, ideal_frac, pt_util
+
     def print_table_as_pd(self, cat_tab):
         """
         Generate time breakdown along kernel categories
@@ -459,9 +466,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 ideal_cyc = int(ideal / abs(self.cycle_to_clock_factor))
 
                 # prevent div-by-zero exception
-                dur_frac = 0 if isclose(total, 0.0, abs_tol=1e-9) else round(dur / total, 4)
-                ideal_frac = 0 if isclose(ideal_total, 0.0, abs_tol=1e-9) else round(ideal / ideal_total, 4)
-                pt_util = 0 if isclose(dur, 0.0, abs_tol=1e-9) else round(ideal / dur, 4)
+                dur_frac, ideal_frac, pt_util = RCUUtilizationContext._compute_row_stats(dur, total, ideal, ideal_total)
 
                 # note: to sync the columns of value_row with title_row
                 value_row = [pid, phase, k, dur, dur_frac, calls, round(ideal, 4), ideal_cyc, ideal_frac, pt_util]
