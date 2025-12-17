@@ -697,57 +697,57 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
 
     assert isinstance(context, MultiRCUUtilizationContext)
 
-    if PipelineContextTool.is_acc_event(event) and PipelineContextTool.is_acc_kernel(event):
-        pid = event["pid"]
-        kernel_name = context.extract_kernel_from_event_name(event)
+    if not PipelineContextTool.is_acc_event(event) or not PipelineContextTool.is_acc_kernel(event):
+        return [event]
 
-        try:
-            jobhash = context.generate_fprint_jobhash(event)
-            job_fingerprint = context.fingerprint_get(jobhash)
-        except KeyError:
-            aiulog.log(aiulog.WARN, f"UTL: No matching fingerprint for job {event['args']['jobname']}."
-                       " Unable to find a matching Ideal-cycles table.")
-            return [event]
+    pid = event["pid"]
+    kernel_name = context.extract_kernel_from_event_name(event)
 
-        try:
-            ideal_dur = float(context.get_ideal_dur(kernel_name, pid, job_fingerprint))
-        except KeyError:
-            aiulog.log(aiulog.DEBUG, f"UTL: No kernel table matching fingerprint {job_fingerprint}:"
-                       f" {context.fingerprints.keys()}/{context.fingerprints[jobhash].fprint_data} ")
-            context.issue_warning("kernel_nomatch")
-            ideal_dur = 0.0
+    try:
+        jobhash = context.generate_fprint_jobhash(event)
+        job_fingerprint = context.fingerprint_get(jobhash)
+    except KeyError:
+        aiulog.log(aiulog.WARN, f"UTL: No matching fingerprint for job {event['args']['jobname']}."
+                   " Unable to find a matching Ideal-cycles table.")
+        return [event]
 
-        # cmpt_dur = int(event["args"]["TS4"]) - int(event["args"]["TS3"])
-        cmpt_dur = float(event["dur"])
-        utilization = abs(ideal_dur/cmpt_dur) if not isclose(cmpt_dur, 0.0, abs_tol=1e-9) else 0.0
+    try:
+        ideal_dur = float(context.get_ideal_dur(kernel_name, pid, job_fingerprint))
+    except KeyError:
+        aiulog.log(aiulog.DEBUG, f"UTL: No kernel table matching fingerprint {job_fingerprint}:"
+                   f" {context.fingerprints.keys()}/{context.fingerprints[jobhash].fprint_data} ")
+        context.issue_warning("kernel_nomatch")
+        ideal_dur = 0.0
 
-        if utilization > 0.0:
-            event["args"]["core used"] = True
+    # cmpt_dur = int(event["args"]["TS4"]) - int(event["args"]["TS3"])
+    cmpt_dur = float(event["dur"])
+    utilization = abs(ideal_dur/cmpt_dur) if not isclose(cmpt_dur, 0.0, abs_tol=1e-9) else 0.0
 
-        if utilization > 1.0:   # warning about >100% utilization
-            aiulog.log(aiulog.DEBUG, "UTL: Event with +100% utilization. "
-                       "This could indicate a problem with table fingerprinting: "
-                       "(pid, ideal, observed, event)", pid, ideal_dur, cmpt_dur, event)
-            context.issue_warning("util_100")
-            utilization = 1.0
+    if utilization > 1.0:   # warning about >100% utilization
+        aiulog.log(aiulog.DEBUG, "UTL: Event with +100% utilization. "
+                   "This could indicate a problem with table fingerprinting: "
+                   "(pid, ideal, observed, event)", pid, ideal_dur, cmpt_dur, event)
+        context.issue_warning("util_100")
+        utilization = 1.0
 
-        if "cat" in event:
-            event["args"]["user_cat"] = context.accumulate_categories(
-                pid,
-                kernel_name,
-                ideal_dur,
-                cmpt_dur,
-                job_fingerprint)
-        else:
-            event["cat"] = context.accumulate_categories(
-                pid,
-                kernel_name,
-                ideal_dur,
-                cmpt_dur,
-                job_fingerprint)
-        util_counter = context.make_utilization_event(event, utilization*100.0)
-        if utilization > 0.0:
-            event["args"]["pt_active"] = utilization
-        return [event] + util_counter
+    if utilization > 0.0:
+        event["args"]["pt_active"] = utilization
+        event["args"]["core used"] = True
 
-    return [event]
+    if "cat" in event:
+        event["args"]["user_cat"] = context.accumulate_categories(
+            pid,
+            kernel_name,
+            ideal_dur,
+            cmpt_dur,
+            job_fingerprint)
+    else:
+        event["cat"] = context.accumulate_categories(
+            pid,
+            kernel_name,
+            ideal_dur,
+            cmpt_dur,
+            job_fingerprint)
+
+    util_counter = context.make_utilization_event(event, utilization*100.0)
+    return [event] + util_counter
