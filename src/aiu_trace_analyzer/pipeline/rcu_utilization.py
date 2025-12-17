@@ -308,6 +308,32 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         else:
             return "Total"
 
+    def _add_kernel(self,
+                    kernel_and_cat: list[str],
+                    cycles: int,
+                    current_table: dict[str, int],
+                    fprint: RCUTableFingerprint) -> RCUTableFingerprint:
+        category = self._handle_category(kernel_and_cat)
+        kernel = kernel_and_cat[0]+" Cmpt Exec"
+        fprint.add(kernel, cycles * self.cycle_to_clock_factor)
+
+        if kernel not in current_table:
+            aiulog.log(aiulog.TRACE, "UTL: Kernel:", kernel)
+            if cycles != 0:
+                current_table[kernel] = cycles
+        elif cycles != current_table[kernel]:
+            aiulog.log(aiulog.WARN,
+                       "UTL: Kernel already has an entry with different cycle count:",
+                       kernel, cycles, current_table[kernel])
+
+        if kernel not in self.kernel_cat_map[0]:
+            self.kernel_cat_map[0].add(kernel, category)
+        elif category != self.kernel_cat_map[0][kernel]:
+            aiulog.log(aiulog.WARN,
+                       "UTL: Kernel->Category map already has an entry with different category:",
+                       kernel, category, self.kernel_cat_map[0][kernel])
+        return fprint
+
     def _process_table_line(self,
                             line: str,
                             fprint: RCUTableFingerprint,
@@ -368,30 +394,12 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
         cycles = int(ldata[1])
         kernel_and_cat = self._category_splitter.split(ldata[0])
-        category = self._handle_category(kernel_and_cat)
 
         # Skip anything that's not a kernel name
         if kernel_and_cat[0] in self._non_kernel_names:
             return True, parse_mode, current_table, fprint
 
-        kernel = kernel_and_cat[0]+" Cmpt Exec"
-        fprint.add(kernel, cycles * self.cycle_to_clock_factor)
-
-        if kernel not in current_table:
-            aiulog.log(aiulog.TRACE, "UTL: Kernel:", kernel)
-            if cycles != 0:
-                current_table[kernel] = cycles
-        elif cycles != current_table[kernel]:
-            aiulog.log(aiulog.WARN,
-                       "UTL: Kernel already has an entry with different cycle count:",
-                       kernel, cycles, current_table[kernel])
-
-        if kernel not in self.kernel_cat_map[0]:
-            self.kernel_cat_map[0].add(kernel, category)
-        elif category != self.kernel_cat_map[0][kernel]:
-            aiulog.log(aiulog.WARN,
-                       "UTL: Kernel->Category map already has an entry with different category:",
-                       kernel, category, self.kernel_cat_map[0][kernel])
+        fprint = self._add_kernel(kernel_and_cat, cycles, current_table, fprint)
         return True, parse_mode, current_table, fprint
 
     def extract_tables(self, compiler_log: str):
