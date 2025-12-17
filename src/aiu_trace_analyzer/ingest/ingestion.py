@@ -132,23 +132,8 @@ class AbstractTraceIngest:
     def get_passthrough_meta(self) -> dict:
         return self.other_metadata
 
-    # update event data with things like ts-offset or ts-scaling
-    def updated_event(self, event: TraceEvent) -> TraceEvent:
-        if event["ph"] not in "XBE":
-            return event
-
-        if "ts" in event:
-            event["ts"] *= self.scale
-        if "dur" in event:
-            event["dur"] = float(event["dur"] * self.scale)
+    def _rank_device_annotation(self, event: TraceEvent, the_args: str) -> TraceEvent:
         dialect = GlobalIngestData.get_dialect(self.jobhash)
-
-        the_args = "args"
-        if "attr" in event:
-            the_args = "attr"
-        if the_args not in event:
-            event[the_args] = {}
-
         if isinstance(dialect, InputDialectTORCH):
             event[the_args]["rank"] = self.rank_pid
             if event["pid"] == 0:
@@ -159,7 +144,9 @@ class AbstractTraceIngest:
             event[the_args]["rank"] = self.rank_pid
             if self.rank_pid >= 0:
                 event["pid"] = self.rank_pid
+        return event
 
+    def _pid_correction(self, event: TraceEvent, the_args: str) -> TraceEvent:
         # make sure the pid/tid entries are numbers
         try:
             event["pid"] = int(event["pid"])
@@ -169,7 +156,9 @@ class AbstractTraceIngest:
         except KeyError:
             aiulog.log(aiulog.WARN, "Imported event has no PID!!! Setting -1", event)
             raise
+        return event
 
+    def _tid_correction(self, event: TraceEvent, the_args: str) -> TraceEvent:
         if "tid" in event:
             try:
                 event["tid"] = int(event["tid"])
@@ -179,6 +168,27 @@ class AbstractTraceIngest:
 
         if event["ph"] not in ["F", "f", "s", "t", "C", "M"]:
             event[the_args]["jobhash"] = self.jobhash
+        return event
+
+    # update event data with things like ts-offset or ts-scaling
+    def updated_event(self, event: TraceEvent) -> TraceEvent:
+        if event["ph"] not in "XBE":
+            return event
+
+        if "ts" in event:
+            event["ts"] *= self.scale
+        if "dur" in event:
+            event["dur"] = float(event["dur"] * self.scale)
+
+        the_args = "args"
+        if "attr" in event:
+            the_args = "attr"
+        if the_args not in event:
+            event[the_args] = {}
+
+        event = self._rank_device_annotation(event, the_args)
+        event = self._pid_correction(event, the_args)
+        event = self._tid_correction(event, the_args)
         return event
 
 
