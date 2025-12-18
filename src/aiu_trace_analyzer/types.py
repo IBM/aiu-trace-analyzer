@@ -234,28 +234,40 @@ class TraceWarning:
                 "Number of args needs to match placeholders in format string."
                 " Make sure to use format {d[<key>]}")
 
-        # check keys of text and args overlap
+        # check keys of text, args, and update_fn overlap
+        self._check_update_fn_keys(text_keys)
+        self._check_text_keys(text_keys)
+        self._check_data_keys(text_keys)
+
+    def __del__(self) -> None:
+        if self.auto_log is True and self.has_warning():
+            aiulog.log(self.warn_level, self)
+
+    def _check_update_fn_keys(self, text_keys: list) -> None:
+        # check if the keys for the update functions exist within the output text and the data items
         for k in self.update_fn.keys():
             if k not in text_keys:
                 raise KeyError(f"Update_fn key {k} not found in text pattern {text_keys}")
             if k not in self.args_list:
                 raise KeyError(f"Update_fn key {k} not found in args {self.args_list}")
+
+    def _check_text_keys(self, text_keys: list) -> None:
+        # check if the keys in the output text exist in both update functions and data items
         for k in text_keys:
             if k not in self.args_list:
                 raise KeyError(f"Text key {k} not found in args {self.args_list}.")
             if k not in self.update_fn:
                 aiulog.log(aiulog.DEBUG, f"Text key {k} not in update functions {self.update_fn}. Using default.")
                 self.update_fn[k] = int.__add__
+
+    def _check_data_keys(self, text_keys: list) -> None:
+        # check if the data item keys exist in both output text and update functions
         for k in self.args_list.keys():
             if k not in text_keys:
                 raise KeyError(f"Args key {k} not in text pattern {text_keys}.")
             if k not in self.update_fn:
                 aiulog.log(aiulog.DEBUG, f"Args key {k} not in update functions {self.update_fn}. Using default.")
                 self.update_fn[k] = int.__add__
-
-    def __del__(self) -> None:
-        if self.auto_log is True and self.has_warning():
-            aiulog.log(self.warn_level, self)
 
     def get_name(self) -> str:
         return self.name

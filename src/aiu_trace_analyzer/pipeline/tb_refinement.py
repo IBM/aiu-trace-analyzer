@@ -194,7 +194,7 @@ class RefinementContext(AbstractHashQueueContext):
             self._queue_add_device(pid, event["ts"], is_acc=False)
 
             # events that are not from flex should appear at the top and thus we shrink the TID
-            if not PipelineContextTool.is_FLEX_event(event):
+            if not PipelineContextTool.is_flex_event(event):
                 event["tid"] = int(event["tid"]/10) + (event["tid"] % 10)
 
         return event

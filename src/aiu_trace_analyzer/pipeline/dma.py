@@ -15,6 +15,14 @@ class DataTransferExtractionContext(EventPairDetectionContext):
     When emitting (during drain), bandwidth is computed dividing number of bytes dy
     corresponding duration
     '''
+    _dmai_str = " DmaI"
+    _dmai_key_start = "DmaI_start"
+    _dmai_key_end = "DmaI_end"
+
+    _dmao_str = " DmaO"
+    _dmao_key_start = "DmaO_start"
+    _dmao_key_end = "DmaO_end"
+
     def __init__(self) -> None:
         super().__init__()
         self.last_TS = {}  # used for TS sequence checking
@@ -44,28 +52,30 @@ class DataTransferExtractionContext(EventPairDetectionContext):
         aiulog.log(aiulog.TRACE, "DTC: Bandwidth: ", prev, this)
 
         # Handle Counter events (DmaI)
-        if " DmaI" in prev['cat']:
+        if self._dmai_str in prev['cat']:
             # data transfer size
             dts = int(prev["args"]["Bytes"])
 
-            assert (prev['DmaI_end'] > prev['DmaI_start'])
+            assert (prev[self._dmai_key_end] > prev[self._dmai_key_start])
 
-            aiulog.log(aiulog.TRACE, "DmaI duration (usec):  %f" % ((prev['DmaI_end'] - prev['DmaI_start'])))
+            aiulog.log(aiulog.TRACE,
+                       "DmaI duration (usec):  %f" % ((prev[self._dmai_key_end] - prev[self._dmai_key_start])))
 
-            new_val = round(dts / (prev['DmaI_end'] - prev['DmaI_start']), 3)
+            new_val = round(dts / (prev[self._dmai_key_end] - prev[self._dmai_key_start]), 3)
 
             return new_val
 
         # Handle Counter events (DmaO)
-        elif " DmaO" in prev['cat']:
+        elif self._dmao_str in prev['cat']:
             # data transfer size
             dts = int(prev["args"]["Bytes"])
 
-            assert (prev['DmaO_end'] > prev['DmaO_start'])
+            assert (prev[self._dmao_key_end] > prev[self._dmao_key_start])
 
-            aiulog.log(aiulog.TRACE, "DmaO duration (usec): %f" % (prev['DmaO_end'] - prev['DmaO_start']))
+            aiulog.log(aiulog.TRACE,
+                       "DmaO duration (usec): %f" % (prev[self._dmao_key_end] - prev[self._dmao_key_start]))
 
-            new_val = round(dts / (prev['DmaO_end'] - prev['DmaO_start']), 3)
+            new_val = round(dts / (prev[self._dmao_key_end] - prev[self._dmao_key_start]), 3)
 
             return new_val
 
@@ -74,9 +84,9 @@ class DataTransferExtractionContext(EventPairDetectionContext):
 
         # possible categories: DmaI, DmaO, AllGather, Exec
         if "DmaI" in _cat:
-            cat_type = " DmaI"
+            cat_type = self._dmai_str
         elif "DmaO" in _cat:
-            cat_type = " DmaO"
+            cat_type = self._dmao_str
         else:
             cat_type = " Other"
 
@@ -92,17 +102,17 @@ class DataTransferExtractionContext(EventPairDetectionContext):
         zevent['args']['Bytes'] = 0.0
 
         # Get the appropriate timestamp (end of event)
-        if " DmaI" in zevent['cat']:
-            zevent['ts'] = zevent['DmaI_end']
-        elif " DmaO" in zevent['cat']:
-            zevent['ts'] = zevent['DmaO_end']
+        if self._dmai_str in zevent['cat']:
+            zevent['ts'] = zevent[self._dmai_key_end]
+        elif self._dmao_str in zevent['cat']:
+            zevent['ts'] = zevent[self._dmao_key_end]
 
         # remove intermediate fields from zevent
-        zevent.pop('DmaI_start')
-        zevent.pop('DmaI_end')
+        zevent.pop(self._dmai_key_start)
+        zevent.pop(self._dmai_key_end)
 
-        zevent.pop('DmaO_start')
-        zevent.pop('DmaO_end')
+        zevent.pop(self._dmao_key_start)
+        zevent.pop(self._dmao_key_end)
 
         # remove 'cat' field
         zevent.pop('cat')
@@ -137,11 +147,11 @@ class DataTransferExtractionContext(EventPairDetectionContext):
         zero_event = self.create_zero_event(prev)
 
         # remove intermediate fields
-        prev.pop('DmaI_start')
-        prev.pop('DmaI_end')
+        prev.pop(self._dmai_key_start)
+        prev.pop(self._dmai_key_end)
 
-        prev.pop('DmaO_start')
-        prev.pop('DmaO_end')
+        prev.pop(self._dmao_key_start)
+        prev.pop(self._dmao_key_end)
 
         # remove 'cat' field
         prev.pop('cat')

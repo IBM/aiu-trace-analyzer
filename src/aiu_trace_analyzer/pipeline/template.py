@@ -21,7 +21,7 @@ from aiu_trace_analyzer.pipeline import AbstractContext
 ##########################################################################
 # this is optional and only needed if your function needs any global state
 class MyStructsAndFunctionsForCrossEventContext(AbstractContext):
-    def __init__(self, __PUT_ANY_INITIALIZING_ARGS_HERE__) -> None:
+    def __init__(self, __put_any_initializing_args_here__) -> None:
         super().__init__()
         self.event_counts = {}
 

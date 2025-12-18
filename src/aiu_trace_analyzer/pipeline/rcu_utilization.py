@@ -308,6 +308,32 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         else:
             return "Total"
 
+    def _add_kernel(self,
+                    kernel_and_cat: list[str],
+                    cycles: int,
+                    current_table: dict[str, int],
+                    fprint: RCUTableFingerprint) -> RCUTableFingerprint:
+        category = self._handle_category(kernel_and_cat)
+        kernel = kernel_and_cat[0]+" Cmpt Exec"
+        fprint.add(kernel, cycles * self.cycle_to_clock_factor)
+
+        if kernel not in current_table:
+            aiulog.log(aiulog.TRACE, "UTL: Kernel:", kernel)
+            if cycles != 0:
+                current_table[kernel] = cycles
+        elif cycles != current_table[kernel]:
+            aiulog.log(aiulog.WARN,
+                       "UTL: Kernel already has an entry with different cycle count:",
+                       kernel, cycles, current_table[kernel])
+
+        if kernel not in self.kernel_cat_map[0]:
+            self.kernel_cat_map[0].add(kernel, category)
+        elif category != self.kernel_cat_map[0][kernel]:
+            aiulog.log(aiulog.WARN,
+                       "UTL: Kernel->Category map already has an entry with different category:",
+                       kernel, category, self.kernel_cat_map[0][kernel])
+        return fprint
+
     def _process_table_line(self,
                             line: str,
                             fprint: RCUTableFingerprint,
@@ -368,30 +394,12 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
         cycles = int(ldata[1])
         kernel_and_cat = self._category_splitter.split(ldata[0])
-        category = self._handle_category(kernel_and_cat)
 
         # Skip anything that's not a kernel name
         if kernel_and_cat[0] in self._non_kernel_names:
             return True, parse_mode, current_table, fprint
 
-        kernel = kernel_and_cat[0]+" Cmpt Exec"
-        fprint.add(kernel, cycles * self.cycle_to_clock_factor)
-
-        if kernel not in current_table:
-            aiulog.log(aiulog.TRACE, "UTL: Kernel:", kernel)
-            if cycles != 0:
-                current_table[kernel] = cycles
-        elif cycles != current_table[kernel]:
-            aiulog.log(aiulog.WARN,
-                       "UTL: Kernel already has an entry with different cycle count:",
-                       kernel, cycles, current_table[kernel])
-
-        if kernel not in self.kernel_cat_map[0]:
-            self.kernel_cat_map[0].add(kernel, category)
-        elif category != self.kernel_cat_map[0][kernel]:
-            aiulog.log(aiulog.WARN,
-                       "UTL: Kernel->Category map already has an entry with different category:",
-                       kernel, category, self.kernel_cat_map[0][kernel])
+        fprint = self._add_kernel(kernel_and_cat, cycles, current_table, fprint)
         return True, parse_mode, current_table, fprint
 
     def extract_tables(self, compiler_log: str):
@@ -410,6 +418,13 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 ) = self._process_table_line(line, fprint, parse_mode, current_table)
                 if not keep_parsing:
                     break
+
+    @staticmethod
+    def _compute_row_stats(dur, total, ideal, ideal_total):
+        dur_frac = 0 if isclose(total, 0.0, abs_tol=1e-9) else round(dur / total, 4)
+        ideal_frac = 0 if isclose(ideal_total, 0.0, abs_tol=1e-9) else round(ideal / ideal_total, 4)
+        pt_util = 0 if isclose(dur, 0.0, abs_tol=1e-9) else round(ideal / dur, 4)
+        return dur_frac, ideal_frac, pt_util
 
     def print_table_as_pd(self, cat_tab):
         """
@@ -451,9 +466,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 ideal_cyc = int(ideal / abs(self.cycle_to_clock_factor))
 
                 # prevent div-by-zero exception
-                dur_frac = 0 if isclose(total, 0.0, abs_tol=1e-9) else round(dur / total, 4)
-                ideal_frac = 0 if isclose(ideal_total, 0.0, abs_tol=1e-9) else round(ideal / ideal_total, 4)
-                pt_util = 0 if isclose(dur, 0.0, abs_tol=1e-9) else round(ideal / dur, 4)
+                dur_frac, ideal_frac, pt_util = RCUUtilizationContext._compute_row_stats(dur, total, ideal, ideal_total)
 
                 # note: to sync the columns of value_row with title_row
                 value_row = [pid, phase, k, dur, dur_frac, calls, round(ideal, 4), ideal_cyc, ideal_frac, pt_util]
@@ -684,57 +697,57 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
 
     assert isinstance(context, MultiRCUUtilizationContext)
 
-    if PipelineContextTool.is_acc_event(event) and PipelineContextTool.is_acc_kernel(event):
-        pid = event["pid"]
-        kernel_name = context.extract_kernel_from_event_name(event)
+    if not PipelineContextTool.is_acc_event(event) or not PipelineContextTool.is_acc_kernel(event):
+        return [event]
 
-        try:
-            jobhash = context.generate_fprint_jobhash(event)
-            job_fingerprint = context.fingerprint_get(jobhash)
-        except KeyError:
-            aiulog.log(aiulog.WARN, f"UTL: No matching fingerprint for job {event['args']['jobname']}."
-                       " Unable to find a matching Ideal-cycles table.")
-            return [event]
+    pid = event["pid"]
+    kernel_name = context.extract_kernel_from_event_name(event)
 
-        try:
-            ideal_dur = float(context.get_ideal_dur(kernel_name, pid, job_fingerprint))
-        except KeyError:
-            aiulog.log(aiulog.DEBUG, f"UTL: No kernel table matching fingerprint {job_fingerprint}:"
-                       f" {context.fingerprints.keys()}/{context.fingerprints[jobhash].fprint_data} ")
-            context.issue_warning("kernel_nomatch")
-            ideal_dur = 0.0
+    try:
+        jobhash = context.generate_fprint_jobhash(event)
+        job_fingerprint = context.fingerprint_get(jobhash)
+    except KeyError:
+        aiulog.log(aiulog.WARN, f"UTL: No matching fingerprint for job {event['args']['jobname']}."
+                   " Unable to find a matching Ideal-cycles table.")
+        return [event]
 
-        # cmpt_dur = int(event["args"]["TS4"]) - int(event["args"]["TS3"])
-        cmpt_dur = float(event["dur"])
-        utilization = abs(ideal_dur/cmpt_dur) if not isclose(cmpt_dur, 0.0, abs_tol=1e-9) else 0.0
+    try:
+        ideal_dur = float(context.get_ideal_dur(kernel_name, pid, job_fingerprint))
+    except KeyError:
+        aiulog.log(aiulog.DEBUG, f"UTL: No kernel table matching fingerprint {job_fingerprint}:"
+                   f" {context.fingerprints.keys()}/{context.fingerprints[jobhash].fprint_data} ")
+        context.issue_warning("kernel_nomatch")
+        ideal_dur = 0.0
 
-        if utilization > 0.0:
-            event["args"]["core used"] = True
+    # cmpt_dur = int(event["args"]["TS4"]) - int(event["args"]["TS3"])
+    cmpt_dur = float(event["dur"])
+    utilization = abs(ideal_dur/cmpt_dur) if not isclose(cmpt_dur, 0.0, abs_tol=1e-9) else 0.0
 
-        if utilization > 1.0:   # warning about >100% utilization
-            aiulog.log(aiulog.DEBUG, "UTL: Event with +100% utilization. "
-                       "This could indicate a problem with table fingerprinting: "
-                       "(pid, ideal, observed, event)", pid, ideal_dur, cmpt_dur, event)
-            context.issue_warning("util_100")
-            utilization = 1.0
+    if utilization > 1.0:   # warning about >100% utilization
+        aiulog.log(aiulog.DEBUG, "UTL: Event with +100% utilization. "
+                   "This could indicate a problem with table fingerprinting: "
+                   "(pid, ideal, observed, event)", pid, ideal_dur, cmpt_dur, event)
+        context.issue_warning("util_100")
+        utilization = 1.0
 
-        if "cat" in event:
-            event["args"]["user_cat"] = context.accumulate_categories(
-                pid,
-                kernel_name,
-                ideal_dur,
-                cmpt_dur,
-                job_fingerprint)
-        else:
-            event["cat"] = context.accumulate_categories(
-                pid,
-                kernel_name,
-                ideal_dur,
-                cmpt_dur,
-                job_fingerprint)
-        util_counter = context.make_utilization_event(event, utilization*100.0)
-        if utilization > 0.0:
-            event["args"]["pt_active"] = utilization
-        return [event] + util_counter
+    if utilization > 0.0:
+        event["args"]["pt_active"] = utilization
+        event["args"]["core used"] = True
 
-    return [event]
+    if "cat" in event:
+        event["args"]["user_cat"] = context.accumulate_categories(
+            pid,
+            kernel_name,
+            ideal_dur,
+            cmpt_dur,
+            job_fingerprint)
+    else:
+        event["cat"] = context.accumulate_categories(
+            pid,
+            kernel_name,
+            ideal_dur,
+            cmpt_dur,
+            job_fingerprint)
+
+    util_counter = context.make_utilization_event(event, utilization*100.0)
+    return [event] + util_counter

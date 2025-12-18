@@ -514,9 +514,6 @@ class Acelyzer:
             sorting_counter_ctx = event_pipe.EventSortingContext(event_types=["C"], sortkey=TS_CYCLE_KEY)
             process.register_stage(callback=event_pipe.sort_events, context=sorting_counter_ctx)
 
-            # checking power timestamps (TS3) are in ascending order
-            # process.registerPreProcess(callback=event_pipe.check_power_ts_sequence, context=powerDataContext)
-
             # calculate power
             power_compute_ctx = event_pipe.PowerExtractionContext(
                 skip_events_flag=args.skip_events,
