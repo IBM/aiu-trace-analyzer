@@ -71,6 +71,18 @@ class NormalizationContext(AbstractHashQueueContext):
                 text="OVC: local_correction fix has missed a spot in TS-sequence of {d[count]} event(s).",
                 data={"count": 0},
                 is_error=True
+            ),
+            TraceWarning(
+                name="epoch_start",
+                text="OVC: reference epoch had to be updated {d[count]} times with newly detected earlier timestamps. "
+                     "This indicates events with 0.0-timestamps or out-of-order input events. "
+                     "(pid={d[pid]}, job={d[job]}, start={d[epoch_start]})",
+                data={"count": 0, "pid": set([]), "job": set([]), "epoch_start": 0.0},
+                update_fn={
+                    "count": int.__add__,
+                    "pid": set.union,
+                    "job": set.union,
+                    "epoch_start": min}
             )
         ])
         self.soc_frequency = soc_frequency
@@ -156,7 +168,7 @@ class NormalizationContext(AbstractHashQueueContext):
                 return True
         return False
 
-    def get_overflow_count(self, qid, job: str, ts: float, cycle: int) -> tuple[float, float, float]:
+    def init_reference_overflow(self, qid, job: str, ts: float, cycle: int) -> float:
         # potential start ts of epoch assuming cycle->wallclk mapping is correct
         epoch_start = ts - cycle / self.soc_frequency
 
@@ -164,6 +176,29 @@ class NormalizationContext(AbstractHashQueueContext):
         if qid not in self.queues:
             self.queues[qid] = {"0": (epoch_start, ts, cycle)}   # store epoch0 for this job
             aiulog.log(aiulog.INFO, "OVC: Reference Epoch for", qid, job, ts-epoch_start, epoch_start)
+
+        return epoch_start
+
+    def update_reference_overflow(self, qid, job: str, ts: float, cycle: int) -> None:
+        epoch_start = self.init_reference_overflow(qid, job, ts, cycle)
+
+        # check for potential earlier reference epoch to prevent negative ts/overflow counts
+        if self.queues[qid]["0"][0] > epoch_start:
+            self.queues[qid] = {"0": (epoch_start, ts, cycle)}
+            self.warnings["epoch_start"].update({
+                "count": 1,
+                "pid": [qid],
+                "job": [job],
+                "epoch_start": epoch_start
+                })
+            aiulog.log(
+                aiulog.DEBUG,
+                "OVC: Detected new earliest Reference Epoch for", qid, job, ts-epoch_start, epoch_start,
+                "This indicates unstable input timestamps.")
+
+    def get_overflow_count(self, qid, job: str, ts: float, cycle: int) -> tuple[float, float, float]:
+        epoch_start = self.init_reference_overflow(qid, job, ts, cycle)
+
         # ts distance to reference point
         time_since_epoch0 = ts - self.queues[qid]["0"][0]
 
@@ -195,8 +230,22 @@ class NormalizationContext(AbstractHashQueueContext):
 
         return elapsed_epochs, drift, actual_freq
 
+    @staticmethod
+    def _get_ref_ts(ev_name: str) -> str:
+        if ev_name.endswith(" DmaI"):
+            return "TS1"
+        elif ev_name.endswith(" Cmpt Prep"):
+            return "TS2"
+        elif ev_name.endswith(" Cmpt Exec"):
+            return "TS3"
+        elif ev_name.endswith(" DmaO"):
+            return "TS4"
+        else:
+            return "TS1"
+
     def tsx_32bit_local_correction(self, event: TraceEvent) -> dict:
-        if "TS1" not in event["args"]:
+        ref_ts = NormalizationContext._get_ref_ts(event["name"])
+        if ref_ts not in event["args"]:
             return event["args"]
 
         args = event["args"]
@@ -217,8 +266,17 @@ class NormalizationContext(AbstractHashQueueContext):
         if event["dur"] > self.OVERFLOW_TIME_SPAN_US:
             self.warnings["long_dur"].update()
 
-        if "Cmpt Exec" in event["name"]:
-            self.frequency_stats(event)
+        qid = self.queue_hash(event)
+        self.update_reference_overflow(
+            qid,
+            str(event["args"]["jobhash"]),
+            event["ts"],
+            int(event["args"][ref_ts]))
+
+        if "Cmpt Exec" not in event["name"]:
+            return args
+
+        self.frequency_stats(event)
         return args
 
     def frequency_stats(self, event: TraceEvent) -> None:
