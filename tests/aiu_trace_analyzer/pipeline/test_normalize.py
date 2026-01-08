@@ -51,7 +51,6 @@ def test_tsx_32bit_global_correction(event, result, normalization_ctx):
     if result is None:
         with pytest.raises(AssertionError) as exit_info:
             normalization_ctx.tsx_32bit_global_correction(0, event)
-        print(exit_info.value)
         assert exit_info.value.args == ('local_correction of TS-sequence incomplete.',)
     else:
         assert normalization_ctx.tsx_32bit_global_correction(0, event) == result
