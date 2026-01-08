@@ -208,7 +208,9 @@ def cycle_count_conversion_cleanup(event: TraceEvent, _: AbstractContext) -> lis
     if "args" in event and "ts_all" in event["args"]:
         event["args"].pop("ts_all")
     if "args" in event and "jobhash" in event["args"]:
-        event["args"].pop("jobhash")
+        jobhash = event["args"].pop("jobhash")
+        if "jobname" in event["args"]:
+            event["args"]["jobname"] += f"({jobhash})"
     return [event]
 
 
