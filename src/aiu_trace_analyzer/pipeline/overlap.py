@@ -42,7 +42,7 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
     def __init__(self,
                  overlap_resolve=OVERLAP_RESOLVE_DROP,
                  ts_shift_threshold=0.0,
-                 max_tid_streams=5,
+                 max_tid_streams=25,
                  ) -> None:
         super().__init__()
         self.overlap_resolve = overlap_resolve

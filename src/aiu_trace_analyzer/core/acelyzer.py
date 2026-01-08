@@ -218,6 +218,10 @@ class Acelyzer:
                             choices=["json", "pddf", "protobuf"],
                             help="Type of output format")
 
+        parser.add_argument("--firmware", dest="firmware", action="store_true",
+                            default=False,
+                            help="Enable creation of events from firmware timestamps.")
+
         parser.add_argument("--freq", type=str, default=':'.join([str(self.defaults["freq"]),
                                                                   str(self.defaults["ideal_freq"])]),
                             help="Frequency spec for <SoC_freq>[:<core_freq>] in MHz")
@@ -471,6 +475,9 @@ class Acelyzer:
 
         # Merge CPU events into a single TID-stream (except AIU Roundtrip)
         process.register_stage(callback=event_pipe.recombine_cpu_events, context=None, cpu_stream_tid=1000)
+        if args.firmware:
+            fw_event_ctx = event_pipe.FirmwareEventsContext(soc_frequency=args.freq[0])
+            process.register_stage(callback=event_pipe.create_fw_events, context=fw_event_ctx)
 
         ##############################################################
         # modifying/detecting things across groups of events (e.g. overlapping, sorting)
@@ -597,6 +604,8 @@ class Acelyzer:
                 filter_pattern=args.filter,
             )
 
+        if args.firmware:
+            process.register_stage(callback=event_pipe.create_fw_flow_events)
         ##############################################################
         # event cleanup for cases where processing functions had added temporary data
         # remove the ts_all from args that got added by cycle_count_to_wallclock
