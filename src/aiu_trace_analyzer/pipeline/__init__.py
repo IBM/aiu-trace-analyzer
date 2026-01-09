@@ -50,6 +50,7 @@ from aiu_trace_analyzer.pipeline.tb_refinement import RefinementContext
 from aiu_trace_analyzer.pipeline.iteration_detect import IterationDectectContext
 from aiu_trace_analyzer.pipeline.time_align import TimeAlignmentContext
 from aiu_trace_analyzer.pipeline.flex_job_offset import FlexJobOffsetContext
+from aiu_trace_analyzer.pipeline.flow_launch import LaunchFLowContext
 
 # for reference of the template, you'd do here:
 #       from aiu_trace_analyzer.pipeline.template import MyStructsAndFunctionsForCrossEventContext
@@ -102,6 +103,7 @@ from aiu_trace_analyzer.pipeline.iteration_detect import collect_iteration_stats
 from aiu_trace_analyzer.pipeline.barrier import pipeline_barrier, _main_barrier_context
 from aiu_trace_analyzer.pipeline.time_align import time_align_collect, time_align_apply
 from aiu_trace_analyzer.pipeline.flex_job_offset import frequency_align_collect, frequency_align_apply
+from aiu_trace_analyzer.pipeline.flow_launch import launch_flow_collect, launch_flow_create_missing
 
 # for reference of the template, you'd do here:
 #       from aiu_trace_analyzer.pipeline.template import myprocessing
