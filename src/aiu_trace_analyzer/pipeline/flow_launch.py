@@ -56,7 +56,10 @@ class LaunchFLowContext(TwoPhaseWithBarrierContext):
 
     def update_last_ts(self, qid: int, event: TraceEvent) -> None:
         last_ts = event["ts"] + event["dur"] - 0.001
-        sched_wait_end = self.queues[qid]["schedwait"]["ts"] + self.queues[qid]["schedwait"]["dur"] if "schedwait" in self.queues[qid] else last_ts
+        if "schedwait" in self.queues[qid]:
+            sched_wait_end = self.queues[qid]["schedwait"]["ts"] + self.queues[qid]["schedwait"]["dur"]
+        else:
+            sched_wait_end = last_ts
         if last_ts <= sched_wait_end and last_ts > self.queues[qid]["last_ts"]:
             self.queues[qid]["last_ts"] = last_ts
             self.queues[qid]["last_pid_tid"] = (event["pid"], event["tid"])
