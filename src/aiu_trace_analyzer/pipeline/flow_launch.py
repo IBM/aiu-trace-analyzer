@@ -72,6 +72,13 @@ class LaunchFLowContext(TwoPhaseWithBarrierContext):
         self.flow_id_seq += 1
         return self.flow_id_seq
 
+    def has_required_data(self, event: TraceEvent) -> bool:
+        return (event["ph"] == "X" and
+                "cat" in event and
+                event["cat"] == "kernel" and
+                "args" in event and
+                "correlation" in event["args"])
+
     def create_missing(self, event: TraceEvent) -> list[TraceEvent]:
         '''
         Creates missing flow events between launchCB and kernels.
@@ -83,7 +90,7 @@ class LaunchFLowContext(TwoPhaseWithBarrierContext):
         :return: list of 2 flow events connecting the launchCB and the kernel events
         :rtype: list[TraceEvent]
         '''
-        if event["ph"] != "X" or event["cat"] != "kernel" or "args" not in event or "correlation" not in event["args"]:
+        if not self.has_required_data(event):
             return []
 
         id = event["args"]["correlation"]
