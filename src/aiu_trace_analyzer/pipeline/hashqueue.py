@@ -51,11 +51,11 @@ class AbstractHashQueueContext(AbstractContext):
                         continue
                     else:
                         raise KeyError(f'Requested key {key} is not in event {a}')
+
+                if idx < len(keys)-1:
+                    base_dict = a[key]
                 else:
-                    if idx < len(keys)-1:
-                        base_dict = a[key]
-                    else:
-                        hash_tuple += (base_dict[key],)
+                    hash_tuple += (base_dict[key],)
 
         aiulog.log(aiulog.TRACE, "QUEUE IN:", hash_tuple)
         assert len(hash_tuple) > 0
