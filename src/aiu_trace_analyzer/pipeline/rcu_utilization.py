@@ -660,8 +660,6 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                                                        abs_tol=self._similarity_tolerance):
                 # at least 2 tables with the same best similarity value (spit a warning)
                 self.warnings["uncertain_match"].update({"count": 1, "joblist": [f"{job}:mm={len(matching_fprints)}"]})
-            else:
-                pass
 
             aiulog.log(aiulog.DEBUG, "UTL: (New) table-fprint for job", job, "to", job_fprint.get())
             self.fingerprints[job] = job_fprint
@@ -719,7 +717,6 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
         context.issue_warning("kernel_nomatch")
         ideal_dur = 0.0
 
-    # cmpt_dur = int(event["args"]["TS4"]) - int(event["args"]["TS3"])
     cmpt_dur = float(event["dur"])
     utilization = abs(ideal_dur/cmpt_dur) if not isclose(cmpt_dur, 0.0, abs_tol=1e-9) else 0.0
 
