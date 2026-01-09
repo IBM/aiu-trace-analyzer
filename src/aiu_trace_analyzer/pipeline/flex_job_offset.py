@@ -126,8 +126,7 @@ class FlexJobOffsetContext(TwoPhaseWithBarrierContext):
                            "Possible cause is a frequency mismatch or input data misalignment.")
             for _, queue in self.queues.items():
                 queue.compute_frequency()
-        else:
-            pass
+
         return super().drain()  # parent class flips the phases
 
 
