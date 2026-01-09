@@ -59,7 +59,7 @@ class DataTransferExtractionContext(EventPairDetectionContext):
             assert (prev[self._dmai_key_end] > prev[self._dmai_key_start])
 
             aiulog.log(aiulog.TRACE,
-                       "DmaI duration (usec):  %f" % ((prev[self._dmai_key_end] - prev[self._dmai_key_start])))
+                       "DmaI duration (usec):  %f" % (prev[self._dmai_key_end] - prev[self._dmai_key_start]))
 
             new_val = round(dts / (prev[self._dmai_key_end] - prev[self._dmai_key_start]), 3)
 
