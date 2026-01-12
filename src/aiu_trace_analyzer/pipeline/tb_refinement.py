@@ -174,6 +174,7 @@ class RefinementContext(AbstractHashQueueContext):
         self.dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
 
         if self.dialect.get("NAME") == "TORCH":
+            self.meta_exported = True  # torch files come with their own metadata, no need to re-invent that
             event = RefinementContext._restore_pid_tid(event)
             if PipelineContextTool.is_acc_event(event):
                 self._queue_add_device(event["args"]["rank"], event["ts"], is_acc=True)

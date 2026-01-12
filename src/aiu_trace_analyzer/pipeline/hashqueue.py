@@ -60,3 +60,8 @@ class AbstractHashQueueContext(AbstractContext):
         aiulog.log(aiulog.TRACE, "QUEUE IN:", hash_tuple)
         assert len(hash_tuple) > 0
         return hash(hash_tuple)
+
+    def get_or_create(self, queue_id: int, initial_value) -> int:
+        if queue_id not in self.queues:
+            self.queues[queue_id] = initial_value
+        return queue_id

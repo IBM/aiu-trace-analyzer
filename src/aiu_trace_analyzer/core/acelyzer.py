@@ -563,10 +563,15 @@ class Acelyzer:
             global_sort=True)
         process.register_stage(callback=event_pipe.sort_events, context=sorting_flow_ctx)
 
-        if args.flow:
-            monotonic_ts_ctx_c = event_pipe.TSSequenceContext()
-            process.register_stage(callback=event_pipe.assert_global_ts_sequence, context=monotonic_ts_ctx_c)
+        monotonic_ts_ctx_c = event_pipe.TSSequenceContext()
+        process.register_stage(callback=event_pipe.assert_global_ts_sequence, context=monotonic_ts_ctx_c)
 
+        launch_flows_ctx = event_pipe.LaunchFLowContext()
+        process.register_stage(callback=event_pipe.launch_flow_collect, context=launch_flows_ctx)
+        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+        process.register_stage(callback=event_pipe.launch_flow_create_missing, context=launch_flows_ctx)
+
+        if args.flow:
             process.register_stage(callback=event_pipe.flow_prepare_event_data)
 
             flow_ctx = event_pipe.CollectiveGroupingContext(build_coll_event=args.build_coll_event)
