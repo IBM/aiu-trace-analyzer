@@ -86,9 +86,13 @@ def _convert_cycle_timestamps(event: TraceEvent, freq: float) -> list[float]:
     wall_clock_tref = event["ts"] + event["dur"]
     converted = _get_DTS_rela_to_TSRef_in_us(event, freq, ref_idx)
     converted = [wall_clock_tref + converted[i] for i in range(5)]
-    event["args"]["orig_ts"] = (event["ts"], event["dur"])
+    orig_ts = (event["ts"], event["dur"])
     event["dur"] = converted[ref_idx] - converted[0]
     event["ts"] = wall_clock_tref - event["dur"]
+    if event["ts"] != orig_ts[0] or event["dur"] != orig_ts[1]:
+        event["args"]["time_adjust"] = {"ts": event["ts"] - orig_ts[0],
+                                        "dur": event["dur"] - orig_ts[1]}
+
     assert event["ts"] >= 0.0, f"new event ts < 0.0 {event}, {converted}, {wall_clock_tref}"
 
     aiulog.log(aiulog.TRACE, "TS CONV: _convert_cycle_timestamps", event["ts"], event["dur"], converted)
