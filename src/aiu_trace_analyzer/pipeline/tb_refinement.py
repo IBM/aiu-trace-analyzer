@@ -18,6 +18,76 @@ Coll_data_size = "Coll_data_size"
 AllReduce = "AllReduce_all_reduce"
 
 
+class DeviceRankInfo():
+    def __init__(self) -> None:
+        self.initialized = [False, False]
+        self.data = {
+            "cpu": {
+                "pid": 0,
+                "ts": 0.0,
+                "name": "cpu_default",
+                "index": 0
+            },
+            "acc": {
+                "pid": 0,
+                "ts": 0.0,
+                "name": "acc_default",
+                "index": 0
+            }
+        }
+
+    def cpu_initialized(self) -> bool:
+        return self.initialized[0]
+
+    def acc_initialized(self) -> bool:
+        return self.initialized[1]
+
+    def set_data(self, key: str, name: str, pid: int, ts: float, index: int):
+        self.data[key] = {
+            "name": name,
+            "ts": ts,
+            "pid": pid,
+            "index": index
+        }
+
+    def set_cpu_data(self, name: str, pid: int, ts: float, index: int):
+        self.set_data("cpu", name, pid, ts, index)
+        self.initialized[0] = True
+
+    def set_acc_data(self, name: str, pid: int, ts: float, index: int):
+        self.set_data("acc", name, pid, ts, index)
+        self.initialized[1] = True
+
+    def gen_meta(self, key: str) -> list[TraceEvent]:
+        entry = self.data[key]
+        revents = []
+        revents.append({
+            "ph": "M", "name": "process_name",
+            "pid": entry["pid"],
+            "ts": entry["ts"],
+            "args": {"name": entry["name"]}
+        })
+        revents.append({
+            "ph": "M", "name": "process_label",
+            "pid": entry["pid"],
+            "ts": entry["ts"],
+            "args": {"name": entry["name"]}
+        })
+        revents.append({
+            "ph": "M", "name": "process_sort_index",
+            "pid": entry["pid"],
+            "ts": entry["ts"],
+            "args": {"sort_index": entry["index"]}
+        })
+        return revents
+
+    def gen_cpu_meta(self) -> list[TraceEvent]:
+        return self.gen_meta("cpu")
+
+    def gen_acc_meta(self) -> list[TraceEvent]:
+        return self.gen_meta("acc")
+
+
 class RefinementContext(AbstractHashQueueContext):
     name_converter = re.compile(r"([\D\[\]-]+)(\d+)")
 
@@ -35,25 +105,9 @@ class RefinementContext(AbstractHashQueueContext):
             return []
 
         revents = []
-        for p, (s, i, l, t) in self.queues.items():
-            revents.append({
-                "ph": "M", "name": "process_name",
-                "pid": p,
-                "ts": t,
-                "args": {"name": s}
-            })
-            revents.append({
-                "ph": "M", "name": "process_label",
-                "pid": p,
-                "ts": t,
-                "args": {"name": l}
-            })
-            revents.append({
-                "ph": "M", "name": "process_sort_index",
-                "pid": p,
-                "ts": t,
-                "args": {"sort_index": i+10}
-            })
+        for _, dev_info in self.queues.items():
+            revents += dev_info.gen_cpu_meta()
+            revents += dev_info.gen_acc_meta()
 
         if self.has_coll_bw:
             revents.append({
@@ -108,17 +162,34 @@ class RefinementContext(AbstractHashQueueContext):
         event = self._update_for_collective(event)
         return event
 
-    def _queue_add_device(self, dev_id, ts, is_acc: bool = True):
+    def _queue_add_device(self, dev_id, pid, ts, is_acc: bool = True):
         if dev_id not in self.queues:
-            if is_acc:
-                self.queues[dev_id] = ("AIU Device"+str(dev_id), dev_id*2+1, "AIU", ts)
-                self.exporter.add_device(
-                    dev_id,
-                    {"type": "AIU",
-                     "name": "AIU",
-                     "core": "PT Array"})
-            else:
-                self.queues[dev_id] = ("Host"+str(dev_id), dev_id*2, "cpu", ts)
+            self.queues[dev_id] = DeviceRankInfo()
+
+        if is_acc:
+            if self.queues[dev_id].acc_initialized():
+                return
+
+            self.queues[dev_id].set_acc_data(
+                f"AIU Device{dev_id}",
+                pid,
+                ts,
+                dev_id * 3 + 1)
+            self.exporter.add_device(
+                dev_id,
+                {"type": "AIU",
+                    "name": "AIU",
+                    "core": "PT Array"})
+        else:
+            if self.queues[dev_id].cpu_initialized():
+                return
+
+            self.queues[dev_id].set_cpu_data(
+                f"Host{dev_id}",
+                pid,
+                ts,
+                dev_id * 3
+            )
 
     def _cat_for_regular_event(self, event: TraceEvent) -> str:
         # Use DmaI and DmaO with Sen to check memcpy event
@@ -176,8 +247,6 @@ class RefinementContext(AbstractHashQueueContext):
         if self.dialect.get("NAME") == "TORCH":
             self.meta_exported = True  # torch files come with their own metadata, no need to re-invent that
             event = RefinementContext._restore_pid_tid(event)
-            if PipelineContextTool.is_acc_event(event):
-                self._queue_add_device(event["args"]["rank"], event["ts"], is_acc=True)
             return event
 
         pid = RefinementContext._resolve_string_pids(event["pid"])
@@ -186,13 +255,13 @@ class RefinementContext(AbstractHashQueueContext):
             event["cat"] = self._cat_for_regular_event(event)
 
             event["args"]["device"] = event["args"]["rank"]
-            self._queue_add_device(event["args"]["rank"], event["ts"], is_acc=True)
+            self._queue_add_device(pid, event["args"]["rank"], event["ts"], is_acc=True)
 
         else:
             event = self._update_collective_event(event)
             event["pid"] = pid + 1000
 
-            self._queue_add_device(pid, event["ts"], is_acc=False)
+            self._queue_add_device(pid, event["pid"], event["ts"], is_acc=False)
 
             # events that are not from flex should appear at the top and thus we shrink the TID
             if not PipelineContextTool.is_flex_event(event):
