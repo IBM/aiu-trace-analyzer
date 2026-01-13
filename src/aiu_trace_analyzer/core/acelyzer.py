@@ -420,13 +420,6 @@ class Acelyzer:
         process.register_stage(callback=event_pipe.event_sanity_checks)
 
         ##############################################################
-        # Torch/Flex time alignment
-        time_align_ctx = event_pipe.TimeAlignmentContext()
-        process.register_stage(callback=event_pipe.time_align_collect, context=time_align_ctx)
-        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
-        process.register_stage(callback=event_pipe.time_align_apply, context=time_align_ctx)
-
-        ##############################################################
         # Event manipulation: making changes to args or other event parameters beyond cleanup
         # move request IDs from the event name into args
         if self._overlap_option_from_arg(args.overlap) == event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_ASYNC:
