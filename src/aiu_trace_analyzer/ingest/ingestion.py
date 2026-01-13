@@ -262,8 +262,10 @@ class JsonEventTraceIngest(AbstractTraceIngest):
         if "distributedInfo" in self.data and "rank" in self.data["distributedInfo"]:
             self.set_rank_pid(self.data["distributedInfo"]["rank"])
             aiulog.log(aiulog.DEBUG, "INGEST: Detected distributedInfo Rank", self.rank_pid)
-        else:
+        elif isinstance(GlobalIngestData.get_dialect(self.jobhash), InputDialectTORCH):
             self.rank_pid = 0
+        else:
+            self.rank_pid = -1
 
         if "traceEvents" in self.data:
             self.data = self.data["traceEvents"]
