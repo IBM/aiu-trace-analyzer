@@ -136,11 +136,15 @@ class AbstractTraceIngest:
         dialect = GlobalIngestData.get_dialect(self.jobhash)
         if isinstance(dialect, InputDialectTORCH):
             event[the_args]["rank"] = self.rank_pid
+            # torch profiles all use dev/rank 0 and need to update for actual rank
             if event["pid"] == 0:
                 event["pid"] = self.rank_pid
             if "device" in event["args"]:
                 event["args"]["device"] = self.rank_pid
         elif isinstance(dialect, InputDialectFLEX):
+            # flex traces have aiu pid reflecting their rank and no other source for dev/rank
+            if self.rank_pid == -1:
+                self.rank_pid = event["pid"]
             event[the_args]["rank"] = self.rank_pid
             if self.rank_pid >= 0:
                 event["pid"] = self.rank_pid
