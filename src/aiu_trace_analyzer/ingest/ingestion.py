@@ -132,15 +132,34 @@ class AbstractTraceIngest:
     def get_passthrough_meta(self) -> dict:
         return self.other_metadata
 
+    def _adjust_torch_meta(self, event: TraceEvent) -> tuple[TraceEvent, bool]:
+        finished = False
+        finished |= (event["ph"] == "M")
+        finished |= ("args" not in event)
+        if event["ph"] != "M" or isinstance(event["pid"], str) or not event["name"].startswith("process"):
+            return (event, finished)
+
+        is_no_cpu = 0 if event["pid"] > self.rank_pid else 15
+
+        if event["name"].endswith("sort_index"):
+            event["args"]["sort_index"] = self.rank_pid * 123000 + is_no_cpu
+        elif event["name"].endswith("_labels") and event["args"]["labels"][-1] in "0123456789":
+            event["args"]["labels"] = f"{event["args"]["labels"][:-1]}{self.rank_pid}"
+
+        return (event, finished)
+
     def _rank_device_annotation(self, event: TraceEvent, the_args: str) -> TraceEvent:
         dialect = GlobalIngestData.get_dialect(self.jobhash)
         if isinstance(dialect, InputDialectTORCH):
-            event[the_args]["rank"] = self.rank_pid
             # torch profiles all use dev/rank 0 and need to update for actual rank
             if event["pid"] == 0:
                 event["pid"] = self.rank_pid
+            event, finished = self._adjust_torch_meta(event)
+            if finished:
+                return event
+            event[the_args]["rank"] = self.rank_pid
             if "device" in event["args"]:
-                event["args"]["device"] = self.rank_pid
+                event[the_args]["device"] = self.rank_pid
         elif isinstance(dialect, InputDialectFLEX):
             # flex traces have aiu pid reflecting their rank and no other source for dev/rank
             if self.rank_pid == -1:
@@ -177,6 +196,7 @@ class AbstractTraceIngest:
     # update event data with things like ts-offset or ts-scaling
     def updated_event(self, event: TraceEvent) -> TraceEvent:
         if event["ph"] not in "XBE":
+            event = self._rank_device_annotation(event, "args")
             return event
 
         if "ts" in event:
