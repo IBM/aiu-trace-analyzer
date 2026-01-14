@@ -196,7 +196,8 @@ class AbstractTraceIngest:
     # update event data with things like ts-offset or ts-scaling
     def updated_event(self, event: TraceEvent) -> TraceEvent:
         if event["ph"] not in "XBE":
-            event = self._rank_device_annotation(event, "args")
+            if event["ph"] in "Mbei":
+                event = self._rank_device_annotation(event, "args")
             return event
 
         if "ts" in event:
