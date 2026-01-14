@@ -257,7 +257,6 @@ class JsonEventTraceIngest(AbstractTraceIngest):
 
         if "distributedInfo" in self.data and "rank" in self.data["distributedInfo"]:
             self.set_rank_pid(self.data["distributedInfo"]["rank"])
-#            self.check_update_device_properties(self.rank_pid)
             aiulog.log(aiulog.DEBUG, "INGEST: Detected distributedInfo Rank", self.rank_pid)
 
         if "traceEvents" in self.data:

@@ -39,9 +39,8 @@ def processing_filter(event: TraceEvent, context: AbstractContext, dictionary: d
     # we want to keep the events that are in the list
     filter_pattern = dictionary.get("filter_pattern", None)
 
-    if isinstance(filter_pattern, str):
-        if event["ph"] in filter_pattern:
-            # and return those as a list (required b/c there can be functions that create new events)
-            aiulog.log(aiulog.TRACE, "FLT: Unfiltered event:", event['name'])
-            return [event]
+    if isinstance(filter_pattern, str) and event["ph"] in filter_pattern:
+        # and return those as a list (required b/c there can be functions that create new events)
+        aiulog.log(aiulog.TRACE, "FLT: Unfiltered event:", event['name'])
+        return [event]
     return []
