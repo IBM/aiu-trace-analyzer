@@ -145,8 +145,6 @@ class RefinementContext(AbstractHashQueueContext):
         if "coll" in str(event["tid"]):
             event["tid"] = 10000+int(str(event["tid"])[4])
 
-        # ensure events with different PIDs have different TIDs
-        event["tid"] = event["pid"]*100000 + event["tid"]
         return event
 
     def update_event_data_heavy(self, event: TraceEvent) -> TraceEvent:
