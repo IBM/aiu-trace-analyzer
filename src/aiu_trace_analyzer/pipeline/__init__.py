@@ -49,11 +49,8 @@ from aiu_trace_analyzer.pipeline.rcu_utilization import MultiRCUUtilizationConte
 from aiu_trace_analyzer.pipeline.tb_refinement import RefinementContext
 from aiu_trace_analyzer.pipeline.iteration_detect import IterationDectectContext
 from aiu_trace_analyzer.pipeline.flex_job_offset import FlexJobOffsetContext
-<<<<<<< HEAD
 from aiu_trace_analyzer.pipeline.flow_launch import LaunchFLowContext
-=======
 from aiu_trace_analyzer.pipeline.categorize import EventCategorizerContext, EventClass
->>>>>>> 26ba8df (introduce initial option event classification)
 
 # for reference of the template, you'd do here:
 #       from aiu_trace_analyzer.pipeline.template import MyStructsAndFunctionsForCrossEventContext

@@ -201,7 +201,7 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
         return event_class
 
     def get_event_class(self, event: TraceEvent) -> EventClass:
-        if not event["name"]:
+        if "name" not in event:
             return EventClass.OTHER
 
         fevent_class = self.classify_flex(event)
