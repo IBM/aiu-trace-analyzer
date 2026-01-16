@@ -413,7 +413,8 @@ class Acelyzer:
         process.register_stage(callback=event_pipe.normalize_phase1, context=normalize_ctx)
         if args.flex_ts_fix:
             process.register_stage(callback=event_pipe.frequency_align_collect, context=frequency_align_ctx)
-            process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+        if args.flex_ts_fix:
             process.register_stage(callback=event_pipe.frequency_align_apply, context=frequency_align_ctx)
         process.register_stage(callback=event_pipe.normalize_phase2, context=normalize_ctx)
 

@@ -60,9 +60,9 @@ def _get_DTS_rela_to_TS1_in_us(event: TraceEvent, freq: float) -> list[float]:
     return converted
 
 
-def _get_DTS_rela_to_TS5_in_us(event: TraceEvent, freq: float) -> list[float]:
+def _get_DTS_rela_to_TSRef_in_us(event: TraceEvent, freq: float, ref_idx: int) -> list[float]:
     converted = _conv_DTS_to_array_in_us(event, freq)
-    converted = [converted[i] - converted[4] for i in range(5)]
+    converted = [converted[i] - converted[ref_idx] for i in range(5)]
     return converted
 
 
@@ -73,12 +73,27 @@ def _convert_cycle_timestamps(event: TraceEvent, freq: float) -> list[float]:
         Let T_ts5 = T_flex_end
         Let T_ts[i] = T_ts5 - (TS5-TS[i])/Freq, for i in 1-4
 
+    THIS FN HAS A NASTY SIDE EFFECT OF UPDATING event["ts"] and event["dur"] !!!
     '''
-    wall_clock_t5 = event["ts"] + event["dur"]
-    converted = _get_DTS_rela_to_TS5_in_us(event, freq)
-    converted = [wall_clock_t5 + converted[i] for i in range(5)]
-    event["dur"] = converted[4] - converted[0]
-    event["ts"] = wall_clock_t5 - event["dur"]
+    ref_idx = 4
+    if event["name"].endswith("Cmpt Prep"):
+        ref_idx = 2
+    if event["name"].endswith(" DmaI"):
+        ref_idx = 1
+    if event["name"].endswith("Cmpt Exec"):
+        ref_idx = 3
+
+    wall_clock_tref = event["ts"] + event["dur"]
+    converted = _get_DTS_rela_to_TSRef_in_us(event, freq, ref_idx)
+    converted = [wall_clock_tref + converted[i] for i in range(5)]
+    orig_ts = (event["ts"], event["dur"])
+    event["dur"] = converted[ref_idx] - converted[0]
+    event["ts"] = wall_clock_tref - event["dur"]
+    if event["ts"] != orig_ts[0] or event["dur"] != orig_ts[1]:
+        event["args"]["time_adjust"] = {"ts": event["ts"] - orig_ts[0],
+                                        "dur": event["dur"] - orig_ts[1]}
+
+    assert event["ts"] >= 0.0, f"new event ts < 0.0 {event}, {converted}, {wall_clock_tref}"
 
     aiulog.log(aiulog.TRACE, "TS CONV: _convert_cycle_timestamps", event["ts"], event["dur"], converted)
     return converted
@@ -95,12 +110,16 @@ def _align_hts_to_beg(event: TraceEvent, freq: float) -> list[float]:
 
 
 def _align_hts_by_type(op_id: int, event: TraceEvent, freq: float) -> list[float]:
+    """
+    THIS FN HAS A NASTY SIDE EFFECT OF UPDATING event["ts"] and event["dur"] !!!
+    """
     converted = _get_DTS_rela_to_TS1_in_us(event, freq)
     dts_intervals = [converted[i+1] - converted[i] for i in range(4)]
 
     hts_end = event["ts"] + event["dur"]
     event["dur"] = dts_intervals[op_id]
     event["ts"] = hts_end - event["dur"]
+    assert event["ts"] >= 0.0, f"new event ts < 0.0 {event}, {hts_end}, {dts_intervals}"
 
     converted = [(converted[i] - converted[op_id + 1] + hts_end) for i in range(5)]
 
@@ -135,9 +154,9 @@ def cycle_count_to_wallclock(event: TraceEvent, _: AbstractContext, config: dict
     if event["ph"] == "X" and "args" in event and "TS1" in event["args"]:
         event["args"]["ts_all"] = _convert_cycle_timestamps(event, config["soc_frequency"])
         assert event["ts"] >= get_cycle_ts_as_clock(1, event["args"]["ts_all"]), \
-            "TS1 is projected before the event timestamp. Please check the frequency setting."
+            f"TS1 is projected before the event timestamp. Please check the frequency setting. {event}"
         assert event["ts"] + event["dur"] <= get_cycle_ts_as_clock(5, event["args"]["ts_all"]), \
-            "TS5 is projected past the end of the event. Please check the frequency setting."
+            f"TS5 is projected past the end of the event. Please check the frequency setting. {event}"
 
         last = event["args"]["ts_all"][0]
         for i, t in enumerate(event["args"]["ts_all"][1:]):
