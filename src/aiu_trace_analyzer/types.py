@@ -51,7 +51,7 @@ class InputDialectFLEX(InputDialect):
         "acc_supernode_launch": "Flex RoundTrip",
         "acc_supernode_exec": "Flex RoundTrip",
         "acc_node_compute": "Compute of $NodeName",
-        "acc_data_convert": "Compute of $NodeName-HostPrep",
+        "acc_data_convert": "Compute of .*DataConvert",
         "acc_scheduler_init": "SchedulerConstruct",
         "acc_virtaddr_create": "CreatePipoIovas",
         "acc_launch_schedule_compute": "ScheduleCompute",

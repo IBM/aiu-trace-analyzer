@@ -145,7 +145,7 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
         elif PipelineContextTool.is_category(event, "acc_datatransfer_DtoH"):
             event_class = EventClass.DATA_OUT
 
-        if "Compute of" in event["name"] and "SenFusedDeviceNode" not in event["name"]:
+        if PipelineContextTool.is_category(event, "acc_data_convert"):
             event_class = EventClass.SEN_DATA_CONVERT
         if PipelineContextTool.is_category(event, "acc_rdma_prep_sync"):
             event_class = EventClass.MAIU_WIREUP
