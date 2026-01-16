@@ -37,6 +37,7 @@ class AbstractTraceExporter:
         else:
             self.meta["Settings"] = settings
         self.device_data = []
+        self.save_to_file = settings["save_to_file"] if settings is not None and "save_to_file" in settings else True
 
     def add_device(self, id, data: dict):
         devdata = {"id": id}
@@ -88,8 +89,9 @@ class JsonFileTraceExporter(AbstractTraceExporter):
     def flush(self):
         assert isinstance(self.device_data, list)
         self.traceview.add_device_data(self.device_data)
-        with open(self.target_uri, 'w') as json_new_pids_file:
-            self.traceview.dump(fp=json_new_pids_file)
+        if self.save_to_file:
+            with open(self.target_uri, 'w') as json_new_pids_file:
+                self.traceview.dump(fp=json_new_pids_file)
 
 
 class ProtobufTraceExporter(AbstractTraceExporter):
@@ -115,7 +117,6 @@ class TensorBoardFileTraceExporter(JsonFileTraceExporter):
         self.default_extension = '.pt.trace.json'
         self.rank_cnt = 0
         self.traceview_by_rank = dict()
-        self.save_to_file = settings["save_to_file"] if settings is not None and "save_to_file" in settings else True
 
     # Save events into different files based on ID
     def _parse_events_by_id(self) -> None:
@@ -276,8 +277,9 @@ class DataframeExporter(AbstractTraceExporter):
         title_row = [v[0] for v in self.data_map.values()]
         self.df = pd.DataFrame(self.vertical_view, columns=title_row)
 
-        with open(self.target_uri, 'w') as f:
-            f.write(self.df.to_string(index=False))
+        if self.save_to_file:
+            with open(self.target_uri, 'w') as f:
+                f.write(self.df.to_string(index=False))
 
     def get_data(self) -> pd.DataFrame:
         return self.df

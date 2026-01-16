@@ -40,17 +40,25 @@ tests_to_run_with_raise: list[tuple[str, int]] = [
         1
     ),
     (
-        "-i tests/test_data/basic_event_test_cases.json --freq 560:defg",   # provide a non-numeric frequency
+        "-i tests/test_data/basic_event_test_cases.json --freq 560:defg",   # provide a non-numeric SoC frequency
         1
     ),
     (
-        "-i tests/test_data/basic_event_test_cases.json --freq -500.0",   # provide a non-numeric frequency
+        "-i tests/test_data/basic_event_test_cases.json --freq -500.0",   # provide a negative frequency
         1
     ),
     (
-        "-i tests/test_data/basic_event_test_cases.json --freq 560.0:-800",   # provide a non-numeric frequency
+        "-i tests/test_data/basic_event_test_cases.json --freq 560.0:-800",   # provide a negative SoC frequency
         1
     ),
+    (
+        "-i tests/test_data/basic_event_test_cases.json --freq 0.0:800",   # provide a zero frequency
+        1
+    ),
+    (
+        "-i tests/test_data/basic_event_test_cases.json -C power_ts3,power_ts4",   # request mutually exclusive counters
+        2
+    )
 ]
 
 
