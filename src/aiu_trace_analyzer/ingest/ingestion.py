@@ -322,7 +322,7 @@ class JsonEventTraceIngest(AbstractTraceIngest):
         return event
 
     def build_complete_event(self) -> TraceEvent:
-        def _torch_prof_or_none(name, evtype) -> TraceEvent:
+        def _torch_prof_or_none(evtype) -> TraceEvent:
             if evtype == "M":
                 return event
             else:
@@ -334,7 +334,7 @@ class JsonEventTraceIngest(AbstractTraceIngest):
 
         # ignore anything that's not B/E
         if event["ph"] not in "BE":
-            return _torch_prof_or_none(event["name"], event["ph"])
+            return _torch_prof_or_none(event["ph"])
 
         open_event = None
         if not self.pending_close and event["ph"] == "B":
