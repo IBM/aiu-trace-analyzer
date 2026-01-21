@@ -72,23 +72,28 @@ class PipelineContextTool:
         if not dialect:
             return False
 
-        classifier = dialect.get(category).split('.')
+        deconstruct = dialect.get(category).split(';')
+
+        classifier = deconstruct[0].split('.')
+
         if len(classifier) == 1:
             return event["name"] == classifier[0]
 
-        elif classifier[0] == "is":
-            assert len(classifier) > 2, f"Not enough parameters in '{category}' classifier. 'is' requires at least 2"
+        if classifier[0] == "is":
             attribute = event
-            for c in classifier[1:-1]:
+            for c in classifier[1:]:
                 if c in attribute:
                     attribute = attribute[c]
                 else:
                     return False
-            classifier_re = re.compile(classifier[-1])
+            compare_str = ';'.join(deconstruct[1:])  # recombined remaining parts of the string
+            assert len(compare_str) > 0, f"Incorrect format '{category}' classifier of {dialect.get("NAME")} dialect."
+            classifier_re = re.compile(compare_str)
             return (classifier_re.search(attribute) is not None)
 
         elif classifier[0] == "has":
             assert len(classifier) > 1, f"Not enough parameters in '{category}' classifier. 'has' requires at least 1"
+
             attribute = event
             for c in classifier[1:]:
                 if c in attribute:
