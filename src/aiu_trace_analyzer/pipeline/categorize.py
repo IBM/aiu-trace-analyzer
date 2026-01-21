@@ -46,6 +46,10 @@ class EventClass(Enum):
     MAIU_PROTOCOL_SEND_DATA = auto()
     # General Data Recv
     MAIU_PROTOCOL_RECV_DATA = auto()
+    # General Data Send
+    MAIU_PROTOCOL_SIGNAL_DATA = auto()
+    # General Data Recv
+    MAIU_PROTOCOL_SIGNAL_ACK = auto()
 
     def __str__(self,):
         return self.name
@@ -57,6 +61,8 @@ class EventClass(Enum):
 
 
 class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
+    _BYTES_ENTRY = "bytes"
+
     def __init__(self, with_zero_align: bool = False):
         super().__init__()
         self.do_zero_align = 1.0 if with_zero_align else 0.0
@@ -212,6 +218,18 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
 
         return event_class
 
+    def _protocol_or_data_send(self, event: TraceEvent) -> EventClass:
+        if self._BYTES_ENTRY in event["args"] and event["args"][self._BYTES_ENTRY] == 128:
+            return EventClass.MAIU_PROTOCOL_SIGNAL_DATA
+        else:
+            return EventClass.MAIU_PROTOCOL_SEND_DATA
+
+    def _protocol_or_data_recv(self, event: TraceEvent) -> EventClass:
+        if self._BYTES_ENTRY in event["args"] and event["args"][self._BYTES_ENTRY] == 128:
+            return EventClass.MAIU_PROTOCOL_SIGNAL_ACK
+        else:
+            return EventClass.MAIU_PROTOCOL_RECV_DATA
+
     def second_pass_classify(self, event: TraceEvent) -> EventClass:
         '''
         Determination of some event classes require batch/time context
@@ -227,9 +245,9 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
         first_comp, last_comp = self.queues[batch_id]
         if event["ts"] > first_comp and event["ts"] < last_comp:
             if event["args"]["class"] == EventClass.DATA_OUT:
-                return EventClass.MAIU_PROTOCOL_SEND_DATA
+                return self._protocol_or_data_send(event)
             if event["args"]["class"] == EventClass.DATA_IN:
-                return EventClass.MAIU_PROTOCOL_RECV_DATA
+                return self._protocol_or_data_recv(event)
         return event["args"]["class"]
 
     def collect_stats(self, event: TraceEvent) -> None:

@@ -111,7 +111,7 @@ class InputDialectTORCH(InputDialect):
         "acc_launch_schedule_compute": "aiuLaunchScheduleCompute",
         "acc_schedule_wait": "aiuScheduleWait",
         "acc_dma_prep": "aiuPrepareDMAs",
-        "acc_rdma_prep_sync": "aiuPrepareAndSyncRDMA",
+        "acc_rdma_prep_sync": "aiuPrepareAndSyncRdma",
         "acc_cache_clear": "aiuClearCache",
         "acc_cache_preload": "aiuPreloadCache",
         "acc_launch_compute_stream": "aiuLaunchComputeStream",
