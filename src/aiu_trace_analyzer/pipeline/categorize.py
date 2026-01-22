@@ -46,9 +46,9 @@ class EventClass(Enum):
     MAIU_PROTOCOL_SEND_DATA = auto()
     # General Data Recv
     MAIU_PROTOCOL_RECV_DATA = auto()
-    # General Data Send
+    # General Data Signal
     MAIU_PROTOCOL_SIGNAL_DATA = auto()
-    # General Data Recv
+    # General Ack Signal
     MAIU_PROTOCOL_SIGNAL_ACK = auto()
 
     def __str__(self,):

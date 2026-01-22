@@ -41,7 +41,7 @@
         {"launch_flow_collect": true},
         {"event_categorizer": true},
         {"pipeline_barrier": true},
-        {"event_categorizer_update": false},
+        {"event_categorizer_update": true},
         {"launch_flow_create_missing": true},
         {"flow_prepare_event_data": false},
         {"flow_extraction": true},
