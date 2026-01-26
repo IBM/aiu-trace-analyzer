@@ -72,7 +72,7 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
     def __init__(self, with_zero_align: bool = False):
         super().__init__()
         self.do_zero_align = 1.0 if with_zero_align else 0.0
-        self.first_ts = 1e99
+        self.first_ts_per_rank: dict[int, float] = {}
 
     def is_collective_event(self, event: TraceEvent) -> bool:
         """Determine if an event is a collective communication event.
@@ -85,7 +85,7 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
         """
         return "CollGroup" in event["args"]
 
-    def classify_flex(self, event: TraceEvent) -> EventClass:   # noqa: C901
+    def classify_flex(self, event: TraceEvent) -> (EventClass|None):   # noqa: C901
         """Classify trace events using FLEX dialect-based classification.
 
         This method is currently kept for verification of the dialect-based classifier.
@@ -105,7 +105,7 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
         """
         dialect = pct.get_dialect_of_event(event)
         if dialect is None or dialect.get("NAME") != "FLEX":
-            return EventClass.OTHER
+            return None
         event_class = EventClass.OTHER
         if "Cmpt Prep" in event["name"]:
             # TS1 TS2 --- --- ---
@@ -349,17 +349,22 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
     def collect_stats(self, event: TraceEvent) -> None:
         """Collect statistics from trace events during the first pass.
 
-        Tracks the earliest timestamp across all events and maintains time ranges
+        Tracks the earliest timestamp per rank and maintains time ranges
         for kernel events grouped by batch/context ID.
 
         Args:
             event: The trace event to collect statistics from
 
         Note:
-            This method updates internal state (first_ts and queues) and is called
-            during the initial pass through trace events.
+            This method updates internal state (first_ts_per_rank and queues) and is called
+            during the initial pass through trace events. Tracks first_ts separately for
+            each rank to enable proper per-rank timestamp normalization.
         """
-        self.first_ts = min(self.first_ts, event["ts"])
+        rank = event["args"].get("rank", 0)
+        if rank not in self.first_ts_per_rank:
+            self.first_ts_per_rank[rank] = event["ts"]
+        else:
+            self.first_ts_per_rank[rank] = min(self.first_ts_per_rank[rank], event["ts"])
         if pct.is_acc_kernel(event):
             batch_id = pct.get_context_id(event)
             if batch_id not in self.queues:
@@ -371,8 +376,8 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
     def apply_stats(self, event: TraceEvent) -> TraceEvent:
         """Apply collected statistics to trace events during the second pass.
 
-        Normalizes event timestamps based on the earliest timestamp (if zero alignment
-        is enabled) and updates event classification in the args.
+        Normalizes event timestamps based on the earliest timestamp per rank (if zero
+        alignment is enabled) and updates event classification in the args.
 
         Args:
             event: The trace event to apply statistics to
@@ -381,12 +386,17 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
             TraceEvent: The modified event with updated timestamp and classification
 
         Note:
-            Logs an error if an event timestamp is earlier than the collected minimum.
+            Logs an error if an event timestamp is earlier than the collected minimum
+            for its rank. Uses rank 0 as default if rank is not specified.
         """
-        if self.first_ts <= event["ts"]:
-            event["ts"] -= self.first_ts * self.do_zero_align
+        rank = event["args"].get("rank", 0)
+        first_ts = self.first_ts_per_rank.get(rank, 0.0)
+
+        if first_ts <= event["ts"]:
+            event["ts"] -= first_ts * self.do_zero_align
         else:
-            aiulog.log(aiulog.ERROR, "CAT: ACELYZER-BUG: Event ts smaller than min of collected event ts.")
+            aiulog.log(aiulog.ERROR, \
+                f"CAT: ACELYZER-BUG: Event ts smaller than min of collected event ts for rank {rank}.")
 
         if "class" in event["args"]:
             event["args"]["class"] = str(self.second_pass_classify(event))
