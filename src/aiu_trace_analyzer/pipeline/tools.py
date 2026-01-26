@@ -43,13 +43,13 @@ class PipelineContextTool:
     def get_context_id(event: TraceEvent) -> int:
         dialect = PipelineContextTool.get_dialect_of_event(event)
         if dialect is None:
-            return None
+            return 0
         if dialect.get("NAME") == "FLEX":
             return event["args"]["jobhash"]
         elif dialect.get("NAME") == "TORCH":
             return event["args"]["correlation"]
         else:
-            return None
+            return 0
 
     @staticmethod
     def is_flex_event(event: TraceEvent) -> bool:
@@ -67,6 +67,7 @@ class PipelineContextTool:
     def is_acc_kernel(event: TraceEvent) -> bool:
         return PipelineContextTool.is_category(event, "acc_kernel")
 
+    @staticmethod
     def is_category(event: TraceEvent, category: str) -> bool:
         dialect = PipelineContextTool.get_dialect_of_event(event)
         if not dialect:
@@ -86,10 +87,13 @@ class PipelineContextTool:
                     attribute = attribute[c]
                 else:
                     return False
+            assert isinstance(attribute, dict) is False, \
+                f"Attribute '{attribute}' is not a leaf node in '{category}'" \
+                f"classifier of {dialect.get("NAME")} dialect."
             compare_str = ';'.join(deconstruct[1:])  # recombined remaining parts of the string
             assert len(compare_str) > 0, f"Incorrect format '{category}' classifier of {dialect.get("NAME")} dialect."
             classifier_re = re.compile(compare_str)
-            return (classifier_re.search(attribute) is not None)
+            return (classifier_re.search(str(attribute)) is not None)
 
         elif classifier[0] == "has":
             assert len(classifier) > 1, f"Not enough parameters in '{category}' classifier. 'has' requires at least 1"
