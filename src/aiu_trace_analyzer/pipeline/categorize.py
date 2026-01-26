@@ -5,13 +5,19 @@ from enum import Enum, auto
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.pipeline.context import AbstractContext
-from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
+from aiu_trace_analyzer.pipeline.tools import PipelineContextTool as pct
 from aiu_trace_analyzer.pipeline.barrier import TwoPhaseWithBarrierContext
 
 
 #################################################
 # source from Josh
 class EventClass(Enum):
+    """Enumeration of event classification categories for trace analysis.
+
+    This enum defines various event types used to categorize trace events
+    in the AIU trace analyzer pipeline, including compute operations,
+    data transfers, MultiAIU protocol operations, and synchronization primitives.
+    """
     OTHER = auto()
     COMPUTE_PREP = auto()
     COMPUTE_EXEC = auto()
@@ -60,7 +66,7 @@ class EventClass(Enum):
 ########################################
 
 
-class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
+class EventCategorizerContext(TwoPhaseWithBarrierContext):
     _BYTES_ENTRY = "bytes"
 
     def __init__(self, with_zero_align: bool = False):
@@ -69,12 +75,37 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
         self.first_ts = 1e99
 
     def is_collective_event(self, event: TraceEvent) -> bool:
+        """Determine if an event is a collective communication event.
+
+        Args:
+            event: The trace event to check
+
+        Returns:
+            bool: True if the event is a collective communication event, False otherwise
+        """
         return "CollGroup" in event["args"]
 
-    # currently kept for verification of dialect-based classifier
     def classify_flex(self, event: TraceEvent) -> EventClass:   # noqa: C901
-        if PipelineContextTool.get_dialect_of_event(event).get("NAME") != "FLEX":
-            return None
+        """Classify trace events using FLEX dialect-based classification.
+
+        This method is currently kept for verification of the dialect-based classifier.
+        It categorizes events based on FLEX-specific naming patterns and collective
+        communication protocols.
+
+        Args:
+            event: The trace event to classify
+
+        Returns:
+            EventClass: The classified event category
+
+        Note:
+            This is a reference implementation and should be maintained as-is to compare
+            results for compatibility until eventually be removed. The noqa: C901 suppresses
+            complexity warnings as the function intentionally has many branches for classification.
+        """
+        dialect = pct.get_dialect_of_event(event)
+        if dialect is None or dialect.get("NAME") != "FLEX":
+            return EventClass.OTHER
         event_class = EventClass.OTHER
         if "Cmpt Prep" in event["name"]:
             # TS1 TS2 --- --- ---
@@ -129,7 +160,7 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
             # DLM Wait might not have the 'Host DMA' prefix
             # Assume it is waiting on data
             elif "DLM Wait" in event["name"]:
-                self.event_class = EventClass.MAIU_HDMA_PROTOCOL_WAIT_DATA
+                event_class = EventClass.MAIU_HDMA_PROTOCOL_WAIT_DATA
             else:
                 if "Set BcList" in event["name"] or "Xseg to rank" in event["name"]:
                     event_class = EventClass.MAIU_PROTOCOL_SERIAL
@@ -140,25 +171,38 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
         return event_class
 
     def classify_event(self, event: TraceEvent) -> EventClass:
+        """Classify trace events using dialect-based category classification.
+
+        This method categorizes events based on their assigned categories (e.g., acc_compute_prep,
+        acc_kernel, acc_datatransfer_HtoD) and event name patterns. It provides the primary
+        classification logic for the event categorizer pipeline.
+
+        Args:
+            event: The trace event to classify
+
+        Returns:
+            EventClass: The classified event category after applying both category-based
+                       and communication-specific classification rules
+        """
         event_class = EventClass.OTHER
-        if PipelineContextTool.is_category(event, "acc_compute_prep"):
+        if pct.is_category(event, "acc_compute_prep"):
             event_class = EventClass.COMPUTE_PREP
-        elif PipelineContextTool.is_category(event, "acc_kernel"):
+        elif pct.is_category(event, "acc_kernel"):
             event_class = EventClass.COMPUTE_EXEC
-        elif PipelineContextTool.is_category(event, "acc_datatransfer_HtoD"):
+        elif pct.is_category(event, "acc_datatransfer_HtoD"):
             # todo: further sub-cat for DMA WAIT FOR ACK
             event_class = EventClass.DATA_IN
-        elif PipelineContextTool.is_category(event, "acc_datatransfer_DtoH"):
+        elif pct.is_category(event, "acc_datatransfer_DtoH"):
             event_class = EventClass.DATA_OUT
 
-        if PipelineContextTool.is_category(event, "acc_data_convert"):
+        if pct.is_category(event, "acc_data_convert"):
             event_class = EventClass.SEN_DATA_CONVERT
-        if PipelineContextTool.is_category(event, "acc_rdma_prep_sync"):
+        if pct.is_category(event, "acc_rdma_prep_sync"):
             event_class = EventClass.MAIU_WIREUP
-        if PipelineContextTool.is_category(event, "acc_barrier"):
+        if pct.is_category(event, "acc_barrier"):
             event_class = EventClass.MAIU_BARRIER
-        if PipelineContextTool.is_category(event, "acc_supernode_exec") or \
-           PipelineContextTool.is_category(event, "acc_supernode_launch"):
+        if pct.is_category(event, "acc_supernode_exec") or \
+                pct.is_category(event, "acc_supernode_launch"):
             event_class = EventClass.ROUNDTRIP_FLEX
         # this has only a meaning in FLEX traces
         if "AIU Roundtrip" in event["name"]:
@@ -166,47 +210,97 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
 
         return self.classify_comm(event, event_class)
 
+    def _classify_host_dma_event(self, event: TraceEvent, event_class: EventClass) -> EventClass:
+        """Classify Host DMA protocol events.
+
+        Args:
+            event: The trace event to classify
+            event_class: The current event classification
+
+        Returns:
+            EventClass: The refined event classification for Host DMA operations
+        """
+        if (
+            "Wdone DmaI" in event["name"] or
+            "Wait for Data Avail Notice" in event["name"] or
+            "Wait for Notice (gather notifications)" in event["name"] or
+            "R5 Wait DATA" in event["name"]
+           ):
+            return EventClass.MAIU_HDMA_PROTOCOL_WAIT_DATA
+        elif "Wait for ACK" in event["name"] or "R5 Wait ACK" in event["name"]:
+            return EventClass.MAIU_HDMA_PROTOCOL_WAIT_ACK
+        elif "Send ACK Instruction" in event["name"] or "R5 Send ACK" in event["name"]:
+            return EventClass.MAIU_HDMA_PROTOCOL_SIGNAL_ACK
+        elif ("Send Instruction" in event["name"] or
+              "HCOLL Signal" in event["name"] or
+              "R5 Send DATA" in event["name"]):
+            return EventClass.MAIU_HDMA_PROTOCOL_SIGNAL_DATA
+        elif "Wait for Notice" in event["name"] or "Wait for Delivery Notice" in event["name"]:
+            return EventClass.MAIU_HDMA_PROTOCOL_MONITOR_NOTICE
+        elif EventClass.DATA_OUT == event_class:
+            return EventClass.MAIU_HDMA_PROTOCOL_SEND_DATA
+        elif EventClass.DATA_IN == event_class:
+            return EventClass.MAIU_HDMA_PROTOCOL_RECV_DATA
+        return event_class
+
+    def _classify_p2p_rdma_event(self, event: TraceEvent, event_class: EventClass) -> EventClass:
+        """Classify P2P RDMA protocol events.
+
+        Args:
+            event: The trace event to classify
+            event_class: The current event classification
+
+        Returns:
+            EventClass: The refined event classification for P2P RDMA operations
+        """
+        if "Set BcList" in event["name"] or "Xseg to rank" in event["name"]:
+            return EventClass.MAIU_PROTOCOL_SERIAL
+        elif EventClass.DATA_OUT == event_class:
+            return EventClass.MAIU_P2PRDMA_PROTOCOL_SEND_DATA
+        elif EventClass.DATA_IN == event_class:
+            return EventClass.MAIU_P2PRDMA_PROTOCOL_RECV_DATA
+        return event_class
+
     def classify_comm(self, event: TraceEvent, event_class: EventClass) -> EventClass:
-        if not PipelineContextTool.is_category(event, "acc_collective"):
+        """Classify communication-related trace events.
+
+        This method refines event classification for collective communication operations,
+        distinguishing between Host DMA protocol events (PF mode) and P2P RDMA protocol
+        events based on event names and patterns.
+
+        Args:
+            event: The trace event to classify
+            event_class: The initial event classification from classify_event
+
+        Returns:
+            EventClass: The refined event classification with communication-specific categories
+        """
+        if not pct.is_category(event, "acc_collective"):
             return event_class
 
         if "Host DMA" in event["name"] or "HCOLL" in event["name"]:
             # PF mode
-            if (
-                "Wdone DmaI" in event["name"] or
-                "Wait for Data Avail Notice" in event["name"] or
-                "Wait for Notice (gather notifications)" in event["name"] or
-                "R5 Wait DATA" in event["name"]
-               ):
-                event_class = EventClass.MAIU_HDMA_PROTOCOL_WAIT_DATA
-            elif "Wait for ACK" in event["name"] or "R5 Wait ACK" in event["name"]:
-                event_class = EventClass.MAIU_HDMA_PROTOCOL_WAIT_ACK
-            elif "Send ACK Instruction" in event["name"] or "R5 Send ACK" in event["name"]:
-                event_class = EventClass.MAIU_HDMA_PROTOCOL_SIGNAL_ACK
-            elif ("Send Instruction" in event["name"] or
-                  "HCOLL Signal" in event["name"] or
-                  "R5 Send DATA" in event["name"]):
-                event_class = EventClass.MAIU_HDMA_PROTOCOL_SIGNAL_DATA
-            elif "Wait for Notice" in event["name"] or "Wait for Delivery Notice" in event["name"]:
-                event_class = EventClass.MAIU_HDMA_PROTOCOL_MONITOR_NOTICE
-            elif EventClass.DATA_OUT == event_class:
-                event_class = EventClass.MAIU_HDMA_PROTOCOL_SEND_DATA
-            elif EventClass.DATA_IN == event_class:
-                event_class = EventClass.MAIU_HDMA_PROTOCOL_RECV_DATA
+            return self._classify_host_dma_event(event, event_class)
         # DLM Wait might not have the 'Host DMA' prefix
         # Assume it is waiting on data
         elif "DLM Wait" in event["name"]:
-            self.event_class = EventClass.MAIU_HDMA_PROTOCOL_WAIT_DATA
+            return EventClass.MAIU_HDMA_PROTOCOL_WAIT_DATA
         else:
-            if "Set BcList" in event["name"] or "Xseg to rank" in event["name"]:
-                event_class = EventClass.MAIU_PROTOCOL_SERIAL
-            elif EventClass.DATA_OUT == event_class:
-                event_class = EventClass.MAIU_P2PRDMA_PROTOCOL_SEND_DATA
-            elif EventClass.DATA_IN == event_class:
-                event_class = EventClass.MAIU_P2PRDMA_PROTOCOL_RECV_DATA
-        return event_class
+            return self._classify_p2p_rdma_event(event, event_class)
 
     def get_event_class(self, event: TraceEvent) -> EventClass:
+        """Get the event classification for a trace event.
+
+        Args:
+            event: The trace event to classify
+
+        Returns:
+            EventClass: The classified event category
+
+        Note:
+            Returns EventClass.OTHER if the event lacks a 'name' field.
+            Temporary: checks FLEX traces against reference impl.
+        """
         if "name" not in event:
             return EventClass.OTHER
 
@@ -235,11 +329,12 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
         Determination of some event classes require batch/time context
         this info has
         '''
-        if PipelineContextTool.get_dialect_of_event(event).get("NAME") == "FLEX" or \
-                not PipelineContextTool.is_acc_event(event):
+        dialect = pct.get_dialect_of_event(event)
+        if dialect is None or dialect.get("NAME") != "FLEX" or \
+                not pct.is_acc_event(event):
             return event["args"]["class"]
 
-        batch_id = PipelineContextTool.get_context_id(event)
+        batch_id = pct.get_context_id(event)
         if batch_id not in self.queues:
             return event["args"]["class"]
 
@@ -252,9 +347,21 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
         return event["args"]["class"]
 
     def collect_stats(self, event: TraceEvent) -> None:
+        """Collect statistics from trace events during the first pass.
+
+        Tracks the earliest timestamp across all events and maintains time ranges
+        for kernel events grouped by batch/context ID.
+
+        Args:
+            event: The trace event to collect statistics from
+
+        Note:
+            This method updates internal state (first_ts and queues) and is called
+            during the initial pass through trace events.
+        """
         self.first_ts = min(self.first_ts, event["ts"])
-        if PipelineContextTool.is_acc_kernel(event):
-            batch_id = PipelineContextTool.get_context_id(event)
+        if pct.is_acc_kernel(event):
+            batch_id = pct.get_context_id(event)
             if batch_id not in self.queues:
                 self.queues[batch_id] = (1.e99, -1.e99)
             tmin, tmax = self.queues[batch_id]
@@ -262,6 +369,20 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
                                      max(tmax, event["ts"]))
 
     def apply_stats(self, event: TraceEvent) -> TraceEvent:
+        """Apply collected statistics to trace events during the second pass.
+
+        Normalizes event timestamps based on the earliest timestamp (if zero alignment
+        is enabled) and updates event classification in the args.
+
+        Args:
+            event: The trace event to apply statistics to
+
+        Returns:
+            TraceEvent: The modified event with updated timestamp and classification
+
+        Note:
+            Logs an error if an event timestamp is earlier than the collected minimum.
+        """
         if self.first_ts <= event["ts"]:
             event["ts"] -= self.first_ts * self.do_zero_align
         else:
@@ -279,6 +400,22 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
     ]
 
     def enhanced_events(self, event: TraceEvent) -> list[TraceEvent]:
+        """Generate enhanced events with additional bandwidth counter events.
+
+        For data transfer events with bandwidth information, creates additional
+        counter events to visualize bandwidth usage over time in trace viewers.
+
+        Args:
+            event: The trace event to potentially enhance
+
+        Returns:
+            list[TraceEvent]: List containing the original event and optionally
+                            additional bandwidth counter events
+
+        Note:
+            Counter events are only added for transfer operations (DATA_IN, DATA_OUT,
+            MAIU_PROTOCOL_RECV_DATA, MAIU_PROTOCOL_SEND_DATA) with positive bandwidth.
+        """
         if "class" not in event["args"]:
             return [event]
 
@@ -289,28 +426,41 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
                 bw = 0.0
 
             if bw > 0.0:
-                bw_counters = [{
+                bw_counters = [TraceEvent({
                         "ph": "C",
                         "ts": event["ts"],
                         "pid": event["pid"],
                         "name": "TransferBW",
                         "args": {"GB/s": bw},
-                    },
-                    {
+                    }),
+                    TraceEvent({
                         "ph": "C",
                         "ts": event["ts"]+event["dur"],
                         "pid": event["pid"],
                         "name": "TransferBW",
                         "args": {"GB/s": 0.0}
-                    }]
+                    })]
                 return [event] + bw_counters
         return [event]
 
-    def drain(self) -> list[TraceEvent]:
-        return super().drain()
-
 
 def event_categorizer(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
+    """First pass pipeline function for event categorization.
+
+    Collects statistics from duration events and assigns initial event classifications.
+    This function is part of a two-pass categorization pipeline.
+
+    Args:
+        event: The trace event to categorize
+        context: The event categorizer context containing classification logic
+
+    Returns:
+        list[TraceEvent]: Single-element list containing the event with added
+                         classification in args["class"]
+
+    Note:
+        Only processes duration events (ph="X"). Other event types pass through unchanged.
+    """
     if event["ph"] != "X":
         return [event]
     assert isinstance(context, EventCategorizerContext)
@@ -322,6 +472,23 @@ def event_categorizer(event: TraceEvent, context: AbstractContext) -> list[Trace
 
 
 def event_categorizer_update(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
+    """Second pass pipeline function for event categorization updates.
+
+    Applies collected statistics to events (timestamp normalization, classification updates)
+    and generates enhanced events with additional bandwidth counters for data transfers.
+    This function completes the two-pass categorization pipeline.
+
+    Args:
+        event: The trace event to update
+        context: The event categorizer context with collected statistics
+
+    Returns:
+        list[TraceEvent]: List containing the updated event and potentially additional
+                         bandwidth counter events for visualization
+
+    Note:
+        Only processes duration events (ph="X"). Other event types pass through unchanged.
+    """
     if event["ph"] != "X":
         return [event]
     assert isinstance(context, EventCategorizerContext)
