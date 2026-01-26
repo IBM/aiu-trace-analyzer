@@ -235,7 +235,8 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext, PipelineContextTool):
         Determination of some event classes require batch/time context
         this info has
         '''
-        if not PipelineContextTool.is_acc_event(event):
+        if PipelineContextTool.get_dialect_of_event(event).get("NAME") == "FLEX" or \
+                not PipelineContextTool.is_acc_event(event):
             return event["args"]["class"]
 
         batch_id = PipelineContextTool.get_context_id(event)
