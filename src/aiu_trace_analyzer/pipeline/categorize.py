@@ -57,11 +57,32 @@ class EventClass(Enum):
     # General Ack Signal
     MAIU_PROTOCOL_SIGNAL_ACK = auto()
 
-    def __str__(self,):
+    def __str__(self):
         return self.name
+
+    def __repr__(self):
+        return f"EventClass.{self.name}"
 
     def toJson(self):
         return self.name
+
+    @classmethod
+    def from_string(cls, name: str) -> 'EventClass':
+        """Deserialize EventClass from string name.
+
+        Args:
+            name: The string name of the EventClass member
+
+        Returns:
+            EventClass: The corresponding EventClass enum member
+
+        Raises:
+            ValueError: If the name doesn't match any EventClass member
+        """
+        try:
+            return cls[name]
+        except KeyError:
+            raise ValueError(f"'{name}' is not a valid EventClass name")
 # end source from Josh
 ########################################
 
@@ -85,7 +106,7 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
         """
         return "CollGroup" in event["args"]
 
-    def classify_flex(self, event: TraceEvent) -> (EventClass|None):   # noqa: C901
+    def classify_flex(self, event: TraceEvent) -> (EventClass | None):   # noqa: C901
         """Classify trace events using FLEX dialect-based classification.
 
         This method is currently kept for verification of the dialect-based classifier.
@@ -338,13 +359,14 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
         if batch_id not in self.queues:
             return event["args"]["class"]
 
+        event_class = EventClass.from_string(event["args"]["class"])
         first_comp, last_comp = self.queues[batch_id]
         if event["ts"] > first_comp and event["ts"] < last_comp:
-            if event["args"]["class"] == EventClass.DATA_OUT:
+            if event_class == EventClass.DATA_OUT:
                 return self._protocol_or_data_send(event)
-            if event["args"]["class"] == EventClass.DATA_IN:
+            if event_class == EventClass.DATA_IN:
                 return self._protocol_or_data_recv(event)
-        return event["args"]["class"]
+        return event_class
 
     def collect_stats(self, event: TraceEvent) -> None:
         """Collect statistics from trace events during the first pass.
@@ -395,7 +417,8 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
         if first_ts <= event["ts"]:
             event["ts"] -= first_ts * self.do_zero_align
         else:
-            aiulog.log(aiulog.ERROR, \
+            aiulog.log(
+                aiulog.ERROR,
                 f"CAT: ACELYZER-BUG: Event ts smaller than min of collected event ts for rank {rank}.")
 
         if "class" in event["args"]:
@@ -476,7 +499,7 @@ def event_categorizer(event: TraceEvent, context: AbstractContext) -> list[Trace
     assert isinstance(context, EventCategorizerContext)
 
     context.collect_stats(event)
-    event["args"]["class"] = context.get_event_class(event)
+    event["args"]["class"] = str(context.get_event_class(event))
 
     return [event]
 
