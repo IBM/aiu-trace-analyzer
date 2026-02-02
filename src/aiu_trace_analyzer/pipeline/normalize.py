@@ -1,4 +1,4 @@
-# Copyright 2024-2025 IBM Corporation
+# Copyright 2024-2026 IBM Corporation
 
 import copy
 import math
@@ -70,11 +70,12 @@ class EventLimiter(object):
         within_limits &= event_end >= self.event_earliest
         within_limits &= event_ts <= self.event_latest
 
-        within_limits &= self.event_count > self.event_skip
-        # events outside of the time window only count after the skip-count is exceeded
+        # only events within the time window count towards skip/limit
         if count_this_call and within_limits:
             self.event_count += 1
-        within_limits &= self.event_count < self.event_limit
+
+        within_limits &= self.event_count > self.event_skip
+        within_limits &= self.event_count <= self.event_limit
 
         return within_limits
 
@@ -128,7 +129,6 @@ class NormalizationContext(AbstractHashQueueContext):
         self.event_filter = self.extract_eventfilters(filterstr)
         self.event_count = 0
         self.event_limit = event_limit
-
 
     def __del__(self) -> None:
         def _print_freq_minmax(key: str):
@@ -372,7 +372,6 @@ class NormalizationContext(AbstractHashQueueContext):
     def event_within_limits(self, event: TraceEvent, count_this_call: bool = True) -> bool:
         return self.event_limit.is_within_limits(event, count_this_call) or \
             self.event_limit.is_ignored_type(event["ph"])
-
 
     def drain(self) -> list[TraceEvent]:
         return []
