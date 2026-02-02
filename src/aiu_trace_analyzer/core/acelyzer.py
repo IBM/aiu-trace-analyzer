@@ -211,6 +211,8 @@ class Acelyzer:
                             "drops events if event[name] ends in XYZ or event[args][Type]=='XYZ'",
                             )
 
+        parser.add_argument("--event_limit", type=int, default="-1",
+                            help="Max number of non-meta events. Set -1 for 'unlimited'.")
         parser.add_argument("-F", "--filter", type=str, default=self.defaults["filter"],
                             help="List of event types to keep. E.g. 'C' to just keep counters.")
 
@@ -408,7 +410,8 @@ class Acelyzer:
         # and event manipulation/normalization in 2 phases
         normalize_ctx = event_pipe.NormalizationContext(soc_frequency=args.freq[0],
                                                         ignore_crit=args.ignore_crit,
-                                                        filterstr=args.event_filter)
+                                                        filterstr=args.event_filter,
+                                                        event_limit=args.event_limit)
         frequency_align_ctx = event_pipe.FlexJobOffsetContext(soc_frequency=args.freq[0])
         process.register_stage(callback=event_pipe.normalize_phase1, context=normalize_ctx)
         if args.flex_ts_fix:

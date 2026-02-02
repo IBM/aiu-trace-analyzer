@@ -58,7 +58,8 @@ class NormalizationContext(AbstractHashQueueContext):
     _FREQ_TOLERANCE = 0.1
 
     def __init__(self, soc_frequency: float, ignore_crit: bool = False,
-                 filterstr: str = "") -> None:
+                 filterstr: str = "",
+                 event_limit: int = -1) -> None:
         super().__init__(warnings=[
             TraceWarning(
                 name="long_dur",
@@ -93,6 +94,9 @@ class NormalizationContext(AbstractHashQueueContext):
         self.prev_event_data: dict[int, dict[str, EventStats]] = {}
         self.flex_name_ts_map = FlexEventMapToTS()
         self.event_filter = self.extract_eventfilters(filterstr)
+        self.event_count = 0
+        self.event_limit = event_limit if event_limit > 0 else 1 << 60
+
 
     def __del__(self) -> None:
         def _print_freq_minmax(key: str):
@@ -333,6 +337,11 @@ class NormalizationContext(AbstractHashQueueContext):
             return args
         return event["args"]
 
+    def event_limit_exceeded(self, count_this_call: bool = True) -> bool:
+        if count_this_call:
+            self.event_count += 1
+        return self.event_count > self.event_limit
+
     def drain(self) -> list[TraceEvent]:
         return []
 
@@ -379,6 +388,9 @@ def _name_unification(name: str) -> str:
 
 def normalize_phase1(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
     assert isinstance(context, NormalizationContext)
+
+    if context.event_limit_exceeded() and event["ph"] not in ["M"]:
+        return []
 
     # don't let anything pass that's not in X-event
     if event["ph"] not in ["X"]:
