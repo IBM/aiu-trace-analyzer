@@ -16,43 +16,45 @@ class LaunchFLowContext(TwoPhaseWithBarrierContext):
 
     def collect_launchflow_ids(self, event: TraceEvent) -> None:
         if event["ph"] == "s":
-            id = self.get_or_create(event["id"], {"last_ts": event["ts"], "last_pid_tid": (event["pid"], event["tid"])})
-            self.queues[id]["src"] = event
+            qid = self.get_or_create(
+                event["id"],
+                {"last_ts": event["ts"], "last_pid_tid": (event["pid"], event["tid"])})
+            self.queues[qid]["src"] = event
             return
 
         if event["ph"] != "X" or "args" not in event or "correlation" not in event["args"]:
             return
 
         if self.launch_pattern.search(event["name"]):
-            id = self.get_or_create(
+            qid = self.get_or_create(
                 event["args"]["correlation"],
                 {"last_ts": event["ts"], "last_pid_tid": (event["pid"], event["tid"])})
-            if id == 0:
+            if qid == 0:
                 return
-            self.max_flow_id_detection(id)
-            self.queues[id]["launch"] = event
+            self.max_flow_id_detection(qid)
+            self.queues[qid]["launch"] = event
 
         elif "ScheduleWait" in event["name"]:
-            id = self.get_or_create(
+            qid = self.get_or_create(
                 event["args"]["correlation"],
                 {"last_ts": event["ts"], "last_pid_tid": (event["pid"], event["tid"])})
-            if id == 0:
+            if qid == 0:
                 return
-            self.max_flow_id_detection(id)
-            self.queues[id]["schedwait"] = event
+            self.max_flow_id_detection(qid)
+            self.queues[qid]["schedwait"] = event
 
         else:
             # avoid creating entries for id=0 or non-kernel events
-            id = event["args"]["correlation"]
-            if id == 0 or event["cat"] != "kernel":
+            qid = event["args"]["correlation"]
+            if qid == 0 or event["cat"] != "kernel":
                 return
 
-            id = self.get_or_create(
-                id,
+            qid = self.get_or_create(
+                qid,
                 {"last_ts": event["ts"], "last_pid_tid": (event["pid"], event["tid"])})
-            self.max_flow_id_detection(id)
+            self.max_flow_id_detection(qid)
 
-            self.update_last_ts(id, event)
+            self.update_last_ts(qid, event)
 
     def update_last_ts(self, qid: int, event: TraceEvent) -> None:
         last_ts = event["ts"] + event["dur"] - 0.001
@@ -96,11 +98,11 @@ class LaunchFLowContext(TwoPhaseWithBarrierContext):
         if not self.has_required_data(event):
             return []
 
-        id = event["args"]["correlation"]
-        if id not in self.queues or "src" not in self.queues[id]:
+        qid = event["args"]["correlation"]
+        if qid not in self.queues or "src" not in self.queues[qid]:
             return []
 
-        launcher = self.queues[id]["src"]
+        launcher = self.queues[qid]["src"]
         new_flow_id = self.get_new_flow_id()
         flow_events = [
             {
@@ -116,8 +118,8 @@ class LaunchFLowContext(TwoPhaseWithBarrierContext):
                 "ph": "f",
                 "pid": event["pid"],
                 "tid": event["tid"],
-                "name": self.queues[id]["src"]["name"],
-                "cat": self.queues[id]["src"]["cat"],
+                "name": self.queues[qid]["src"]["name"],
+                "cat": self.queues[qid]["src"]["cat"],
                 "ts": event["ts"],
                 "id": new_flow_id,
                 "bp": "e"

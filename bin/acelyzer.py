@@ -14,17 +14,31 @@ if sys.version_info.major < _min_version[0] or sys.version_info.minor < _min_ver
 
 
 # set to true to profile event processing
-enable_tool_profiler = False
+ENABLE_TOOL_PROFILER = False
 
 
 def main(input_args=None) -> None:
-    # this is just a wrapper, processing runs as part of instance creation right now
+    '''
+    Entry point for the acelyzer command-line tool.
+
+    Initializes and runs the Acelyzer trace analyzer to process and analyze
+    AIU trace files. This function serves as a wrapper that creates an Acelyzer
+    instance and executes the trace processing pipeline.
+
+    Args:
+        input_args: Optional list of command-line arguments to parse.
+                   If None, arguments are read from sys.argv.
+                   Example: ['--input', 'trace.json', '--output', 'result.json']
+
+    Returns:
+        None
+    '''
     acelyzer = Acelyzer(input_args)
     acelyzer.run()
 
 
 if __name__ == "__main__":
-    if enable_tool_profiler:
+    if ENABLE_TOOL_PROFILER:
         import cProfile
         cProfile.run("main()")
     else:
