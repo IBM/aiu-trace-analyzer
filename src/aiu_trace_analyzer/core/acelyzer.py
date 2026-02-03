@@ -208,7 +208,7 @@ class Acelyzer:
 
         Raises:
             TypeError: If event_limit_str is not a string
-            ValueError: If JSON parsing fails or parsed data is not a dictionary
+            ValueError: If JSON parsing fails, parsed data is not a dictionary, or contains invalid attributes
         """
         # Check if input is a string
         if not isinstance(event_limit_str, str):
@@ -226,6 +226,17 @@ class Acelyzer:
         # Check if parsed data is a dictionary
         if not isinstance(parsed_data, dict):
             raise ValueError(f"Parsed JSON must be a dictionary, got {type(parsed_data).__name__}")
+
+        # Validate that all attributes in parsed_data are valid (exist in defaults)
+        valid_attributes = set(self.defaults["event_limits"].keys())
+        parsed_attributes = set(parsed_data.keys())
+        invalid_attributes = parsed_attributes - valid_attributes
+
+        if invalid_attributes:
+            raise ValueError(
+                f"Invalid attributes in event_limits: {sorted(invalid_attributes)}. "
+                f"Valid attributes are: {sorted(valid_attributes)}"
+            )
 
         # Update the result with parsed values
         result.update(parsed_data)
@@ -259,7 +270,17 @@ class Acelyzer:
 
         parser.add_argument("--event_limit", type=self._parse_event_limit_type,
                             default=self.defaults["event_limits"],
-                            help="Define timestamp or event count limits.")
+                            help="Define timestamp or event count limits by specifiying a json-formatted "
+                            "string with the following optional keys:\n"
+                            "  skip: <int> - skip first <int> events\n"
+                            "  count: <int> - limit to <int> events\n"
+                            "  ts_start: <float> - skip events that end before <float> timestamp\n"
+                            "  ts_end: <float> - skip events that start after <float> timestamp\n"
+                            "  no_count_types: <str> - do not count events of type <str> (default: 'M')\n"
+                            "Example:\n"
+                            "  acelyzer ... --event_limit='{\"count\": 100, \"ts_start\": 1234.567}'...\n"
+                            "skips the events before timestamp 1234.567 and exports 100 events after that.\n"
+                            )
         parser.add_argument("-F", "--filter", type=str, default=self.defaults["filter"],
                             help="List of event types to keep. E.g. 'C' to just keep counters.")
 
