@@ -1,7 +1,7 @@
 # Copyright 2024-2025 IBM Corporation
 
-import pytest
 import importlib
+import pytest
 
 from aiu_trace_analyzer.ingest.ingestion import JsonFileEventTraceIngest
 from aiu_trace_analyzer.pipeline import AbstractHashQueueContext
@@ -17,7 +17,10 @@ def load_variables():
 def test_filename(shared_tmp_path, get_intermediate_filename, load_variables):
     # Check if file exists
     assert shared_tmp_path.exists()
-    fname = get_intermediate_filename("*flow_prepare*")[0]
+    matching_files = get_intermediate_filename("*flow_prepare*")
+    assert matching_files, "No files matching pattern '*flow_prepare*' found"
+
+    fname = matching_files[0]
 
     # Load variable value from coll_group.py
     globals().update(load_variables)

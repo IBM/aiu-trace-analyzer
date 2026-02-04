@@ -1,4 +1,4 @@
-# Copyright 2024-2025 IBM Corporation
+# Copyright 2024-2026 IBM Corporation
 
 '''
 central imports for contexts and processing functions
@@ -29,7 +29,7 @@ from aiu_trace_analyzer.pipeline.be_pair import EventPairDetectionContext
 # import the separated contexts:
 from aiu_trace_analyzer.pipeline.overlap import OverlapDetectionContext, TSSequenceContext
 from aiu_trace_analyzer.pipeline.inverse_ts import InversedTSDetectionContext
-from aiu_trace_analyzer.pipeline.normalize import NormalizationContext
+from aiu_trace_analyzer.pipeline.normalize import NormalizationContext, EventLimiter
 from aiu_trace_analyzer.pipeline.sort import EventSortingContext
 from aiu_trace_analyzer.pipeline.make_slice import SliceCreationContext
 from aiu_trace_analyzer.pipeline.power import PowerExtractionContext
@@ -51,6 +51,7 @@ from aiu_trace_analyzer.pipeline.iteration_detect import IterationDectectContext
 from aiu_trace_analyzer.pipeline.flex_job_offset import FlexJobOffsetContext
 from aiu_trace_analyzer.pipeline.flow_launch import LaunchFLowContext
 from aiu_trace_analyzer.pipeline.power_stats import PowerStatisticsContext
+from aiu_trace_analyzer.pipeline.categorize import EventCategorizerContext, EventClass
 
 # for reference of the template, you'd do here:
 #       from aiu_trace_analyzer.pipeline.template import MyStructsAndFunctionsForCrossEventContext
@@ -104,6 +105,8 @@ from aiu_trace_analyzer.pipeline.barrier import pipeline_barrier, _main_barrier_
 from aiu_trace_analyzer.pipeline.flex_job_offset import frequency_align_collect, frequency_align_apply
 from aiu_trace_analyzer.pipeline.flow_launch import launch_flow_collect, launch_flow_create_missing
 from aiu_trace_analyzer.pipeline.power_stats import analyze_power_statistics
+
+from aiu_trace_analyzer.pipeline.categorize import event_categorizer, event_categorizer_update
 
 # for reference of the template, you'd do here:
 #       from aiu_trace_analyzer.pipeline.template import myprocessing

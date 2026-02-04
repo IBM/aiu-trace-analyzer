@@ -226,11 +226,16 @@ class DataframeExporter(AbstractTraceExporter):
         # only entries that appear are picked up
         if not data_map:
             self.data_map = {
+                "args.rank": ("Rank", 0),
                 "ts": ("Timestamp", 0.0),
                 "dur": ("Duration", 0.0),
                 "cat": ("Category", "other"),
                 "name": ("Event Name", "NoName"),
-                "args.pt_active": ("PT_Active", 0.0)}
+                "args.class": ("Event CLass", "UNKNOWN"),
+                "args.jobname": ("Job", "Unknown"),
+                "args.bytes": ("Size", 0.0),
+                "args.pt_active": ("PT_Active", 0.0),
+                }
         else:
             self.data_map = data_map
 
