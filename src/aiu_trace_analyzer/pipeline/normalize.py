@@ -1,8 +1,9 @@
-# Copyright 2024-2025 IBM Corporation
+# Copyright 2024-2026 IBM Corporation
 
 import copy
 import math
 import re
+from sys import float_info
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, TraceWarning
@@ -48,6 +49,37 @@ class EventStats(object):
         self.freq_mean = self.freq_mean + (freq - self.freq_mean) / float(self.count)
 
 
+class EventLimiter(object):
+    def __init__(self, event_limiter_config: dict) -> None:
+        self.event_skip = event_limiter_config.get("skip", 0)
+        self.event_limit = event_limiter_config.get("count", 1 << 60) + self.event_skip
+        self.event_earliest = event_limiter_config.get("ts_start", 0.0)
+        self.event_latest = event_limiter_config.get("ts_end", float_info.max,)
+        self.no_count_types = event_limiter_config.get("no_count_types", "M")
+        self.event_count = 0
+
+    def is_ignored_type(self, event_type: str) -> bool:
+        return event_type in self.no_count_types
+
+    def is_within_limits(self, event: TraceEvent, count_this_call: bool = True) -> bool:
+        event_ts = event.get("ts", -1.0)
+        event_end = event_ts + event.get("dur", 0.0)
+
+        within_limits = True
+        # events are considered within limits if they intersect with the time window
+        within_limits &= event_end >= self.event_earliest
+        within_limits &= event_ts <= self.event_latest
+
+        # only events within the time window count towards skip/limit
+        if count_this_call and within_limits:
+            self.event_count += 1
+
+        within_limits &= self.event_count > self.event_skip
+        within_limits &= self.event_count <= self.event_limit
+
+        return within_limits
+
+
 class NormalizationContext(AbstractHashQueueContext):
 
     # dictionary keys to be used for 2 different freq-detection stats
@@ -56,9 +88,11 @@ class NormalizationContext(AbstractHashQueueContext):
 
     # tolerance before warning of frequency issue with trace or cmdline
     _FREQ_TOLERANCE = 0.1
+    _default_limits = EventLimiter({})
 
     def __init__(self, soc_frequency: float, ignore_crit: bool = False,
-                 filterstr: str = "") -> None:
+                 filterstr: str = "",
+                 event_limit: EventLimiter = _default_limits) -> None:
         super().__init__(warnings=[
             TraceWarning(
                 name="long_dur",
@@ -93,6 +127,8 @@ class NormalizationContext(AbstractHashQueueContext):
         self.prev_event_data: dict[int, dict[str, EventStats]] = {}
         self.flex_name_ts_map = FlexEventMapToTS()
         self.event_filter = self.extract_eventfilters(filterstr)
+        self.event_count = 0
+        self.event_limit = event_limit
 
     def __del__(self) -> None:
         def _print_freq_minmax(key: str):
@@ -333,6 +369,10 @@ class NormalizationContext(AbstractHashQueueContext):
             return args
         return event["args"]
 
+    def event_within_limits(self, event: TraceEvent, count_this_call: bool = True) -> bool:
+        return self.event_limit.is_within_limits(event, count_this_call) or \
+            self.event_limit.is_ignored_type(event["ph"])
+
     def drain(self) -> list[TraceEvent]:
         return []
 
@@ -379,6 +419,9 @@ def _name_unification(name: str) -> str:
 
 def normalize_phase1(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
     assert isinstance(context, NormalizationContext)
+
+    if not context.event_within_limits(event):
+        return []
 
     # don't let anything pass that's not in X-event
     if event["ph"] not in ["X"]:

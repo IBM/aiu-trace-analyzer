@@ -1,8 +1,9 @@
-# Copyright 2024-2025 IBM Corporation
+# Copyright 2024-2026 IBM Corporation
 
 
 import sys
 import argparse
+import json
 import math
 import os
 
@@ -105,7 +106,16 @@ class Acelyzer:
         "time_unit": "ns",
 
         # name of a processing profile
-        "stage_profile": os.path.join(os.path.dirname(__file__), "../profiles/default.json")
+        "stage_profile": os.path.join(os.path.dirname(__file__), "../profiles/default.json"),
+
+        # event limits to filter for event count or timestamps
+        "event_limits": {
+            "skip": 0,
+            "count": 1 << 60,
+            "ts_start": 0.0,
+            "ts_end": sys.float_info.max,
+            "no_count_types": "M",
+        }
     }
 
     # define default event sort key: timestamp + reverse_duration
@@ -186,6 +196,53 @@ class Acelyzer:
         aiulog.log(aiulog.INFO, "Finishing Test parser. Return code=", rc)
         return rc
 
+    def _parse_event_limit_type(self, event_limit_str):
+        """
+        Parse event limit JSON string and return a dictionary with defaults.
+
+        Args:
+            event_limit_str: JSON string containing event limit configuration
+
+        Returns:
+            Dictionary with event limit attributes merged with defaults from self.defaults["event_limits"]
+
+        Raises:
+            TypeError: If event_limit_str is not a string
+            ValueError: If JSON parsing fails, parsed data is not a dictionary, or contains invalid attributes
+        """
+        # Check if input is a string
+        if not isinstance(event_limit_str, str):
+            raise TypeError(f"event_limit_str must be a string, got {type(event_limit_str).__name__}")
+
+        # Start with a copy of the default values
+        result = self.defaults["event_limits"].copy()
+
+        # Parse the JSON string
+        try:
+            parsed_data = json.loads(event_limit_str)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON format: {e}")
+
+        # Check if parsed data is a dictionary
+        if not isinstance(parsed_data, dict):
+            raise ValueError(f"Parsed JSON must be a dictionary, got {type(parsed_data).__name__}")
+
+        # Validate that all attributes in parsed_data are valid (exist in defaults)
+        valid_attributes = set(self.defaults["event_limits"].keys())
+        parsed_attributes = set(parsed_data.keys())
+        invalid_attributes = parsed_attributes - valid_attributes
+
+        if invalid_attributes:
+            raise ValueError(
+                f"Invalid attributes in event_limits: {sorted(invalid_attributes)}. "
+                f"Valid attributes are: {sorted(valid_attributes)}"
+            )
+
+        # Update the result with parsed values
+        result.update(parsed_data)
+
+        return result
+
     def parse_inputs(self, args=None):
         # to include default value in --help output
         parser = argparse.ArgumentParser(prog="acelyzer", formatter_class=AcelyzerArgsFormatter)
@@ -211,6 +268,19 @@ class Acelyzer:
                             "drops events if event[name] ends in XYZ or event[args][Type]=='XYZ'",
                             )
 
+        parser.add_argument("--event_limit", type=self._parse_event_limit_type,
+                            default=self.defaults["event_limits"],
+                            help="Define timestamp or event count limits by specifiying a json-formatted "
+                            "string with the following optional keys:\n"
+                            "  skip: <int> - skip first <int> events\n"
+                            "  count: <int> - limit to <int> events\n"
+                            "  ts_start: <float> - skip events that end before <float> timestamp\n"
+                            "  ts_end: <float> - skip events that start after <float> timestamp\n"
+                            "  no_count_types: <str> - do not count events of type <str> (default: 'M')\n"
+                            "Example:\n"
+                            "  acelyzer ... --event_limit='{\"count\": 100, \"ts_start\": 1234.567}'...\n"
+                            "skips the events before timestamp 1234.567 and exports 100 events after that.\n"
+                            )
         parser.add_argument("-F", "--filter", type=str, default=self.defaults["filter"],
                             help="List of event types to keep. E.g. 'C' to just keep counters.")
 
@@ -351,6 +421,7 @@ class Acelyzer:
                 parsed_args.profile = os.path.join(os.path.dirname(__file__), "../profiles/torch_minimal.json")
             else:
                 parsed_args.profile = self.defaults["stage_profile"]
+
         return parsed_args
 
     def get_output_data(self):
@@ -406,9 +477,11 @@ class Acelyzer:
         ##############################################################
         # frequency detection and per-job offset correction
         # and event manipulation/normalization in 2 phases
-        normalize_ctx = event_pipe.NormalizationContext(soc_frequency=args.freq[0],
-                                                        ignore_crit=args.ignore_crit,
-                                                        filterstr=args.event_filter)
+        normalize_ctx = event_pipe.NormalizationContext(
+            soc_frequency=args.freq[0],
+            ignore_crit=args.ignore_crit,
+            filterstr=args.event_filter,
+            event_limit=event_pipe.EventLimiter(args.event_limit))
         frequency_align_ctx = event_pipe.FlexJobOffsetContext(soc_frequency=args.freq[0])
         process.register_stage(callback=event_pipe.normalize_phase1, context=normalize_ctx)
         if args.flex_ts_fix:

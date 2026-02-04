@@ -1,4 +1,4 @@
-# Copyright 2024-2025 IBM Corporation
+# Copyright 2024-2026 IBM Corporation
 
 '''
 central imports for contexts and processing functions
@@ -29,7 +29,7 @@ from aiu_trace_analyzer.pipeline.be_pair import EventPairDetectionContext
 # import the separated contexts:
 from aiu_trace_analyzer.pipeline.overlap import OverlapDetectionContext, TSSequenceContext
 from aiu_trace_analyzer.pipeline.inverse_ts import InversedTSDetectionContext
-from aiu_trace_analyzer.pipeline.normalize import NormalizationContext
+from aiu_trace_analyzer.pipeline.normalize import NormalizationContext, EventLimiter
 from aiu_trace_analyzer.pipeline.sort import EventSortingContext
 from aiu_trace_analyzer.pipeline.make_slice import SliceCreationContext
 from aiu_trace_analyzer.pipeline.power import PowerExtractionContext
