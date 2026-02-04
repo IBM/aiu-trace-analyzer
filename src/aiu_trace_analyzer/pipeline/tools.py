@@ -6,7 +6,7 @@ import copy
 import re
 from typing import Optional
 
-from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
+from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, InputDialect
 import aiu_trace_analyzer.logger as aiulog
 
 
@@ -31,6 +31,27 @@ class PipelineContextTool:
         return '.'.join(fcomponents)
 
     @staticmethod
+    def get_dialect_of_event(event: TraceEvent) -> InputDialect | None:
+        if "args" not in event:
+            return None
+        if "jobhash" not in event["args"]:
+            print("ERROR: no jobhash in event. You hit a bug in the code.")
+            return None
+        return GlobalIngestData.get_dialect(event["args"]["jobhash"])
+
+    @staticmethod
+    def get_context_id(event: TraceEvent) -> int:
+        dialect = PipelineContextTool.get_dialect_of_event(event)
+        if dialect is None:
+            return 0
+        if dialect.get("NAME") == "FLEX":
+            return event["args"]["jobhash"]
+        elif dialect.get("NAME") == "TORCH":
+            return event["args"]["correlation"]
+        else:
+            return 0
+
+    @staticmethod
     def is_flex_event(event: TraceEvent) -> bool:
         '''
         Returns True for events that do not contain the information that torch profiler would add
@@ -40,56 +61,43 @@ class PipelineContextTool:
 
     @staticmethod
     def is_acc_event(event: TraceEvent) -> bool:
-        if "args" not in event:
-            return False
-        if "jobhash" not in event["args"]:
-            print("ERROR: no jobhash in event. You hit a bug in the code.")
-            return False
-        dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
-        classifier = dialect.get("acc_event_cat").split('.')
-        if classifier[0] == "is":
-            assert len(classifier) > 2, "Not enough parameters in 'acc_event_cat' classifier. 'is' requires at least 2"
-            attribute = event
-            for c in classifier[1:-1]:
-                if c in attribute:
-                    attribute = attribute[c]
-                else:
-                    return False
-            return attribute == classifier[-1]
-
-        if classifier[0] == "has":
-            assert len(classifier) > 1, "Not enough parameters in 'acc_event_cat' classifier. 'has' requires at least 1"
-            attribute = event
-            for c in classifier[1:]:
-                if c in attribute:
-                    attribute = attribute[c]
-                else:
-                    return False
-            return True
-        return False
+        return PipelineContextTool.is_category(event, "acc_event_cat")
 
     @staticmethod
     def is_acc_kernel(event: TraceEvent) -> bool:
-        if "args" not in event:
+        return PipelineContextTool.is_category(event, "acc_kernel")
+
+    @staticmethod
+    def is_category(event: TraceEvent, category: str) -> bool:
+        dialect = PipelineContextTool.get_dialect_of_event(event)
+        if not dialect:
             return False
-        if "jobhash" not in event["args"]:
-            print("ERROR: no jobhash in event. You hit a bug in the code.")
-            return False
-        dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
-        classifier = dialect.get("acc_kernel").split('.')
+
+        deconstruct = dialect.get(category).split(';')
+
+        classifier = deconstruct[0].split('.')
+
+        if len(classifier) == 1:
+            return event["name"] == classifier[0]
+
         if classifier[0] == "is":
-            assert len(classifier) > 2, "Not enough parameters in 'acc_event_cat' classifier. 'is' requires at least 2"
             attribute = event
-            for c in classifier[1:-1]:
+            for c in classifier[1:]:
                 if c in attribute:
                     attribute = attribute[c]
                 else:
                     return False
-            kernel_re = re.compile(classifier[-1])
-            return (kernel_re.search(attribute) is not None)
+            assert isinstance(attribute, dict) is False, \
+                f"Attribute '{attribute}' is not a leaf node in '{category}'" \
+                f"classifier of {dialect.get("NAME")} dialect."
+            compare_str = ';'.join(deconstruct[1:])  # recombined remaining parts of the string
+            assert len(compare_str) > 0, f"Incorrect format '{category}' classifier of {dialect.get("NAME")} dialect."
+            classifier_re = re.compile(compare_str)
+            return (classifier_re.search(str(attribute)) is not None)
 
         elif classifier[0] == "has":
-            assert len(classifier) > 1, "Not enough parameters in 'acc_event_cat' classifier. 'has' requires at least 1"
+            assert len(classifier) > 1, f"Not enough parameters in '{category}' classifier. 'has' requires at least 1"
+
             attribute = event
             for c in classifier[1:]:
                 if c in attribute:
@@ -97,8 +105,9 @@ class PipelineContextTool:
                 else:
                     return False
             return True
+
         else:
-            aiulog.log(aiulog.WARN, "Dialect entry for acc_kernel has unknown operator:", classifier[0])
+            aiulog.log(aiulog.WARN, f"Dialect entry for {category} has unknown operator:", classifier[0])
         return False
 
 

@@ -633,10 +633,13 @@ class Acelyzer:
 
         monotonic_ts_ctx_c = event_pipe.TSSequenceContext()
         process.register_stage(callback=event_pipe.assert_global_ts_sequence, context=monotonic_ts_ctx_c)
+        categorizer_ctx = event_pipe.EventCategorizerContext(with_zero_align=(args.format == "timeline"))
 
         launch_flows_ctx = event_pipe.LaunchFLowContext()
         process.register_stage(callback=event_pipe.launch_flow_collect, context=launch_flows_ctx)
+        process.register_stage(callback=event_pipe.event_categorizer, context=categorizer_ctx)
         process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+        process.register_stage(callback=event_pipe.event_categorizer_update, context=categorizer_ctx)
         process.register_stage(callback=event_pipe.launch_flow_create_missing, context=launch_flows_ctx)
 
         if args.flow:

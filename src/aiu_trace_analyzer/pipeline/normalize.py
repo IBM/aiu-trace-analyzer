@@ -404,6 +404,18 @@ def _hex_to_int_str(event: TraceEvent) -> TraceEvent:
     return event
 
 
+def _capitalized_args(event: TraceEvent) -> TraceEvent:
+    """Normalize the capitalization of important keys in args"""
+
+    if "args" not in event:
+        return event
+
+    if event["ph"] in "X" and "Bytes" in event["args"]:
+        event["args"]["bytes"] = event["args"].pop("Bytes")
+
+    return event
+
+
 _unify_recv = re.compile("Receive")
 _unify_rdma = re.compile("RDMA")
 _jobinfo = GlobalIngestData()
@@ -430,6 +442,7 @@ def normalize_phase1(event: TraceEvent, context: AbstractContext) -> list[TraceE
     event = _attr_to_args(event)
     event = _hex_to_int_str(event)
     event["name"] = _name_unification(event["name"])
+    event = _capitalized_args(event)
 
     if context.event_filtered(event):
         return []
