@@ -28,6 +28,7 @@
         {"extract_power_event": true},
         {"sort_events": true},
         {"compute_power": true},
+        {"analyze_power_statistics": false},
         {"extract_data_transfer_event": true},
         {"compute_bandwidth": true},
         {"compute_utilization_fingerprints": true},

@@ -380,6 +380,11 @@ class Acelyzer:
                             default=self.defaults["comm_summ"],
                             help="Combine each sequence of communication events into a single send/recv.")
 
+        parser.add_argument("--power-stats", dest="power_stats", action="store_true",
+                            default=False,
+                            help="Enable power statistics analysis with time-weighted calculations."
+                            " Reports power consumption for periods with and without kernel execution.")
+
         parser.add_argument("--time_unit", default=self.defaults["time_unit"], choices=["ms", "ns"],
                             help="Display Time Unit of the resulting json.")
 
@@ -588,6 +593,11 @@ class Acelyzer:
                 filter_pattern=" Prep",
                 use_ts4=use_ts4)
             process.register_stage(callback=event_pipe.compute_power, context=power_compute_ctx)
+
+            # power statistics analysis (if enabled)
+            if args.power_stats:
+                power_stats_ctx = event_pipe.PowerStatisticsContext()
+                process.register_stage(callback=event_pipe.analyze_power_statistics, context=power_stats_ctx)
 
         # dealing with bandwidth counter data
         if any(args.counter) and "bandwidth" in args.counter:
