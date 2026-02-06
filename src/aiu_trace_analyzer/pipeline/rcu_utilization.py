@@ -191,6 +191,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
     _autopilot_pattern = re.compile(r'DSM-AutoPilot BEGIN')
     _iteration_mode_pattern = re.compile(r'^\s+(DECODING|PREFILL)\s+$')
     _non_kernel_names = ["Total"]
+    _total = re.compile(r'Total     ')
 
     _print_to_log = False
 
@@ -215,6 +216,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             )
         ])
 
+        self.totals: set[int] = set()  # Using a set ensures uniqueness
         self.autopilot = False
         self.csv_fname = self.generate_filename(csv_fname, "categories")
         self.tab_fname = self.generate_filename(csv_fname, "categories", "txt")
@@ -347,7 +349,16 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         # drop out if autopilot=1 is detected
         if self._autopilot_pattern.search(line):
             self.autopilot = True
-            return False, parse_mode, current_table, fprint
+            return True, parse_mode, current_table, fprint
+        if  self._total.search(line):
+            ldata = re.split(" +", line)
+            total_value = int(ldata[1])
+            if total_value not in self.totals:
+                self.totals.add(total_value)
+                aiulog.log(aiulog.INFO, f"Detected total: {total_value}")
+
+        if self.autopilot:
+            return True, parse_mode, current_table, fprint
 
         if self._clock_scaling.search(line):
             aiulog.log(aiulog.WARN,
@@ -688,17 +699,23 @@ def compute_utilization_fingerprints(event: TraceEvent, context: AbstractContext
         context.fingerprint_add(context.generate_fprint_jobhash(event), kernel_name, event["dur"])
     return [event]
 
-
+jobhash_map: dict[int, bool] = {}
+processID: int = 0
 def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
     if event["ph"] != "X":
         return [event]
 
     assert isinstance(context, MultiRCUUtilizationContext)
 
-    if not PipelineContextTool.is_acc_event(event) or not PipelineContextTool.is_acc_kernel(event):
+    if (not PipelineContextTool.is_acc_event(event) or not PipelineContextTool.is_acc_kernel(event)) and event["name"] != "aiuScheduleWait":
+        return [event]
+    pid = event["pid"]
+    rank = pid * context.rank_factor
+    totals = context.rcuctx[rank].totals
+    autopilot = context.rcuctx[rank].autopilot
+    if not autopilot and event["name"] == "aiuScheduleWait":
         return [event]
 
-    pid = event["pid"]
     kernel_name = context.extract_kernel_from_event_name(event)
 
     try:
@@ -707,18 +724,41 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
     except KeyError:
         aiulog.log(aiulog.WARN, f"UTL: No matching fingerprint for job {event['args']['jobname']}."
                    " Unable to find a matching Ideal-cycles table.")
-        return [event]
-
+        if event["name"] != "aiuScheduleWait":
+            return [event]
     try:
-        ideal_dur = float(context.get_ideal_dur(kernel_name, pid, job_fingerprint))
+        if autopilot and event["name"] == "aiuScheduleWait":
+            global jobhash_map
+            if event["args"]["jobhash"] not in jobhash_map:
+                ideal_dur = list(totals)[1]
+                jobhash_map[event["args"]["jobhash"]] = True
+            else:
+                ideal_dur = list(totals)[0]
+        else:
+            ideal_dur = float(context.get_ideal_dur(kernel_name, pid, job_fingerprint))
     except KeyError:
         aiulog.log(aiulog.DEBUG, f"UTL: No kernel table matching fingerprint {job_fingerprint}:"
                    f" {context.fingerprints.keys()}/{context.fingerprints[jobhash].fprint_data} ")
         context.issue_warning("kernel_nomatch")
         ideal_dur = 0.0
 
-    cmpt_dur = float(event["dur"])
-    utilization = abs(ideal_dur/cmpt_dur) if not isclose(cmpt_dur, 0.0, abs_tol=1e-9) else 0.0
+    if autopilot and event["name"] == "aiuScheduleWait":
+        cmpt_dur = float(event["dur"])
+        utilization = abs(ideal_dur/cmpt_dur) if not isclose(cmpt_dur, 0.0, abs_tol=1e-9) else 0.0
+    else:
+        cmpt_dur = float(event["dur"])
+        utilization = abs(ideal_dur/cmpt_dur) if not isclose(cmpt_dur, 0.0, abs_tol=1e-9) else 0.0
+
+
+    if autopilot and event["name"] == "aiuScheduleWait":
+        util_counter = context.make_utilization_event(event, utilization/10)
+        global processID
+        for ev in util_counter:
+            if processID == 0:
+               processID = ev["pid"]
+            ev["pid"] = ev["pid"] - processID
+
+        return [event] + util_counter
 
     if utilization > 1.0:   # warning about >100% utilization
         aiulog.log(aiulog.DEBUG, "UTL: Event with +100% utilization. "
