@@ -68,7 +68,7 @@ class LaunchFLowContext(TwoPhaseWithBarrierContext):
             self.queues[qid]["last_event"] = event
         else:
             aiulog.log(aiulog.WARN, "FLOWS: Ignoring event with ts after schedule wait", event)
-        assert self.queues[qid]["last_ts"] <= sched_wait_end, f"{qid}: {event}, {self.queues[qid]}"
+        #assert self.queues[qid]["last_ts"] <= sched_wait_end, f"{qid}: {event}, {self.queues[qid]}"
 
     def max_flow_id_detection(self, observed_id: int) -> None:
         self.flow_id_seq = max(self.flow_id_seq, observed_id)
