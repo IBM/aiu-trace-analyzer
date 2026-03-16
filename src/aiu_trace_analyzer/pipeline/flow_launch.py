@@ -16,7 +16,8 @@ class LaunchFLowContext(TwoPhaseWithBarrierContext):
         warnings.extend([
             TraceWarning(
                 name="ts_inconsistency",
-                text="FLOWS: Detected {d[count]} timestamp inconsistencies, skipped flow creation for affected iterations",
+                text="FLOWS: Detected {d[count]} timestamp inconsistencies,"
+                " skipped flow creation for affected iterations",
                 data={"count": 0}
             ),
             TraceWarning(
