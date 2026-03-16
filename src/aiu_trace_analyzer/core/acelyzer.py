@@ -44,6 +44,7 @@ class Acelyzer:
         # overlap detection defaults (method and potential 'ts-shift' threshold)
         "overlap": "tid",
         "ts_shift_threshold": 0.005,
+        "max_tid_streams": 5,
 
         # event manipulation/extraction
         "split_events": False,
@@ -322,6 +323,9 @@ class Acelyzer:
                             choices=["drop", "tid", "async", "warn", "shift"],
                             help="How to resolve overlapping/non-displayable events )")
 
+        parser.add_argument("--max_tid_streams", type=int, default=self.defaults["max_tid_streams"],
+                            help="Maximum number of TID streams to use for overlap resolution (tid mode)")
+
         parser.add_argument("-P", "--profile", type=str, default="not_set",
                             help="Name of a processing profile json that lists"
                             " the active processing stages to run")
@@ -560,7 +564,8 @@ class Acelyzer:
         # register pre-processing: resolve overlap conflicts caused by partially overlapping slices
         overlap_arg = self._overlap_option_from_arg(args.overlap)
         overlap_ctx = event_pipe.OverlapDetectionContext(overlap_resolve=overlap_arg,
-                                                         ts_shift_threshold=self.defaults["ts_shift_threshold"])
+                                                         ts_shift_threshold=self.defaults["ts_shift_threshold"],
+                                                         max_tid_streams=args.max_tid_streams)
         if overlap_arg == event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_TID:
             process.register_stage(callback=event_pipe.detect_partial_overlap_tids, context=overlap_ctx)
             process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
