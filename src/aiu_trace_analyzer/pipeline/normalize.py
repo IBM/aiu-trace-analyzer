@@ -107,6 +107,13 @@ class NormalizationContext(AbstractHashQueueContext):
                 is_error=True
             ),
             TraceWarning(
+                name="zero_gap_time",
+                text="Detected {d[count]} identical timestamps between consecutive events. "
+                     "This suggests a timestamp issue in the trace and "
+                     "causes unreliable interval-based frequency calculation.",
+                data={"count": 0}
+            ),
+            TraceWarning(
                 name="epoch_start",
                 text="OVC: reference epoch had to be updated {d[count]} times with newly detected earlier timestamps. "
                      "This indicates events with 0.0-timestamps or out-of-order input events. "
@@ -338,7 +345,13 @@ class NormalizationContext(AbstractHashQueueContext):
         if self.prev_event_data[qid][self._INTERVAL_KEY].count > 0:
             gap_cycles = int(event["args"][ts_a]) - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_cycle()
             gap_time = event["ts"] - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_ts()
-            gap_freq = float(gap_cycles) / gap_time
+            # Handle zero gap_time to avoid division by zero
+            if gap_time > 0:
+                gap_freq = float(gap_cycles) / gap_time
+            else:
+                # If gap_time is zero, fall back to duration-based frequency
+                self.warnings["zero_gap_time"].update()
+                gap_freq = dur_freq
         else:
             gap_freq = dur_freq
         self.prev_event_data[qid][self._INTERVAL_KEY].update(
