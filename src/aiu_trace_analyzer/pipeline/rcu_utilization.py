@@ -190,6 +190,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
     _category_splitter = re.compile(r'(\-opCat|\-NA$)')
     _autopilot_pattern = re.compile(r'DSM-AutoPilot BEGIN')
     _iteration_mode_pattern = re.compile(r'^\s+(DECODING|PREFILL)\s+$')
+    _total_pattern = re.compile(r'Total     ')
     _non_kernel_names = ["Total"]
 
     _print_to_log = False
@@ -308,13 +309,26 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         else:
             return "Total"
 
+    def _get_autopilot(self, cl) -> None:
+
+        if self._autopilot_pattern.search(cl):
+            self.autopilot = True
+
+        else:
+            self.autopilot = False
+
     def _add_kernel(self,
                     kernel_and_cat: list[str],
                     cycles: int,
                     current_table: dict[str, int],
                     fprint: RCUTableFingerprint) -> RCUTableFingerprint:
         category = self._handle_category(kernel_and_cat)
-        kernel = kernel_and_cat[0]+" Cmpt Exec"
+
+        if kernel_and_cat[0] != "supernode_kernel":
+            kernel = kernel_and_cat[0]+" Cmpt Exec"
+        else:
+            kernel = kernel_and_cat[0]
+
         fprint.add(kernel, cycles * self.cycle_to_clock_factor)
 
         if kernel not in current_table:
@@ -345,9 +359,9 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                                 RCUTableFingerprint]:
 
         # drop out if autopilot=1 is detected
-        if self._autopilot_pattern.search(line):
-            self.autopilot = True
-            return False, parse_mode, current_table, fprint
+        #if self._autopilot_pattern.search(line):
+        #    self.autopilot = True
+        #    return False, parse_mode, current_table, fprint
 
         if self._clock_scaling.search(line):
             aiulog.log(aiulog.WARN,
@@ -384,23 +398,45 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         if not self._data_pattern.search(line) or self._ignore_pattern.search(line):
             return True, parse_mode, current_table, fprint
 
-        ldata = re.split(" +", line)
-        if len(ldata) < 2 or len(ldata) > 3:  # strange format includes newline as a 3rd column
-            aiulog.log(
-                aiulog.WARN,
-                "UTL: found data pattern line with more than 2 columns. Check patterns.",
-                ldata)
+        # Adding the total cycles count with the mock kernel name "supernode_kernel"
+        # and self.autopilot
+        if self._total_pattern.search(line) and self.autopilot:
+            kernel_and_cat = re.split(" +", line)
+
+            if len(kernel_and_cat) < 2 or len(kernel_and_cat) > 3:  # strange format includes newline as a 3rd column
+                aiulog.log(
+                    aiulog.WARN,
+                    "UTL: found totalx` pattern line with more than 2 columns. Check patterns.",
+                    kernel_and_cat)
+                return True, parse_mode, current_table, fprint
+
+            total_cycles = int(kernel_and_cat[1])
+            kernel_and_cat[0] = "supernode_kernel"
+
+            fprint = self._add_kernel(kernel_and_cat, total_cycles, current_table, fprint)
             return True, parse_mode, current_table, fprint
 
-        cycles = int(ldata[1])
-        kernel_and_cat = self._category_splitter.split(ldata[0])
-
-        # Skip anything that's not a kernel name
-        if kernel_and_cat[0] in self._non_kernel_names:
+        if self.autopilot:
             return True, parse_mode, current_table, fprint
 
-        fprint = self._add_kernel(kernel_and_cat, cycles, current_table, fprint)
-        return True, parse_mode, current_table, fprint
+        if not self.autopilot:
+            ldata = re.split(" +", line)
+            if len(ldata) < 2 or len(ldata) > 3:  # strange format includes newline as a 3rd column
+                aiulog.log(
+                    aiulog.WARN,
+                    "UTL: found data pattern line with more than 2 columns. Check patterns.",
+                    ldata)
+                return True, parse_mode, current_table, fprint
+
+            cycles = int(ldata[1])
+            kernel_and_cat = self._category_splitter.split(ldata[0])
+
+            # Skip anything that's not a kernel name
+            if kernel_and_cat[0] in self._non_kernel_names:
+                return True, parse_mode, current_table, fprint
+
+            fprint = self._add_kernel(kernel_and_cat, cycles, current_table, fprint)
+            return True, parse_mode, current_table, fprint
 
     def extract_tables(self, compiler_log: str):
 
@@ -409,6 +445,11 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         current_table = {}
         fprint = None  # fingerprints created when a new table is detected
         with open(compiler_log, 'r') as cl:
+
+            compiler_logs_content = cl.read()
+            self._get_autopilot(compiler_logs_content)
+            cl.seek(0)
+
             for line in cl:
                 (
                     keep_parsing,
@@ -591,8 +632,12 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         for _, ctx in self.rcuctx.items():
             ctx.enable()
 
-    def extract_kernel_from_event_name(self, event: TraceEvent) -> str:
+    def extract_kernel_from_event_name(self, event: TraceEvent, autopilot : bool) -> str:
         rname = event["name"]
+
+        if autopilot:
+            rname = "supernode_kernel"
+            return rname
 
         # if a fn_idx was removed from the event name, we have to bring it back in to match the ideal cycles table entry
         if "[N]" in rname and "args" in event and "fn_idx" in event["args"]:
@@ -683,7 +728,10 @@ def compute_utilization_fingerprints(event: TraceEvent, context: AbstractContext
     assert isinstance(context, MultiRCUUtilizationContext)
 
     if PipelineContextTool.is_acc_event(event) and PipelineContextTool.is_acc_kernel(event):
-        kernel_name = context.extract_kernel_from_event_name(event)
+        pid = event["pid"]
+        rank = pid * context.rank_factor
+        autopilot = context.rcuctx[rank].autopilot
+        kernel_name = context.extract_kernel_from_event_name(event, autopilot)
 
         context.fingerprint_add(context.generate_fprint_jobhash(event), kernel_name, event["dur"])
     return [event]
@@ -699,7 +747,9 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
         return [event]
 
     pid = event["pid"]
-    kernel_name = context.extract_kernel_from_event_name(event)
+    rank = pid * context.rank_factor
+    autopilot = context.rcuctx[rank].autopilot
+    kernel_name = context.extract_kernel_from_event_name(event, autopilot)
 
     try:
         jobhash = context.generate_fprint_jobhash(event)
