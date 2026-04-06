@@ -2,6 +2,7 @@
 
 import re
 import copy
+import json
 from math import isclose
 import pathlib
 from enum import Flag, auto
@@ -122,6 +123,7 @@ class RCUTableFingerprint():
                 f"0.0  <- ({other.totaltime} / {self.totaltime} = {other.totaltime / self.totaltime})")
             return 0.0
 
+        # TODO: Add check for self.totaltime != 0
         sim_val += self.sim_weights["total_time"] * (other.totaltime / self.totaltime)
         aiulog.log(
             aiulog.DEBUG, "   SIMVAL(totaltim):",
@@ -196,10 +198,11 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
     def __init__(
             self,
-            compiler_log: str,
             csv_fname: str,
             soc_freq: float,
             core_freq: float,
+            compiler_log: str = None,
+            inductor_spyre_dir: str = None,
             kernel_db_url: str = "ai_kernel.db") -> None:
 
         super().__init__(warnings=[
@@ -229,12 +232,18 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         aiulog.log(aiulog.DEBUG, "UTL: Input Ideal Cycle To Clock factor", self.cycle_to_clock_factor)
 
         self.initialize_tables()
-        try:
-            subdir, fpat = '/'.join(compiler_log.split('/')[:-1]), compiler_log.split('/')[-1]
-            compiler_log_name = list(pathlib.Path(subdir).rglob(fpat))[0]
-            self.extract_tables(compiler_log=compiler_log_name)
-        except Exception as e:
-            aiulog.log(aiulog.ERROR, "UTL: Unable to open/parse log file.", compiler_log, e)
+        if compiler_log is not None and inductor_spyre_dir is None:
+            try:
+                subdir, fpat = '/'.join(compiler_log.split('/')[:-1]), compiler_log.split('/')[-1]
+                compiler_log_name = list(pathlib.Path(subdir).rglob(fpat))[0]
+                self.extract_tables(compiler_log=compiler_log_name)
+            except Exception as e:
+                aiulog.log(aiulog.ERROR, "UTL: Unable to open/parse log file.", compiler_log, e)
+        elif compiler_log is None and inductor_spyre_dir is not None:
+            try:
+                self.extract_tables_from_inductor_dir(inductor_spyre_dir)
+            except Exception as e:
+                aiulog.log(aiulog.ERROR, "UTL: Unable to read inductor perf JSON files.", inductor_spyre_dir, e)
 
         for _, t in self.kernel_cycles.items():
             self.autopilot_detail = AutopilotDetail(t)
@@ -419,6 +428,29 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 if not keep_parsing:
                     break
 
+    def extract_tables_from_inductor_dir(self, inductor_spyre_dir: str):
+        base = pathlib.Path(inductor_spyre_dir) / "inductor-spyre"
+        current_table, fprint = self._start_init_table("UNKN")
+        for kernel_dir in sorted(base.iterdir()):
+            if not kernel_dir.is_dir():
+                continue
+            json_path = kernel_dir / "perf" / "ideal_cycles.json"
+            if not json_path.exists():
+                continue
+            kernel_name = kernel_dir.name + " Cmpt Exec"
+            with open(json_path) as f:
+                entries = json.load(f)
+            for entry in entries:
+                cycles = entry["ideal_cycles"]
+                category = entry["op_category"]
+                fprint.add(kernel_name, cycles * self.cycle_to_clock_factor)
+                if kernel_name not in current_table:
+                    if cycles != 0:
+                        current_table[kernel_name] = cycles
+                if kernel_name not in self.kernel_cat_map[0]:
+                    self.kernel_cat_map[0].add(kernel_name, category)
+        self._finish_add_table(fprint, current_table)
+
     @staticmethod
     def _compute_row_stats(dur, total, ideal, ideal_total):
         dur_frac = 0 if isclose(total, 0.0, abs_tol=1e-9) else round(dur / total, 4)
@@ -535,10 +567,11 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
 
     def __init__(
             self,
-            compiler_log: str,
             csv_fname: str,
             soc_freq: float,
-            core_freq: float) -> None:
+            core_freq: float,
+            compiler_log: str = None,
+            inductor_spyre_dir: str = None) -> None:
 
         super().__init__(warnings=[
             # count the number of events with >100% utilization (indication of table mismatch)
@@ -564,28 +597,54 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             )
         ])
 
-        log_list = compiler_log.split(",")
-        self.multi_log = (len(log_list) > 1)
-        self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job/file
-        if self.multi_log:
-            aiulog.log(aiulog.INFO, "UTL: Multi-AIU logs provided. Entries:", len(log_list))
-
-        # event rank will be multiplied by this factor to make the key for the correct rcuctx
-        # in single-log case: will turn everything into zero, otherwise use event rank
-        self.rank_factor = 1 if self.multi_log else 0
-
-        self.rcuctx: dict[int, RCUUtilizationContext] = {}
-        for rank, log in enumerate(log_list):
-            aiulog.log(aiulog.DEBUG, "UTL: Building kernel table for", rank)
+        if compiler_log is not None and inductor_spyre_dir is None:
+            log_list = compiler_log.split(",")
+            self.multi_log = (len(log_list) > 1)
+            self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job/file
             if self.multi_log:
-                csv_basename = csv_fname + str(rank)
-            else:
-                csv_basename = csv_fname
-            self.rcuctx[rank] = RCUUtilizationContext(
-                log,
-                csv_fname=csv_basename,
-                soc_freq=soc_freq,
-                core_freq=core_freq)
+                aiulog.log(aiulog.INFO, "UTL: Multi-AIU logs provided. Entries:", len(log_list))
+
+            # event rank will be multiplied by this factor to make the key for the correct rcuctx
+            # in single-log case: will turn everything into zero, otherwise use event rank
+            self.rank_factor = 1 if self.multi_log else 0
+
+            self.rcuctx: dict[int, RCUUtilizationContext] = {}
+            for rank, log in enumerate(log_list):
+                aiulog.log(aiulog.DEBUG, "UTL: Building kernel table for", rank)
+                if self.multi_log:
+                    csv_basename = csv_fname + str(rank)
+                else:
+                    csv_basename = csv_fname
+                self.rcuctx[rank] = RCUUtilizationContext(
+                    csv_fname=csv_basename,
+                    soc_freq=soc_freq,
+                    core_freq=core_freq,
+                    compiler_log=log)
+                
+        elif compiler_log is None and inductor_spyre_dir is not None:
+            log_list = inductor_spyre_dir.split(",")
+            self.multi_log = (len(log_list) > 1)
+            self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job/file
+            if self.multi_log:
+                aiulog.log(aiulog.INFO, "UTL: Multi-AIU logs provided. Entries:", len(log_list))
+
+            # event rank will be multiplied by this factor to make the key for the correct rcuctx
+            # in single-log case: will turn everything into zero, otherwise use event rank
+            self.rank_factor = 1 if self.multi_log else 0
+
+            self.rcuctx: dict[int, RCUUtilizationContext] = {}
+            for rank, log in enumerate(log_list):
+                aiulog.log(aiulog.DEBUG, "UTL: Building kernel table for", rank)
+                if self.multi_log:
+                    csv_basename = csv_fname + str(rank)
+                else:
+                    csv_basename = csv_fname
+                self.rcuctx[rank] = RCUUtilizationContext(
+                    csv_fname=csv_basename,
+                    soc_freq=soc_freq,
+                    core_freq=core_freq,
+                    inductor_spyre_dir=log)
+        
 
     def enable(self) -> bool:
         for _, ctx in self.rcuctx.items():
