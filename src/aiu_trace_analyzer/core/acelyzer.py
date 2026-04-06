@@ -257,9 +257,9 @@ class Acelyzer:
                             help="(Comma-separated list of per-rank) Path/Filename of compiler log to ingest"
                             " compile-time data references. Required e.g. for rcu_util counters."
                             " Multi-AIU rank outputs need to be sorted by rank.")
-        
-        parser.add_argument("-d", "--inductor_spyre_dir", type=str, default="/tmp/torchinductor_ac",                                                                                
-                            help="Path to the inductor_spyre directory containing " \
+
+        parser.add_argument("-d", "--inductor_spyre_dir", type=str, default="/tmp/torchinductor_ac",
+                            help="Path to the inductor_spyre directory containing "
                             "inductor_spyre/<kernel_name>/perf/ideal_cycles.json files.")
 
         parser.add_argument("-D", "--loglevel", type=int, default=self.defaults["loglevel"],
@@ -450,9 +450,9 @@ class Acelyzer:
             aiulog.log(aiulog.ERROR, "power_ts3 and power_ts4 are mutually exclusive")
             return False
 
-        if "rcu_util" in args.counter and args.compiler_log is None and args.inductor_spyre_dir is None :
-            aiulog.log(aiulog.WARN, "rcu_util counter requested but no compiler log/inductor spyre directory path provided."
-                       " No utilization will be plotted.")
+        if "rcu_util" in args.counter and args.compiler_log is None and args.inductor_spyre_dir is None:
+            aiulog.log(aiulog.WARN, "rcu_util counter requested but no compiler log/inductor spyre"
+                       " directory path provided. No utilization will be plotted.")
 
         return True
 

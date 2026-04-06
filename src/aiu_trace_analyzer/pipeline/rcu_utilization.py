@@ -620,7 +620,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                     soc_freq=soc_freq,
                     core_freq=core_freq,
                     compiler_log=log)
-                
+
         elif compiler_log is None and inductor_spyre_dir is not None:
             log_list = inductor_spyre_dir.split(",")
             self.multi_log = (len(log_list) > 1)
@@ -644,7 +644,6 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                     soc_freq=soc_freq,
                     core_freq=core_freq,
                     inductor_spyre_dir=log)
-        
 
     def enable(self) -> bool:
         for _, ctx in self.rcuctx.items():
