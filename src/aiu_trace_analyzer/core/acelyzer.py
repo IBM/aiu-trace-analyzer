@@ -258,7 +258,7 @@ class Acelyzer:
                             " compile-time data references. Required e.g. for rcu_util counters."
                             " Multi-AIU rank outputs need to be sorted by rank.")
 
-        parser.add_argument("-d", "--inductor_spyre_dir", type=str, default="/tmp/torchinductor_ac",
+        parser.add_argument("-d", "--inductor_spyre_dir", type=str, default=None,
                             help="Path to the inductor_spyre directory containing "
                             "inductor_spyre/<kernel_name>/perf/ideal_cycles.json files.")
 
