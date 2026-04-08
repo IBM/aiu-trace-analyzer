@@ -128,7 +128,6 @@ class RCUTableFingerprint():
             f"{sim_val}  <- ({other.totaltime} / {self.totaltime} = {other.totaltime / self.totaltime})")
         return sim_val
 
-
 class RCUKernelCategoryMap():
     def __init__(self):
         self.kernel_cat_map: dict[str, str] = {"other": "other"}
@@ -151,7 +150,6 @@ class RCUKernelCategoryMap():
 
     def values(self):
         return self.kernel_cat_map.values()
-
 
 class RCUTableParseMode(Flag):
     ACTIVE_TABLE = auto()
@@ -595,8 +593,8 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
 
         # Next Event Start Timestamp
         self.next_event_ts = 0.0
-        
-        # Flag to keep track for event overlap
+
+        # Event overlap Status
         self.event_overlap = False
 
         # Utilization Percentage of the previous event
@@ -661,7 +659,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             self.next_event_ts = 0.0
             self.last_zero_event_ts = event["ts"] + event["dur"]
             self.last_event_utilization_percent = utilization
-            
+ 
         # Check for event overlap
         elif event["ts"] < self.last_zero_event_ts:
             revents.append({
@@ -692,7 +690,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                 "args": {RCU_pt_util_counter_unit: utilization},
                 "dur": event["dur"]  # temporary duration in cycles- remove before viz
             }]
-        
+
         # Add a reset-to-zero event only if the utilization is non-zero and if there is no event overlap
         if utilization > 0.0 and (not self.event_overlap):
             revents.append({
