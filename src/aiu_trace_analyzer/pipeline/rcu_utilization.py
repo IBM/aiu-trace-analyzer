@@ -190,7 +190,6 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
     _category_splitter = re.compile(r'(\-opCat|\-NA$)')
     _autopilot_pattern = re.compile(r'DSM-AutoPilot BEGIN')
     _iteration_mode_pattern = re.compile(r'^\s+(DECODING|PREFILL)\s+$')
-    _total_pattern = re.compile(r'Total     ')
     _print_to_log = False
 
     def __init__(
@@ -380,24 +379,6 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
         # This will need to be the last regex check because it skips everything else
         if not self._data_pattern.search(line) or self._ignore_pattern.search(line):
-            return True, parse_mode, current_table, fprint
-
-        # Adding the total cycles count with the mock kernel name "supernode_kernel"
-        # and self.autopilot
-        if self._total_pattern.search(line) and self.autopilot:
-            kernel_and_cat = re.split(" +", line)
-
-            if len(kernel_and_cat) < 2 or len(kernel_and_cat) > 3:  # strange format includes newline as a 3rd column
-                aiulog.log(
-                    aiulog.WARN,
-                    "UTL: found totalx` pattern line with more than 2 columns. Check patterns.",
-                    kernel_and_cat)
-                return True, parse_mode, current_table, fprint
-
-            total_cycles = int(kernel_and_cat[1])
-            kernel_and_cat[0] = "supernode_kernel"
-
-            fprint = self._add_kernel(kernel_and_cat, total_cycles, current_table, fprint)
             return True, parse_mode, current_table, fprint
 
         ldata = re.split(" +", line)
@@ -657,7 +638,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         self.event_overlap = False
         revents = []
 
-        if self.last_zero_event_ts == 0.0:
+        if isclose(self.last_zero_event_ts, 0.0, abs_tol=1e-9):
             self.next_event_ts = 0.0
             self.last_zero_event_ts = event["ts"] + event["dur"]
             self.last_event_utilization_percent = utilization
@@ -737,7 +718,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         revents = super().drain()
 
         # Add the last reset-to-zero event
-        if self.last_zero_event_ts:
+        if self.last_zero_event_ts > 0.0:
             revents.append({
                 "ph": "C",
                 "ts": self.last_zero_event_ts,

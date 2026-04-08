@@ -59,7 +59,8 @@ expected_vars_and_values = [
      {"somevalue":
       {'addmm_MatMul-BMM_1 Cmpt Exec': 27648,
        'addmm_1_MatMul-BMM_1 Cmpt Exec': 27648,
-       'bmm-BMM_1 Cmpt Exec': 12288
+       'bmm-BMM_1 Cmpt Exec': 12288,
+       'Total Cmpt Exec' : 67584,
        }
       }
      )
