@@ -3,7 +3,7 @@
 from enum import Enum, auto
 
 import aiu_trace_analyzer.logger as aiulog
-from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool as pct
 from aiu_trace_analyzer.pipeline.barrier import TwoPhaseWithBarrierContext
@@ -91,7 +91,12 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
     _BYTES_ENTRY = "bytes"
 
     def __init__(self, with_zero_align: bool = False):
-        super().__init__()
+        super().__init__(warnings=[
+            TraceWarning(
+                name="flex_mismatch",
+                text="CAT: Found {d[count]} categorization mismatches compared to FLEX src classifier.",
+                data={"count": 0}
+            )])
         self.do_zero_align = 1.0 if with_zero_align else 0.0
         self.first_ts_per_rank: dict[int, float] = {}
 
@@ -325,11 +330,7 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
         if "name" not in event:
             return EventClass.OTHER
 
-        fevent_class = self.classify_flex(event)
         event_class = self.classify_event(event)
-        if fevent_class is not None:
-            assert fevent_class == event_class, \
-                f"Flex and generic classificaton diff: {fevent_class.name} != {event_class.name} in {event}"
 
         return event_class
 
@@ -345,7 +346,7 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
         else:
             return EventClass.MAIU_PROTOCOL_RECV_DATA
 
-    def second_pass_classify(self, event: TraceEvent) -> EventClass:
+    def second_pass_classify(self, event: TraceEvent) -> str:
         '''
         Determination of some event classes require batch/time context
         this info has
@@ -363,10 +364,10 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
         first_comp, last_comp = self.queues[batch_id]
         if event["ts"] > first_comp and event["ts"] < last_comp:
             if event_class == EventClass.DATA_OUT:
-                return self._protocol_or_data_send(event)
+                return str(self._protocol_or_data_send(event))
             if event_class == EventClass.DATA_IN:
-                return self._protocol_or_data_recv(event)
-        return event_class
+                return str(self._protocol_or_data_recv(event))
+        return str(event_class)
 
     def collect_stats(self, event: TraceEvent) -> None:
         """Collect statistics from trace events during the first pass.
@@ -421,8 +422,17 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
                 aiulog.ERROR,
                 f"CAT: ACELYZER-BUG: Event ts smaller than min of collected event ts for rank {rank}.")
 
+        refined_class = self.second_pass_classify(event)
         if "class" in event["args"]:
-            event["args"]["class"] = str(self.second_pass_classify(event))
+            event["args"]["class"] = refined_class
+
+        fevent_class = self.classify_flex(event)
+        if fevent_class is not None:
+            self.warnings["flex_mismatch"].update()
+            aiulog.log(
+                aiulog.DEBUG, "Flex and generic classificaton diff: "
+                f"{fevent_class.name} != {refined_class} in {event}")
+
         return event
 
     _transfer_classes = [
