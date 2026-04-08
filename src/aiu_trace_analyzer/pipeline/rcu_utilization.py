@@ -128,6 +128,7 @@ class RCUTableFingerprint():
             f"{sim_val}  <- ({other.totaltime} / {self.totaltime} = {other.totaltime / self.totaltime})")
         return sim_val
 
+
 class RCUKernelCategoryMap():
     def __init__(self):
         self.kernel_cat_map: dict[str, str] = {"other": "other"}
@@ -150,6 +151,7 @@ class RCUKernelCategoryMap():
 
     def values(self):
         return self.kernel_cat_map.values()
+
 
 class RCUTableParseMode(Flag):
     ACTIVE_TABLE = auto()
@@ -617,7 +619,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         for _, ctx in self.rcuctx.items():
             ctx.enable()
 
-    def extract_kernel_from_event_name(self, event: TraceEvent, autopilot : bool) -> str:
+    def extract_kernel_from_event_name(self, event: TraceEvent, autopilot: bool) -> str:
         rname = event["name"]
 
         if autopilot:
@@ -659,7 +661,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             self.next_event_ts = 0.0
             self.last_zero_event_ts = event["ts"] + event["dur"]
             self.last_event_utilization_percent = utilization
- 
+
         # Check for event overlap
         elif event["ts"] < self.last_zero_event_ts:
             revents.append({
@@ -667,7 +669,9 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                 "ts": event["ts"],
                 "pid": event["pid"],
                 "name": RCU_pt_util_counter_name,
-                "args": {RCU_pt_util_counter_unit: self.last_event_utilization_percent if (self.last_event_utilization_percent > utilization) else utilization},
+                "args": {RCU_pt_util_counter_unit:
+                         self.last_event_utilization_percent
+                         if (self.last_event_utilization_percent > utilization) else utilization},
                 "dur": self.last_zero_event_ts - event["ts"]
             })
 
@@ -694,7 +698,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         # Add a reset-to-zero event only if the utilization is non-zero and if there is no event overlap
         if utilization > 0.0 and (not self.event_overlap):
             revents.append({
-               "ph": "C",
+                "ph": "C",
                 "ts": event["ts"]+event["dur"],
                 "pid": event["pid"],
                 "name": RCU_pt_util_counter_name,
@@ -736,10 +740,10 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         if self.last_zero_event_ts:
             revents.append({
                 "ph": "C",
-                    "ts": self.last_zero_event_ts,
-                    "pid": self.last_zero_event_pid,
-                    "name": RCU_pt_util_counter_name,
-                    "args": {RCU_pt_util_counter_unit: 0.0}
+                "ts": self.last_zero_event_ts,
+                "pid": self.last_zero_event_pid,
+                "name": RCU_pt_util_counter_name,
+                "args": {RCU_pt_util_counter_unit: 0.0}
                 })
         return revents
 
