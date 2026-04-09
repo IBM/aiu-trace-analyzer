@@ -1,0 +1,6 @@
+{
+    "stages": [
+        {"verify": true},
+        {"verify_cleanup": true}
+    ]
+}
