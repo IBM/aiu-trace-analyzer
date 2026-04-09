@@ -189,6 +189,9 @@ class AbstractTraceIngest:
                 event[the_args]["otid"] = event["tid"]
                 event["tid"] = hash(event["tid"])
 
+        return event
+
+    def _add_job_hash(self, event: TraceEvent, the_args: str) -> TraceEvent:
         if event["ph"] not in ["F", "f", "s", "t", "C", "M"]:
             event[the_args]["jobhash"] = self.jobhash
         return event
@@ -214,6 +217,7 @@ class AbstractTraceIngest:
         event = self._rank_device_annotation(event, the_args)
         event = self._pid_correction(event, the_args)
         event = self._tid_correction(event, the_args)
+        event = self._add_job_hash(event, the_args)
         return event
 
 
