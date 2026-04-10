@@ -1,5 +1,6 @@
 # Copyright 2024-2025 IBM Corporation
 
+import os
 import re
 import copy
 import json
@@ -570,8 +571,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             csv_fname: str,
             soc_freq: float,
             core_freq: float,
-            compiler_log: str = None,
-            inductor_spyre_dir: str = None) -> None:
+            compiler_info: str = None) -> None:
 
         super().__init__(warnings=[
             # count the number of events with >100% utilization (indication of table mismatch)
@@ -597,8 +597,9 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             )
         ])
 
-        if compiler_log is not None and inductor_spyre_dir is None:
-            log_list = compiler_log.split(",")
+        if os.path.isfile(compiler_info):
+            # Workload is running on current stack
+            log_list = compiler_info.split(",")
             self.multi_log = (len(log_list) > 1)
             self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job/file
             if self.multi_log:
@@ -621,8 +622,9 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                     core_freq=core_freq,
                     compiler_log=log)
 
-        elif compiler_log is None and inductor_spyre_dir is not None:
-            log_list = inductor_spyre_dir.split(",")
+        elif os.path.isdir(compiler_info):
+            # Workload is running on the Torch Spyre stack
+            log_list = compiler_info.split(",")
             self.multi_log = (len(log_list) > 1)
             self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job/file
             if self.multi_log:
