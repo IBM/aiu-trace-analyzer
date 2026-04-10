@@ -43,7 +43,7 @@ class RCUTableFingerprint():
             self,
             datalimit: int = -1,
             event_filter: str = r'',
-            table_mode: str = "UNKN"):
+            table_mode: str = "UNKN") -> None:
         self.datalimit = datalimit if datalimit > 0 else 1 << 31   # yes, it's not really unlimited...
         self.event_filter = re.compile(event_filter)
         self.table_mode = table_mode
@@ -57,7 +57,7 @@ class RCUTableFingerprint():
     def get(self) -> int:
         return self.hash
 
-    def get_table_mode(self) -> int:
+    def get_table_mode(self) -> str:
         return self.table_mode
 
     def add(self, data: str, time: float) -> None:
@@ -133,7 +133,7 @@ class RCUTableFingerprint():
 
 
 class RCUKernelCategoryMap():
-    def __init__(self):
+    def __init__(self) -> None:
         self.kernel_cat_map: dict[str, str] = {"other": "other"}
 
     def __getitem__(self, key: str) -> str:
@@ -525,7 +525,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         fprint = self._add_kernel(kernel_and_cat, cycles, current_table, fprint)
         return True, parse_mode, current_table, fprint
 
-    def extract_tables(self, compiler_log: str):
+    def extract_tables(self, compiler_log: pathlib.Path):
 
         parse_mode = RCUTableParseMode(RCUTableParseMode.UNKNOWN)
         self.multi_table = -1  # track if there might be multiple tables in the log
