@@ -876,7 +876,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
     def _check_counter_sanity(self, counters: list[TraceEvent], log_str: str) -> list[TraceEvent]:
         # check sanity of generated counter events
         for idx, counter in enumerate(counters):
-            if counter["args"][RCU_pt_util_counter_unit] > 100.0:   # warning about >100% utilization
+            if counter["args"][RCU_pt_util_counter_unit] > 100.0:
                 aiulog.log(aiulog.WARN, "UTL: Event with +100% utilization. "
                            "This could indicate a problem with table fingerprinting: ",
                            log_str, counter)
@@ -972,28 +972,24 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
     cmpt_dur = float(event["dur"])
     utilization = abs(ideal_dur/cmpt_dur) if not isclose(cmpt_dur, 0.0, abs_tol=1e-9) else 0.0
 
-    if utilization > 1.0:
-        utilization = 0.0
+    detected_category = context.accumulate_categories(
+            pid,
+            kernel_name,
+            ideal_dur,
+            cmpt_dur,
+            job_fingerprint)
 
+    # prevent overwriting "cat" field in case events already have one
     if "cat" in event:
-        event["args"]["user_cat"] = context.accumulate_categories(
-            pid,
-            kernel_name,
-            ideal_dur,
-            cmpt_dur,
-            job_fingerprint)
+        event["args"]["user_cat"] = detected_category
     else:
-        event["cat"] = context.accumulate_categories(
-            pid,
-            kernel_name,
-            ideal_dur,
-            cmpt_dur,
-            job_fingerprint)
+        event["cat"] = detected_category
 
     util_counter = context.make_utilization_event(event, utilization*100.0, jobhash)
 
     if utilization > 0.0:
-        # TODO: this only creates meaningful info if autopilot is off. Consider moving to where that info is available
+        # note: with autopilot on, the utilization is computed asynchronously.
+        # In that case, this value could be unreliable
         event["args"]["pt_active"] = utilization
         event["args"]["core used"] = True
 
