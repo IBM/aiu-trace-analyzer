@@ -520,7 +520,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
 class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool):
     _name_converter = re.compile(r"\[N\]")
-    _total_cycles_kernel_name = "Total Cmpt Exec"
+    _total_cycles_kernel_name = "Total"
     """
     Create a warning about uncertain table matching
     if similarity of a job fingerprint and 2 tables differs by less than this tolerance
@@ -600,12 +600,13 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         for _, ctx in self.rcuctx.items():
             ctx.enable()
 
-    def extract_kernel_from_event_name(self, event: TraceEvent, autopilot: bool) -> str:
+    def extract_kernel_from_event_name(self, event: TraceEvent) -> str:
         rname = event["name"]
+        rank = event["pid"] * self.rank_factor
+        autopilot = self.rcuctx[rank].autopilot
 
         if autopilot:
             rname = self._total_cycles_kernel_name
-            return rname
 
         # if a fn_idx was removed from the event name, we have to bring it back in to match the ideal cycles table entry
         if "[N]" in rname and "args" in event and "fn_idx" in event["args"]:
@@ -667,14 +668,14 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             self.last_event_utilization_percent = utilization
 
         # Add the non-zero utilization event
-        revents = [{
+        revents.append({
                 "ph": "C",
                 "ts": event["ts"] if (self.next_event_ts == 0.0) else self.next_event_ts,
                 "pid": event["pid"],
                 "name": RCU_pt_util_counter_name,
                 "args": {RCU_pt_util_counter_unit: utilization},
                 "dur": event["dur"]  # temporary duration in cycles- remove before viz
-            }]
+            })
 
         # Add a reset-to-zero event only if the utilization is non-zero and if there is no event overlap
         if utilization > 0.0 and (not self.event_overlap):
@@ -742,10 +743,7 @@ def compute_utilization_fingerprints(event: TraceEvent, context: AbstractContext
     assert isinstance(context, MultiRCUUtilizationContext)
 
     if PipelineContextTool.is_acc_event(event) and PipelineContextTool.is_acc_kernel(event):
-        pid = event["pid"]
-        rank = pid * context.rank_factor
-        autopilot = context.rcuctx[rank].autopilot
-        kernel_name = context.extract_kernel_from_event_name(event, autopilot)
+        kernel_name = context.extract_kernel_from_event_name(event)
 
         context.fingerprint_add(context.generate_fprint_jobhash(event), kernel_name, event["dur"])
     return [event]
@@ -761,9 +759,7 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
         return [event]
 
     pid = event["pid"]
-    rank = pid * context.rank_factor
-    autopilot = context.rcuctx[rank].autopilot
-    kernel_name = context.extract_kernel_from_event_name(event, autopilot)
+    kernel_name = context.extract_kernel_from_event_name(event)
 
     try:
         jobhash = context.generate_fprint_jobhash(event)
