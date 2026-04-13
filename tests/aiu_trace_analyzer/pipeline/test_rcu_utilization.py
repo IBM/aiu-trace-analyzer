@@ -22,7 +22,7 @@ def logfile():
 # setup the context class instance with a table as a fixture
 @pytest.fixture
 def rcu(logfile: str, tmp_path):
-    return RCUUtilizationContext(compiler_log=logfile,
+    return RCUUtilizationContext(compiler_info=logfile,
                                  csv_fname=f'{tmp_path}/test_output.json',
                                  soc_freq=1000,
                                  core_freq=800)
@@ -31,7 +31,7 @@ def rcu(logfile: str, tmp_path):
 # setup a context class instance without table as a fixture
 @pytest.fixture
 def rcu_without_table(tmp_path):
-    return RCUUtilizationContext(compiler_log=None,
+    return RCUUtilizationContext(compiler_info=None,
                                  soc_freq=1000,
                                  core_freq=800,
                                  csv_fname=f'{tmp_path}/test_output.json')
@@ -39,7 +39,7 @@ def rcu_without_table(tmp_path):
 
 @pytest.fixture
 def multircu_single(logfile: str, tmp_path):
-    return MultiRCUUtilizationContext(compiler_info=logfile,
+    return MultiRCUUtilizationContext(compiler_infos=logfile,
                                       csv_fname=f'{tmp_path}/test_output.json',
                                       soc_freq=1000,
                                       core_freq=800)
