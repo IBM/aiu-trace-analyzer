@@ -243,7 +243,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 # Workload is running on the Torch Spyre stack
                 self.extract_tables_from_inductor_dir(compiler_info)
         except Exception as e:
-                aiulog.log(aiulog.ERROR, "UTL: Unable to read open/parse compiler info file.", compiler_info, e)
+            aiulog.log(aiulog.ERROR, "UTL: Unable to read open/parse compiler info file.", compiler_info, e)
 
         for _, t in self.kernel_cycles.items():
             self.autopilot_detail = AutopilotDetail(t)
