@@ -233,9 +233,9 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
         self.initialize_tables()
 
-        if os.path.isfile(compiler_info):                                                                                     
-            # Workload is running on current stack                                                                              
-            try:        
+        if os.path.isfile(compiler_info):
+            # Workload is running on current stack
+            try:
                 subdir, fpat = '/'.join(compiler_info.split('/')[:-1]), compiler_info.split('/')[-1]
                 compiler_log_name = list(pathlib.Path(subdir).rglob(fpat))[0]
                 self.extract_tables(compiler_log=compiler_log_name)
@@ -249,7 +249,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 aiulog.log(aiulog.ERROR, "UTL: Unable to read open/parse compiler info file.", compiler_info, e)
         else:
             raise ValueError(f"{compiler_info} Unrecognized compiler info file type. Expecting file or directory.")
-        
+
         for _, t in self.kernel_cycles.items():
             self.autopilot_detail = AutopilotDetail(t)
             self.table_hash = self.autopilot_detail.table_hash()
