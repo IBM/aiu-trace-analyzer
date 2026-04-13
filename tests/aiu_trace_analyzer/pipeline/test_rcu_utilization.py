@@ -39,7 +39,7 @@ def rcu_without_table(tmp_path):
 
 @pytest.fixture
 def multircu_single(logfile: str, tmp_path):
-    return MultiRCUUtilizationContext(compiler_infos=logfile,
+    return MultiRCUUtilizationContext(compiler_info=logfile,
                                       csv_fname=f'{tmp_path}/test_output.json',
                                       soc_freq=1000,
                                       core_freq=800)

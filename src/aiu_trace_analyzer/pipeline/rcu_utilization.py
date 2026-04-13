@@ -570,7 +570,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             csv_fname: str,
             soc_freq: float,
             core_freq: float,
-            compiler_infos: str = None) -> None:
+            compiler_info: str = None) -> None:
 
         super().__init__(warnings=[
             # count the number of events with >100% utilization (indication of table mismatch)
@@ -596,7 +596,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             )
         ])
 
-        log_list = compiler_infos.split(",")
+        log_list = compiler_info.split(",")
         self.multi_log = (len(log_list) > 1)
         self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job/file
         if self.multi_log:
