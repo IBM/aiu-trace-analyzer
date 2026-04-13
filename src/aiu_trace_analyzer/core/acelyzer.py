@@ -627,7 +627,7 @@ class Acelyzer:
                 csv_fname=args.output,
                 soc_freq=self.freq_soc,
                 core_freq=self.freq_core,
-                compiler_info=args.compiler_info)
+                compiler_infos=args.compiler_info)
             process.register_stage(callback=event_pipe.compute_utilization_fingerprints, context=rcu_util_ctx)
 
         ##############################################################

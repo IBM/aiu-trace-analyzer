@@ -202,8 +202,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             csv_fname: str,
             soc_freq: float,
             core_freq: float,
-            compiler_log: str = None,
-            inductor_spyre_dir: str = None,
+            compiler_info: str = None,
             kernel_db_url: str = "ai_kernel.db") -> None:
 
         super().__init__(warnings=[
@@ -233,18 +232,22 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         aiulog.log(aiulog.DEBUG, "UTL: Input Ideal Cycle To Clock factor", self.cycle_to_clock_factor)
 
         self.initialize_tables()
-        if compiler_log is not None and inductor_spyre_dir is None:
+
+        if os.path.isfile(compiler_info):
+            # Workload is running on current stack
             try:
-                subdir, fpat = '/'.join(compiler_log.split('/')[:-1]), compiler_log.split('/')[-1]
+                subdir, fpat = '/'.join(compiler_info.split('/')[:-1]), compiler_info.split('/')[-1]
                 compiler_log_name = list(pathlib.Path(subdir).rglob(fpat))[0]
                 self.extract_tables(compiler_log=compiler_log_name)
             except Exception as e:
-                aiulog.log(aiulog.ERROR, "UTL: Unable to open/parse log file.", compiler_log, e)
-        elif compiler_log is None and inductor_spyre_dir is not None:
+                aiulog.log(aiulog.ERROR, "UTL: Unable to open/parse log file.", compiler_info, e)
+
+        elif os.path.isdir(compiler_info):
+            # Workload is running on the Torch Spyre stack
             try:
-                self.extract_tables_from_inductor_dir(inductor_spyre_dir)
+                self.extract_tables_from_inductor_dir(compiler_info)
             except Exception as e:
-                aiulog.log(aiulog.ERROR, "UTL: Unable to read inductor perf JSON files.", inductor_spyre_dir, e)
+                aiulog.log(aiulog.ERROR, "UTL: Unable to read inductor perf JSON files.", compiler_info, e)
 
         for _, t in self.kernel_cycles.items():
             self.autopilot_detail = AutopilotDetail(t)
@@ -571,7 +574,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             csv_fname: str,
             soc_freq: float,
             core_freq: float,
-            compiler_info: str = None) -> None:
+            compiler_infos: str = None) -> None:
 
         super().__init__(warnings=[
             # count the number of events with >100% utilization (indication of table mismatch)
@@ -596,56 +599,29 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                 update_fn={"count": int.__add__, "joblist": set.union}
             )
         ])
+        
+        log_list = compiler_infos.split(",")
+        self.multi_log = (len(log_list) > 1)
+        self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job/file
+        if self.multi_log:
+            aiulog.log(aiulog.INFO, "UTL: Multi-AIU logs provided. Entries:", len(log_list))
 
-        if os.path.isfile(compiler_info):
-            # Workload is running on current stack
-            log_list = compiler_info.split(",")
-            self.multi_log = (len(log_list) > 1)
-            self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job/file
+        # event rank will be multiplied by this factor to make the key for the correct rcuctx
+        # in single-log case: will turn everything into zero, otherwise use event rank
+        self.rank_factor = 1 if self.multi_log else 0
+
+        self.rcuctx: dict[int, RCUUtilizationContext] = {}
+        for rank, log in enumerate(log_list):
+            aiulog.log(aiulog.DEBUG, "UTL: Building kernel table for", rank)
             if self.multi_log:
-                aiulog.log(aiulog.INFO, "UTL: Multi-AIU logs provided. Entries:", len(log_list))
-
-            # event rank will be multiplied by this factor to make the key for the correct rcuctx
-            # in single-log case: will turn everything into zero, otherwise use event rank
-            self.rank_factor = 1 if self.multi_log else 0
-
-            self.rcuctx: dict[int, RCUUtilizationContext] = {}
-            for rank, log in enumerate(log_list):
-                aiulog.log(aiulog.DEBUG, "UTL: Building kernel table for", rank)
-                if self.multi_log:
-                    csv_basename = csv_fname + str(rank)
-                else:
-                    csv_basename = csv_fname
-                self.rcuctx[rank] = RCUUtilizationContext(
-                    csv_fname=csv_basename,
-                    soc_freq=soc_freq,
-                    core_freq=core_freq,
-                    compiler_log=log)
-
-        elif os.path.isdir(compiler_info):
-            # Workload is running on the Torch Spyre stack
-            log_list = compiler_info.split(",")
-            self.multi_log = (len(log_list) > 1)
-            self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job/file
-            if self.multi_log:
-                aiulog.log(aiulog.INFO, "UTL: Multi-AIU logs provided. Entries:", len(log_list))
-
-            # event rank will be multiplied by this factor to make the key for the correct rcuctx
-            # in single-log case: will turn everything into zero, otherwise use event rank
-            self.rank_factor = 1 if self.multi_log else 0
-
-            self.rcuctx: dict[int, RCUUtilizationContext] = {}
-            for rank, log in enumerate(log_list):
-                aiulog.log(aiulog.DEBUG, "UTL: Building kernel table for", rank)
-                if self.multi_log:
-                    csv_basename = csv_fname + str(rank)
-                else:
-                    csv_basename = csv_fname
-                self.rcuctx[rank] = RCUUtilizationContext(
-                    csv_fname=csv_basename,
-                    soc_freq=soc_freq,
-                    core_freq=core_freq,
-                    inductor_spyre_dir=log)
+                csv_basename = csv_fname + str(rank)
+            else:
+                csv_basename = csv_fname
+            self.rcuctx[rank] = RCUUtilizationContext(
+                csv_fname=csv_basename,
+                soc_freq=soc_freq,
+                core_freq=core_freq,
+                compiler_info=log)
 
     def enable(self) -> bool:
         for _, ctx in self.rcuctx.items():
