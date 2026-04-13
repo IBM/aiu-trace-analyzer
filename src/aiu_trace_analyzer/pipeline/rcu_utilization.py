@@ -230,7 +230,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         aiulog.log(aiulog.DEBUG, "UTL: Input Ideal Cycle To Clock factor", self.cycle_to_clock_factor)
 
         self.initialize_tables()
-        
+
         try:
             if os.path.isfile(compiler_info):
                 # Workload is running on current stack
