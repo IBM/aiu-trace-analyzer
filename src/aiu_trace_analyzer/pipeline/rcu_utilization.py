@@ -233,18 +233,23 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
         self.initialize_tables()
 
-        try:
-            if os.path.isfile(compiler_info):
-                # Workload is running on current stack
+        if os.path.isfile(compiler_info):                                                                                     
+            # Workload is running on current stack                                                                              
+            try:        
                 subdir, fpat = '/'.join(compiler_info.split('/')[:-1]), compiler_info.split('/')[-1]
                 compiler_log_name = list(pathlib.Path(subdir).rglob(fpat))[0]
                 self.extract_tables(compiler_log=compiler_log_name)
-            elif os.path.isdir(compiler_info):
-                # Workload is running on the Torch Spyre stack
+            except Exception as e:
+                aiulog.log(aiulog.ERROR, "UTL: Unable to read open/parse compiler info file.", compiler_info, e)
+        elif os.path.isdir(compiler_info):
+            # Workload is running on the Torch Spyre stack
+            try:
                 self.extract_tables_from_inductor_dir(compiler_info)
-        except Exception as e:
-            aiulog.log(aiulog.ERROR, "UTL: Unable to read open/parse compiler info file.", compiler_info, e)
-
+            except Exception as e:
+                aiulog.log(aiulog.ERROR, "UTL: Unable to read open/parse compiler info file.", compiler_info, e)
+        else:
+            raise ValueError(f"{compiler_info} Unrecognized compiler info file type. Expecting file or directory.")
+        
         for _, t in self.kernel_cycles.items():
             self.autopilot_detail = AutopilotDetail(t)
             self.table_hash = self.autopilot_detail.table_hash()
