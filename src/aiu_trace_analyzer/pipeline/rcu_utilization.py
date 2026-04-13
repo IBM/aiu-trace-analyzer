@@ -233,21 +233,17 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
         self.initialize_tables()
 
-        if os.path.isfile(compiler_info):
-            # Workload is running on current stack
-            try:
+        try:
+            if os.path.isfile(compiler_info):
+                # Workload is running on current stack
                 subdir, fpat = '/'.join(compiler_info.split('/')[:-1]), compiler_info.split('/')[-1]
                 compiler_log_name = list(pathlib.Path(subdir).rglob(fpat))[0]
                 self.extract_tables(compiler_log=compiler_log_name)
-            except Exception as e:
-                aiulog.log(aiulog.ERROR, "UTL: Unable to open/parse log file.", compiler_info, e)
-
-        elif os.path.isdir(compiler_info):
-            # Workload is running on the Torch Spyre stack
-            try:
+            elif os.path.isdir(compiler_info):
+                # Workload is running on the Torch Spyre stack
                 self.extract_tables_from_inductor_dir(compiler_info)
-            except Exception as e:
-                aiulog.log(aiulog.ERROR, "UTL: Unable to read inductor perf JSON files.", compiler_info, e)
+        except Exception as e:
+                aiulog.log(aiulog.ERROR, "UTL: Unable to read open/parse compiler info file.", compiler_info, e)
 
         for _, t in self.kernel_cycles.items():
             self.autopilot_detail = AutopilotDetail(t)
