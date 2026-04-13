@@ -599,7 +599,7 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                 update_fn={"count": int.__add__, "joblist": set.union}
             )
         ])
-        
+
         log_list = compiler_infos.split(",")
         self.multi_log = (len(log_list) > 1)
         self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job/file
