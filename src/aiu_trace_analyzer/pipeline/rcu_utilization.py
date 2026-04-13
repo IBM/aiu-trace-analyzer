@@ -230,8 +230,10 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         aiulog.log(aiulog.DEBUG, "UTL: Input Ideal Cycle To Clock factor", self.cycle_to_clock_factor)
 
         self.initialize_tables()
-
-        if os.path.isfile(compiler_info):
+        
+        if compiler_info is None:                                                                                               
+            pass                                                                                                                
+        elif os.path.isfile(compiler_info):
             # Workload is running on current stack
             try:
                 subdir, fpat = '/'.join(compiler_info.split('/')[:-1]), compiler_info.split('/')[-1]
