@@ -193,8 +193,6 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
     _category_splitter = re.compile(r'(\-opCat|\-NA$)')
     _autopilot_pattern = re.compile(r'DSM-AutoPilot BEGIN')
     _iteration_mode_pattern = re.compile(r'^\s+(DECODING|PREFILL)\s+$')
-    _non_kernel_names = ["Total"]
-
     _print_to_log = False
 
     def __init__(
@@ -358,10 +356,9 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                                 dict[str, int],
                                 RCUTableFingerprint]:
 
-        # drop out if autopilot=1 is detected
         if self._autopilot_pattern.search(line):
             self.autopilot = True
-            return False, parse_mode, current_table, fprint
+            return True, parse_mode, current_table, fprint
 
         if self._clock_scaling.search(line):
             aiulog.log(aiulog.WARN,
@@ -409,10 +406,6 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         cycles = int(ldata[1])
         kernel_and_cat = self._category_splitter.split(ldata[0])
 
-        # Skip anything that's not a kernel name
-        if kernel_and_cat[0] in self._non_kernel_names:
-            return True, parse_mode, current_table, fprint
-
         fprint = self._add_kernel(kernel_and_cat, cycles, current_table, fprint)
         return True, parse_mode, current_table, fprint
 
@@ -423,6 +416,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         current_table = {}
         fprint = None  # fingerprints created when a new table is detected
         with open(compiler_log, 'r') as cl:
+
             for line in cl:
                 (
                     keep_parsing,
@@ -563,7 +557,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
 class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool):
     _name_converter = re.compile(r"\[N\]")
-
+    _total_cycles_kernel_name = "Total"
     """
     Create a warning about uncertain table matching
     if similarity of a job fingerprint and 2 tables differs by less than this tolerance
@@ -611,6 +605,21 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         # in single-log case: will turn everything into zero, otherwise use event rank
         self.rank_factor = 1 if self.multi_log else 0
 
+        # Start Timestamp of the Last Zero Utilization Event
+        self.last_zero_event_ts = 0.0
+
+        # Event PID of the Last Zero Utilization Event
+        self.last_zero_event_pid = 0
+
+        # Next Event Start Timestamp
+        self.next_event_ts = 0.0
+
+        # Event overlap Status
+        self.event_overlap = False
+
+        # Utilization Percentage of the previous event
+        self.last_event_utilization_percent = 0.0
+
         self.rcuctx: dict[int, RCUUtilizationContext] = {}
         for rank, log in enumerate(log_list):
             aiulog.log(aiulog.DEBUG, "UTL: Building kernel table for", rank)
@@ -630,6 +639,11 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
 
     def extract_kernel_from_event_name(self, event: TraceEvent) -> str:
         rname = event["name"]
+        rank = event["pid"] * self.rank_factor
+        autopilot = self.rcuctx[rank].autopilot
+
+        if autopilot:
+            rname = self._total_cycles_kernel_name
 
         # if a fn_idx was removed from the event name, we have to bring it back in to match the ideal cycles table entry
         if "[N]" in rname and "args" in event and "fn_idx" in event["args"]:
@@ -657,17 +671,51 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
     def fingerprint_get(self, job: int) -> int:
         return self.fingerprints[job].get()
 
-    # build a counter and a zero event
+    # Build a counter and a zero event if there is no event overlap
     def make_utilization_event(self, event: TraceEvent, utilization: float) -> list[TraceEvent]:
-        revents = [{
+        self.event_overlap = False
+        revents = []
+
+        if isclose(self.last_zero_event_ts, 0.0, abs_tol=1e-9):
+            self.next_event_ts = 0.0
+            self.last_zero_event_ts = event["ts"] + event["dur"]
+            self.last_event_utilization_percent = utilization
+
+        # Check for event overlap
+        elif event["ts"] < self.last_zero_event_ts:
+            revents.append({
                 "ph": "C",
                 "ts": event["ts"],
                 "pid": event["pid"],
                 "name": RCU_pt_util_counter_name,
+                "args": {RCU_pt_util_counter_unit:
+                         self.last_event_utilization_percent
+                         if (self.last_event_utilization_percent > utilization) else utilization},
+                "dur": self.last_zero_event_ts - event["ts"]
+            })
+
+            self.next_event_ts = self.last_zero_event_ts
+            self.last_zero_event_ts = event["ts"] + event["dur"]
+            self.last_zero_event_pid = event["pid"]
+            self.event_overlap = True
+            self.last_event_utilization_percent = utilization
+
+        else:
+            self.next_event_ts = 0.0
+            self.last_event_utilization_percent = utilization
+
+        # Add the non-zero utilization event
+        revents.append({
+                "ph": "C",
+                "ts": event["ts"] if (self.next_event_ts == 0.0) else self.next_event_ts,
+                "pid": event["pid"],
+                "name": RCU_pt_util_counter_name,
                 "args": {RCU_pt_util_counter_unit: utilization},
                 "dur": event["dur"]  # temporary duration in cycles- remove before viz
-            }]
-        if utilization > 0.0:   # add a reset-to-zero event only if util is non-zero
+            })
+
+        # Add a reset-to-zero event only if the utilization is non-zero and if there is no event overlap
+        if utilization > 0.0 and (not self.event_overlap):
             revents.append({
                 "ph": "C",
                 "ts": event["ts"]+event["dur"],
@@ -704,7 +752,19 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
     def drain(self) -> list[TraceEvent]:
         # run fingerprint-similarity check for all jobs
         self.update_fprint_matches()
-        return super().drain()
+
+        revents = super().drain()
+
+        # Add the last reset-to-zero event
+        if self.last_zero_event_ts > 0.0:
+            revents.append({
+                "ph": "C",
+                "ts": self.last_zero_event_ts,
+                "pid": self.last_zero_event_pid,
+                "name": RCU_pt_util_counter_name,
+                "args": {RCU_pt_util_counter_unit: 0.0}
+                })
+        return revents
 
     def generate_fprint_jobhash(self, event: TraceEvent) -> int:
         jobhash = event["args"]["jobhash"]

@@ -1,0 +1,2 @@
+@Library('sonarqube-lib') _
+multiBranchSonarQubeScan()
