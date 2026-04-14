@@ -253,10 +253,13 @@ class Acelyzer:
                             help="Space-separated list of counters to extract/display."
                             " Note: power_ts4 and power_ts3 are mutually exclusive.")
 
-        parser.add_argument("-c", "--compiler_log", type=str, default=None,
-                            help="(Comma-separated list of per-rank) Path/Filename of compiler log to ingest"
-                            " compile-time data references. Required e.g. for rcu_util counters."
-                            " Multi-AIU rank outputs need to be sorted by rank.")
+        parser.add_argument("-c", "--compiler_info", type=str, default=None,
+                            help="For existing AIU stack: (Comma-separated list of per-rank)"
+                            " Path/Filename of compiler log to ingest compile-time data references."
+                            " Required e.g. for rcu_util counters."
+                            " Multi-AIU rank outputs need to be sorted by rank."
+                            " For torch-spyre stack: Path to the inductor_spyre directory containing "
+                            " inductor_spyre/<kernel_name>/perf/ideal_cycles.json files.")
 
         parser.add_argument("-D", "--loglevel", type=int, default=self.defaults["loglevel"],
                             choices=range(0, 5), help="Logging level 0(ERROR)..4(TRACE)")
@@ -446,9 +449,12 @@ class Acelyzer:
             aiulog.log(aiulog.ERROR, "power_ts3 and power_ts4 are mutually exclusive")
             return False
 
-        if "rcu_util" in args.counter and args.compiler_log is None:
-            aiulog.log(aiulog.WARN, "rcu_util counter requested but no compiler log provided."
-                       " No utilization will be plotted.")
+        if "rcu_util" in args.counter:
+            if args.compiler_info is None:
+                aiulog.log(aiulog.WARN, "rcu_util counter requested but no compiler log/inductor spyre"
+                                        " directory path provided. No utilization will be plotted.")
+            elif not os.path.exists(args.compiler_info):
+                aiulog.log(aiulog.WARN, "Invalid directory path provided. No utilization will be plotted.")
 
         return True
 
@@ -614,12 +620,14 @@ class Acelyzer:
             data_transfer_compute_ctx = event_pipe.DataTransferExtractionContext()
             process.register_stage(callback=event_pipe.compute_bandwidth, context=data_transfer_compute_ctx)
 
-        if any(args.counter) and "rcu_util" in args.counter and args.compiler_log:
+        ##############################################################
+        # RCU Util calculation
+        if any(args.counter) and "rcu_util" in args.counter and args.compiler_info:
             rcu_util_ctx = event_pipe.MultiRCUUtilizationContext(
-                compiler_log=args.compiler_log,
                 csv_fname=args.output,
                 soc_freq=self.freq_soc,
-                core_freq=self.freq_core)
+                core_freq=self.freq_core,
+                compiler_info=args.compiler_info)
             process.register_stage(callback=event_pipe.compute_utilization_fingerprints, context=rcu_util_ctx)
 
         ##############################################################
@@ -635,7 +643,7 @@ class Acelyzer:
         if args.comm_summarize_seq:
             process.register_stage(callback=event_pipe.communication_event_apply, context=communication_event_ctx)
 
-        if any(args.counter) and "rcu_util" in args.counter and args.compiler_log:
+        if any(args.counter) and "rcu_util" in args.counter and args.compiler_info:
             process.register_stage(callback=event_pipe.compute_utilization, context=rcu_util_ctx)
 
         # register callback to to the power counter sorting

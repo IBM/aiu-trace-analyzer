@@ -49,6 +49,14 @@ The `-c` argument provides the tool with the log file which is being processed f
 acelyzer -i "${TRACE_DIR}/hap-json-files/hap-bs8-seq256-autopilot-0-34707-job-*.json" -c ${TRACE_GIT}/hap-json-files/hap-bs8-seq256-autopilot-0.log -o hap_trace.json
 ```
 
+*NOTE*
+For getting the utilization in the torch spyre stack, you should specify the path to the inductor cache directory after `-c`. By default, this path is `/tmp/torchinductor_<sanitized_username>`. For e.g., if the sanitized username is xyz, you need to run:
+```
+acelyzer -i <Path to trace file json> -c /tmp/torchinductor_xyz
+```
+In case, you used a different cache dir path by setting TORCHINDUCTOR_CACHE_DIR environment variable for your workload, you need to specify the same path after `-c`.
+
+
 An evolving feature is the use of processing profiles (option `-P`) to allow control which processing stages are enabled. By default, the `everything.json` profile (or `default.json`) is used. Note that the cmdline still overrides the deactivation of stages so that if a stage is not requested via cmdline, its activation in the profile has no effect. When creating a profile, it's currently necessary to start from the everything-profile and set unwanted stages to `false`. If the provided profile file is not found at the given path, the tool will lookup a file with that name at the location of the other predefined profiles (`<install_or_src_path>/src/aiu_trace_analyzer/profiles`).
 
 
