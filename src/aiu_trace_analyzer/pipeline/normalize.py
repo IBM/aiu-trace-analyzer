@@ -253,7 +253,7 @@ class NormalizationContext(AbstractHashQueueContext):
             job_drift = int(epoch_start
                             - (self.queues[qid]["0"][0] + elapsed_epochs * self.OVERFLOW_TIME_SPAN_US))
             actual_freq = (abs_cycle - self.queues[qid]["0"][2]) / (ts - self.queues[qid]["0"][1]) \
-                if ts != self.queues[qid]["0"][1] else None
+                if not math.isclose(ts, self.queues[qid]["0"][1], abs_tol=1e-9) else None
             self.queues[qid][job] = (epoch_start, ts, cycle)
             aiulog.log(aiulog.DEBUG, "OVC: Next job reference Epoch", qid, job, epoch_start, job_drift, actual_freq)
             mi, ma, cnt, mean, madr = self.frequency_minmax
