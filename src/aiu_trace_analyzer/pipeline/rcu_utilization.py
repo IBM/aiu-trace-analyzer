@@ -345,15 +345,19 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             if os.path.isfile(compiler_info):
                 # Workload is running on current stack
                 subdir, fpat = '/'.join(compiler_info.split('/')[:-1]), compiler_info.split('/')[-1]
-                compiler_log_name = list(pathlib.Path(subdir).rglob(fpat))[0]
-                self.extract_tables(compiler_log=compiler_log_name)
+                matches = list(pathlib.Path(subdir).rglob(fpat))
+                if not matches:
+                    raise FileNotFoundError(f"No files matching pattern: {fpat}")
+                self.extract_tables(compiler_log=matches[0])
             elif os.path.isdir(compiler_info):
                 # Workload is running on the Torch Spyre stack
                 self.extract_tables_from_inductor_dir(compiler_info)
             else:
                 raise ValueError(f"{compiler_info} Unrecognized compiler info file type. Expecting file or directory.")
-        except Exception as e:
-            aiulog.log(aiulog.ERROR, "UTL: Unable to read open/parse compiler info file.", compiler_info, e)
+        except (FileNotFoundError, PermissionError, IndexError) as e:
+            aiulog.log(aiulog.ERROR, "UTL: Unable to open/parse log file.", compiler_info, e)
+        except ValueError as e:
+            aiulog.log(aiulog.ERROR, e)
 
         for _, t in self.kernel_cycles.items():
             self.autopilot_detail = AutopilotDetail(t)
