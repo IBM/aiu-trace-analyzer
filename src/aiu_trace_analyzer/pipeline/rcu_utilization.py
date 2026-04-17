@@ -124,7 +124,10 @@ class RCUTableFingerprint():
                 f"0.0  <- ({other.totaltime} / {self.totaltime} = {other.totaltime / self.totaltime})")
             return 0.0
 
-        # TODO: Add check for self.totaltime != 0
+        # total-time similarity
+        if isclose(self.totaltime, 0.0, abs_tol=1e-9):
+            zero_match_factor = int(isclose(other.totaltime, 0.0, abs_tol=1e-9)) * 1.0
+            sim_val += self.sim_weights["total_time"] * zero_match_factor
         sim_val += self.sim_weights["total_time"] * (other.totaltime / self.totaltime)
         aiulog.log(
             aiulog.DEBUG, "   SIMVAL(totaltim):",
