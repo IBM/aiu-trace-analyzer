@@ -35,6 +35,9 @@ _table_data_limit = 500
 # keep disabled until db-lookup feature is implemented
 _kernel_db_feature_implemented = False
 
+# kernel event name postfix
+_kernel_event_name_postfix = " Cmpt Exec"
+
 
 class RCUTableFingerprint():
     _separator = '_'
@@ -43,7 +46,7 @@ class RCUTableFingerprint():
             self,
             datalimit: int = -1,
             event_filter: str = r'',
-            table_mode: str = "UNKN"):
+            table_mode: str = "UNKN") -> None:
         self.datalimit = datalimit if datalimit > 0 else 1 << 31   # yes, it's not really unlimited...
         self.event_filter = re.compile(event_filter)
         self.table_mode = table_mode
@@ -57,7 +60,7 @@ class RCUTableFingerprint():
     def get(self) -> int:
         return self.hash
 
-    def get_table_mode(self) -> int:
+    def get_table_mode(self) -> str:
         return self.table_mode
 
     def add(self, data: str, time: float) -> None:
@@ -124,7 +127,10 @@ class RCUTableFingerprint():
                 f"0.0  <- ({other.totaltime} / {self.totaltime} = {other.totaltime / self.totaltime})")
             return 0.0
 
-        # TODO: Add check for self.totaltime != 0
+        # total-time similarity
+        if isclose(self.totaltime, 0.0, abs_tol=1e-9):
+            zero_match_factor = int(isclose(other.totaltime, 0.0, abs_tol=1e-9)) * 1.0
+            sim_val += self.sim_weights["total_time"] * zero_match_factor
         sim_val += self.sim_weights["total_time"] * (other.totaltime / self.totaltime)
         aiulog.log(
             aiulog.DEBUG, "   SIMVAL(totaltim):",
@@ -133,7 +139,7 @@ class RCUTableFingerprint():
 
 
 class RCUKernelCategoryMap():
-    def __init__(self):
+    def __init__(self) -> None:
         self.kernel_cat_map: dict[str, str] = {"other": "other"}
 
     def __getitem__(self, key: str) -> str:
@@ -345,15 +351,19 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             if os.path.isfile(compiler_info):
                 # Workload is running on current stack
                 subdir, fpat = '/'.join(compiler_info.split('/')[:-1]), compiler_info.split('/')[-1]
-                compiler_log_name = list(pathlib.Path(subdir).rglob(fpat))[0]
-                self.extract_tables(compiler_log=compiler_log_name)
+                matches = list(pathlib.Path(subdir).rglob(fpat))
+                if not matches:
+                    raise FileNotFoundError(f"No files matching pattern: {fpat}")
+                self.extract_tables(compiler_log=matches[0])
             elif os.path.isdir(compiler_info):
                 # Workload is running on the Torch Spyre stack
                 self.extract_tables_from_inductor_dir(compiler_info)
             else:
                 raise ValueError(f"{compiler_info} Unrecognized compiler info file type. Expecting file or directory.")
-        except Exception as e:
-            aiulog.log(aiulog.ERROR, "UTL: Unable to read open/parse compiler info file.", compiler_info, e)
+        except (FileNotFoundError, PermissionError, IndexError, TypeError) as e:
+            aiulog.log(aiulog.ERROR, "UTL: Unable to open/parse log file.", compiler_info, e)
+        except ValueError as e:
+            aiulog.log(aiulog.ERROR, e)
 
         for _, t in self.kernel_cycles.items():
             self.autopilot_detail = AutopilotDetail(t)
@@ -433,7 +443,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                     current_table: dict[str, int],
                     fprint: RCUTableFingerprint) -> RCUTableFingerprint:
         category = self._handle_category(kernel_and_cat)
-        kernel = kernel_and_cat[0]+" Cmpt Exec"
+        kernel = kernel_and_cat[0] + _kernel_event_name_postfix
         fprint.add(kernel, cycles * self.cycle_to_clock_factor)
 
         if kernel not in current_table:
@@ -453,6 +463,46 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                        kernel, category, self.kernel_cat_map[0][kernel])
         return fprint
 
+    def _detect_autopilot_line(self, line: str) -> bool:
+        if self._autopilot_pattern.search(line):
+            if not self.autopilot:
+                aiulog.log(
+                    aiulog.WARN, "UTL: Detected autopilot=on. Event categorization, cycles table matching"
+                    " and other utilization-related data might be unreliable.")
+            self.autopilot = True
+            return True
+        return False
+
+    def _check_obsolete_items(self, line: str) -> bool:
+        if self._clock_scaling.search(line):
+            aiulog.log(aiulog.WARN,
+                       "UTL: Found obsolete 'Ideal Cycle Scaling' setting in logfile."
+                       " This setting is ignored. Use '--freq=<soc>:<core>'.")
+            return True
+        return False
+
+    def _handle_iteration_mode(
+            self,
+            iter_mode: re.Match,
+            parse_mode: RCUTableParseMode) -> RCUTableParseMode:
+        iteration_phase = iter_mode.group(1)
+        parse_mode = parse_mode.update(iteration_phase)
+        aiulog.log(aiulog.DEBUG, "DETECTED:", iteration_phase, "table to be next. Parsemode:", parse_mode)
+        return parse_mode
+
+    def _handle_start_table(
+            self,
+            parse_mode: RCUTableParseMode) -> tuple[
+                RCUTableParseMode,
+                dict[str, int],
+                RCUTableFingerprint]:
+        parse_mode |= RCUTableParseMode.ACTIVE_TABLE
+        current_table, fprint = self._start_init_table(parse_mode.get_phase())
+        aiulog.log(aiulog.DEBUG,
+                   "UTL: Start of Ideal Cycle Count section detected. Parse mode:",
+                   parse_mode, self.multi_table)
+        return parse_mode, current_table, fprint
+
     def _process_table_line(self,
                             line: str,
                             fprint: RCUTableFingerprint,
@@ -464,33 +514,19 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                                 RCUTableFingerprint]:
 
         # detect autopilot on/off
-        if self._autopilot_pattern.search(line):
-            if not self.autopilot:
-                aiulog.log(
-                    aiulog.WARN, "UTL: Detected autopilot=on. Event categorization, cycles table matching"
-                    " and other utilization-related data might be unreliable.")
-            self.autopilot = True
+        if self._detect_autopilot_line(line):
             return True, parse_mode, current_table, fprint
 
-        if self._clock_scaling.search(line):
-            aiulog.log(aiulog.WARN,
-                       "UTL: Found obsolete 'Ideal Cycle Scaling' setting in logfile."
-                       " This setting is ignored. Use '--freq=<soc>:<core>'.")
+        if self._check_obsolete_items(line):
             return True, parse_mode, current_table, fprint
 
         _iter_mode = self._iteration_mode_pattern.search(line)
         if _iter_mode is not None:
-            iteration_phase = _iter_mode.group(1)
-            parse_mode = parse_mode.update(iteration_phase)
-            aiulog.log(aiulog.DEBUG, "DETECTED:", iteration_phase, "table to be next. Parsemode:", parse_mode)
+            parse_mode = self._handle_iteration_mode(_iter_mode, parse_mode)
             return True, parse_mode, current_table, fprint
 
         if self._start_pattern.search(line):
-            parse_mode |= RCUTableParseMode.ACTIVE_TABLE
-            current_table, fprint = self._start_init_table(parse_mode.get_phase())
-            aiulog.log(aiulog.DEBUG,
-                       "UTL: Start of Ideal Cycle Count section detected. Parse mode:",
-                       parse_mode, self.multi_table)
+            parse_mode, current_table, fprint = self._handle_start_table(parse_mode)
             return True, parse_mode, current_table, fprint
 
         # don't bother checking for the end_pattern if we're not even in parse mode
@@ -525,7 +561,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         fprint = self._add_kernel(kernel_and_cat, cycles, current_table, fprint)
         return True, parse_mode, current_table, fprint
 
-    def extract_tables(self, compiler_log: str):
+    def extract_tables(self, compiler_log: pathlib.Path):
 
         parse_mode = RCUTableParseMode(RCUTableParseMode.UNKNOWN)
         self.multi_table = -1  # track if there might be multiple tables in the log
@@ -552,7 +588,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             json_path = kernel_dir / "perf" / "ideal_cycles.json"
             if not json_path.exists():
                 continue
-            kernel_name = kernel_dir.name + " Cmpt Exec"
+            kernel_name = kernel_dir.name + _kernel_event_name_postfix
             with open(json_path) as f:
                 entries = json.load(f)
             for entry in entries:
@@ -811,8 +847,8 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         if "[N]" in rname and "args" in event and "fn_idx" in event["args"]:
             rname = self._name_converter.sub(str(event["args"]["fn_idx"]), event["name"], count=1)
 
-        if not rname.endswith("Cmpt Exec"):
-            rname += " Cmpt Exec"
+        if not rname.endswith(_kernel_event_name_postfix):
+            rname += _kernel_event_name_postfix
 
         return rname
 
@@ -841,7 +877,10 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         rank = event["pid"] * self.rank_factor
 
         if self.rcuctx[rank].autopilot:
-            ideal = self.get_ideal_dur("Total Cmpt Exec", event["pid"], self.fingerprint_get(jobhash))
+            ideal = self.get_ideal_dur(
+                self._total_cycles_kernel_name + _kernel_event_name_postfix,
+                event["pid"],
+                self.fingerprint_get(jobhash))
             self.counters.update(event, ideal, jobhash, rank)
             counters = self.counters.get_completed()
             for counter in counters:

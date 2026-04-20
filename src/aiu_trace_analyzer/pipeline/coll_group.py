@@ -253,7 +253,7 @@ class CollectiveGroupingContext(EventPairDetectionContext):
         # filter the queue for Prep and non-Prep events:
         preps = filter(lambda e: _FLOW_STEP in e and e[_FLOW_STEP] == 0, queue)
         execs = list(filter(lambda e: _FLOW_STEP in e and e[_FLOW_STEP] == 1, queue))
-        regex = re.compile("(.*) [PE][rx][e][pc]$")  # everything except Prep/Exec at the end
+        regex = re.compile("(.*) [PE][rx]e[pc]$")  # everything except Prep/Exec at the end
 
         flow_pairs = []
         remove = []
@@ -385,8 +385,8 @@ class CollectiveGroupingContext(EventPairDetectionContext):
         for event in group_state.queue:
             self.update_rank_first_last_event(event, group_state)
 
-    def build_flows(self, groupID: int) -> list[TraceEvent]:
-        group_state = self.queues.pop(groupID, None)
+    def build_flows(self, group_id: int) -> list[TraceEvent]:
+        group_state = self.queues.pop(group_id, None)
         if not group_state:
             return []
 
@@ -546,8 +546,8 @@ class CollectiveGroupingContext(EventPairDetectionContext):
 
         # from where to where the arrow should go:
         src_event["ts"] = src["ts"]
-        # dst_event["ts"] = round(dst["ts"] + dst["dur"] - 0.0005, 3)
         dst_event["ts"] = dst["ts"] + dst["dur"] - 0.001
+        # alternative with rounding: dst_event["ts"] = round(dst["ts"] + dst["dur"] - 0.0005, 3)
 
         if src_event["ts"] > dst_event["ts"]:
             aiulog.log(aiulog.DEBUG,
@@ -814,10 +814,13 @@ def flow_prepare_event_data(event: TraceEvent, _: AbstractContext) -> list[Trace
         # preserve the type
         if _KEY_TYPE in event["args"]:
             flow_extraction_event[_KEY_TYPE] = _event_type_map[event["args"][_KEY_TYPE]]
+            '''
+            Additional timestamp refinement for SEND types:
             # if flow_extraction_event[_KEY_TYPE] == _TYPE_SEND:
             #     flow_extraction_event["ts"] = flow_extraction_event["args"]["ts_all"][3]
             #     flow_extraction_event["dur"] = flow_extraction_event["args"]["ts_all"][4] \
             #          - flow_extraction_event["args"]["ts_all"][3]
+            '''
         else:
             flow_extraction_event[_KEY_TYPE] = _TYPE_NONE
 
@@ -838,7 +841,7 @@ def flow_prepare_event_data(event: TraceEvent, _: AbstractContext) -> list[Trace
 def flow_data_cleanup(event: TraceEvent, _: AbstractContext) -> list[TraceEvent]:
     if event["ph"] == "F":
         return []
-    # event.pop(_FLOW_SYNC, "")
-    # event.pop(_FLOW_IO, "")
-    # event.pop(_FLOW_STEP, "")
+    event.pop(_FLOW_SYNC, "")
+    event.pop(_FLOW_IO, "")
+    event.pop(_FLOW_STEP, "")
     return [event]

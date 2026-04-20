@@ -383,6 +383,8 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
             during the initial pass through trace events. Tracks first_ts separately for
             each rank to enable proper per-rank timestamp normalization.
         """
+        assert "args" in event, "BUG: Classifier (first pass) detected X-event without 'args'" \
+            " which should have been added by ingestion or previous stages."
         rank = event["args"].get("rank", 0)
         if rank not in self.first_ts_per_rank:
             self.first_ts_per_rank[rank] = event["ts"]
