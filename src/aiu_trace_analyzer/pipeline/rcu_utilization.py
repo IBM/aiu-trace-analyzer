@@ -35,6 +35,9 @@ _table_data_limit = 500
 # keep disabled until db-lookup feature is implemented
 _kernel_db_feature_implemented = False
 
+# kernel event name postfix
+_kernel_event_name_postfix = " Cmpt Exec"
+
 
 class RCUTableFingerprint():
     _separator = '_'
@@ -440,7 +443,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                     current_table: dict[str, int],
                     fprint: RCUTableFingerprint) -> RCUTableFingerprint:
         category = self._handle_category(kernel_and_cat)
-        kernel = kernel_and_cat[0]+" Cmpt Exec"
+        kernel = kernel_and_cat[0] + _kernel_event_name_postfix
         fprint.add(kernel, cycles * self.cycle_to_clock_factor)
 
         if kernel not in current_table:
@@ -585,7 +588,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             json_path = kernel_dir / "perf" / "ideal_cycles.json"
             if not json_path.exists():
                 continue
-            kernel_name = kernel_dir.name + " Cmpt Exec"
+            kernel_name = kernel_dir.name + _kernel_event_name_postfix
             with open(json_path) as f:
                 entries = json.load(f)
             for entry in entries:
@@ -844,8 +847,8 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         if "[N]" in rname and "args" in event and "fn_idx" in event["args"]:
             rname = self._name_converter.sub(str(event["args"]["fn_idx"]), event["name"], count=1)
 
-        if not rname.endswith("Cmpt Exec"):
-            rname += " Cmpt Exec"
+        if not rname.endswith(_kernel_event_name_postfix):
+            rname += _kernel_event_name_postfix
 
         return rname
 
@@ -874,7 +877,10 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         rank = event["pid"] * self.rank_factor
 
         if self.rcuctx[rank].autopilot:
-            ideal = self.get_ideal_dur("Total Cmpt Exec", event["pid"], self.fingerprint_get(jobhash))
+            ideal = self.get_ideal_dur(
+                self._total_cycles_kernel_name + _kernel_event_name_postfix,
+                event["pid"],
+                self.fingerprint_get(jobhash))
             self.counters.update(event, ideal, jobhash, rank)
             counters = self.counters.get_completed()
             for counter in counters:
