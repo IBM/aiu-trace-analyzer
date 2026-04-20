@@ -460,6 +460,46 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                        kernel, category, self.kernel_cat_map[0][kernel])
         return fprint
 
+    def _detect_autopilot_line(self, line: str) -> bool:
+        if self._autopilot_pattern.search(line):
+            if not self.autopilot:
+                aiulog.log(
+                    aiulog.WARN, "UTL: Detected autopilot=on. Event categorization, cycles table matching"
+                    " and other utilization-related data might be unreliable.")
+            self.autopilot = True
+            return True
+        return False
+
+    def _check_obsolete_items(self, line: str) -> bool:
+        if self._clock_scaling.search(line):
+            aiulog.log(aiulog.WARN,
+                       "UTL: Found obsolete 'Ideal Cycle Scaling' setting in logfile."
+                       " This setting is ignored. Use '--freq=<soc>:<core>'.")
+            return True
+        return False
+
+    def _handle_iteration_mode(
+            self,
+            iter_mode: re.Match,
+            parse_mode: RCUTableParseMode) -> RCUTableParseMode:
+        iteration_phase = iter_mode.group(1)
+        parse_mode = parse_mode.update(iteration_phase)
+        aiulog.log(aiulog.DEBUG, "DETECTED:", iteration_phase, "table to be next. Parsemode:", parse_mode)
+        return parse_mode
+
+    def _handle_start_table(
+            self,
+            parse_mode: RCUTableParseMode) -> tuple[
+                RCUTableParseMode,
+                dict[str, int],
+                RCUTableFingerprint]:
+        parse_mode |= RCUTableParseMode.ACTIVE_TABLE
+        current_table, fprint = self._start_init_table(parse_mode.get_phase())
+        aiulog.log(aiulog.DEBUG,
+                   "UTL: Start of Ideal Cycle Count section detected. Parse mode:",
+                   parse_mode, self.multi_table)
+        return parse_mode, current_table, fprint
+
     def _process_table_line(self,
                             line: str,
                             fprint: RCUTableFingerprint,
@@ -471,33 +511,19 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                                 RCUTableFingerprint]:
 
         # detect autopilot on/off
-        if self._autopilot_pattern.search(line):
-            if not self.autopilot:
-                aiulog.log(
-                    aiulog.WARN, "UTL: Detected autopilot=on. Event categorization, cycles table matching"
-                    " and other utilization-related data might be unreliable.")
-            self.autopilot = True
+        if self._detect_autopilot_line(line):
             return True, parse_mode, current_table, fprint
 
-        if self._clock_scaling.search(line):
-            aiulog.log(aiulog.WARN,
-                       "UTL: Found obsolete 'Ideal Cycle Scaling' setting in logfile."
-                       " This setting is ignored. Use '--freq=<soc>:<core>'.")
+        if self._check_obsolete_items(line):
             return True, parse_mode, current_table, fprint
 
         _iter_mode = self._iteration_mode_pattern.search(line)
         if _iter_mode is not None:
-            iteration_phase = _iter_mode.group(1)
-            parse_mode = parse_mode.update(iteration_phase)
-            aiulog.log(aiulog.DEBUG, "DETECTED:", iteration_phase, "table to be next. Parsemode:", parse_mode)
+            parse_mode = self._handle_iteration_mode(_iter_mode, parse_mode)
             return True, parse_mode, current_table, fprint
 
         if self._start_pattern.search(line):
-            parse_mode |= RCUTableParseMode.ACTIVE_TABLE
-            current_table, fprint = self._start_init_table(parse_mode.get_phase())
-            aiulog.log(aiulog.DEBUG,
-                       "UTL: Start of Ideal Cycle Count section detected. Parse mode:",
-                       parse_mode, self.multi_table)
+            parse_mode, current_table, fprint = self._handle_start_table(parse_mode)
             return True, parse_mode, current_table, fprint
 
         # don't bother checking for the end_pattern if we're not even in parse mode
