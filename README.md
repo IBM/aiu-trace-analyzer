@@ -138,8 +138,51 @@ When running `acelyzer`, the progress and basic processing information is printe
 This section explains some of the command line options in more detail.
 
 
-### compiler_log
-This option allows to pass the compiler log output into `acelyzer` and allows for additional data augmentation and PT-Array utilization data. For multi-AIU workloads, one file per process should be provided to avoid intermingled data inside the log. Also it is important that multi-AIU logfiles be provided in the order of the process ranks to properly map each log file to its rank.
+### compiler_info
+This option allows to pass the compiler log output file or directory into `acelyzer` and allows for additional data augmentation and PT-Array utilization data. For multi-AIU workloads, one file per process should be provided to avoid intermingled data inside the log. Also it is important that multi-AIU logfiles be provided in the order of the process ranks to properly map each log file to its rank.
+
+
+### event_filter
+Allows to specify a regex to remove events from the processing. This is useful to either remove events that are not of interest or to remove events that cause problems processing the input.
+
+
+### event_limit
+This enables working with very large input data. It allows to limit the number of events that are processed by limiting the timestamp range or the number of events.
+
+
+### freq
+
+This option allows to set the SoC and Ideal frequencies if they differ from the default.
+Right now, we're not scanning a potential log file for this data and thus rely on the user to provide the information.
+ * *SoC* frequency is setting the frequency that was used for the cycle counter in the flex events. It is essential to get it at least roughly correct to prevent misaligned AIU-CPU events.
+ * *core* frequency is setting the frequency that was used to calculate the *ideal cycles* that is placed in the compiler log file.  This value is used to compute the utilization of the core PT array by compute kernels that have a non-zero value. If it is not matching the core frequency, it causes the PT array utilization to be miscalculated or cause errors when utilization of >100% is the result of a too-low frequency.
+
+If acelyzer detects a consistent effective frequency for events, it will provide a suggestion like:
+```
+<timestamp>  WARNING  FREQ: Recommendation: to minimize event time drift (max: -333833us) between CPU and Accelerator, use: --freq=899.577
+```
+This suggestion will only appear for drift between jobs and thus requires at least 2 jobs at the input.
+
+An additional set of frequency statistics computes min/mean/max observed frequencies based on individual event duration and event intervals between subsequent compute events.  Therefore, it's working for single-job flex traces too.  The corresponding output looks like this:
+```
+<timestamp>  WARNING FREQ: Detected Event-duration-based frequency (min/mean/max): <x> <y> <z> ; rel_range=0.023, input_soc_freq/detected=2.08
+<timestamp>  WARNING FREQ: Detected Event-interval-based frequency (min/mean/max): <x> <y> <z> ; rel_range=0.012, input_soc_freq/detected=2.09
+```
+The `rel_range` number shows how narrow/wide the window of detected frequencies was.
+A narrow window indicates consistent trace data with well-calibrated cycle-to-clock conversion.
+The ratio of `input_soc_freq/detected` helps to determine whether the soc-freq setting on the cmdline was reasonably close to the reality of this trace.
+In best case, the relative range should be close to 0.0 and the input/detect-ratio is expected to be close to 1.0.
+
+Consequences when in use:
+ * see [here](#understanding-and-troubleshooting-the-results) for various problems that can be caused or alleviated by this parameter
+
+
+### overlap
+
+A lot of things are asynchronously processed and the corresponding events are not possible to view as a proper call stack in either of the 2 viewers (chrome, perfetto). The tool provides 3 options via `-O nnn` argument to resolve situations where events overlap in that way:
+ 1) increase the thread ID to separate `tid` (default, recommended)
+ 2) drop conflicting events `drop` (intended for debugging and not recommended)
+ 3) convert some events into asynchronous events `async` (deprecated, incomplete implementation of subsequent processing stages and thus not recommended to use)
 
 
 ### flow
@@ -188,44 +231,9 @@ Consequences when in use:
  * spans the entire time from posting of the communication to the completion, this can exaggerate communication time e.g. if a recv is posted early for later completion
 
 
-### freq
-
-This option allows to set the SoC and Ideal frequencies if they differ from the default.
-Right now, we're not scanning a potential log file for this data and thus rely on the user to provide the information.
- * *SoC* frequency is setting the frequency that was used for the cycle counter in the flex events. It is essential to get it at least roughly correct to prevent misaligned AIU-CPU events.
- * *core* frequency is setting the frequency that was used to calculate the *ideal cycles* that is placed in the compiler log file.  This value is used to compute the utilization of the core PT array by compute kernels that have a non-zero value. If it is not matching the core frequency, it causes the PT array utilization to be miscalculated or cause errors when utilization of >100% is the result of a too-low frequency.
-
-If acelyzer detects a consistent effective frequency for events, it will provide a suggestion like:
-```
-<timestamp>  WARNING  FREQ: Recommendation: to minimize event time drift (max: -333833us) between CPU and Accelerator, use: --freq=899.577
-```
-This suggestion will only appear for drift between jobs and thus requires at least 2 jobs at the input.
-
-An additional set of frequency statistics computes min/mean/max observed frequencies based on individual event duration and event intervals between subsequent compute events.  Therefore, it's working for single-job flex traces too.  The corresponding output looks like this:
-```
-<timestamp>  WARNING FREQ: Detected Event-duration-based frequency (min/mean/max): <x> <y> <z> ; rel_range=0.023, input_soc_freq/detected=2.08
-<timestamp>  WARNING FREQ: Detected Event-interval-based frequency (min/mean/max): <x> <y> <z> ; rel_range=0.012, input_soc_freq/detected=2.09
-```
-The `rel_range` number shows how narrow/wide the window of detected frequencies was.
-A narrow window indicates consistent trace data with well-calibrated cycle-to-clock conversion.
-The ratio of `input_soc_freq/detected` helps to determine whether the soc-freq setting on the cmdline was reasonably close to the reality of this trace.
-In best case, the relative range should be close to 0.0 and the input/detect-ratio is expected to be close to 1.0.
-
-Consequences when in use:
- * see [here](#understanding-and-troubleshooting-the-results) for various problems that can be caused or alleviated by this parameter
-
-
-### overlap
-
-A lot of things are asynchronously processed and the corresponding events are not possible to view as a proper call stack in either of the 2 viewers (chrome, perfetto). The tool provides 3 options via `-O nnn` argument to resolve situations where events overlap in that way:
- 1) increase the thread ID to separate `tid` (default, recommended)
- 2) drop conflicting events `drop` (intended for debugging and not recommended)
- 3) convert some events into asynchronous events `async` (deprecated, incomplete implementation of subsequent processing stages and thus not recommended to use)
-
-
 ### keep_prep
 
-By default, so-called *prep* events are removed from the view and represented as a counter (`ConcurrentPreps`) that shows how many of these events are active at a given time.  This option tells acelyzer to keep the events as visible events in their thread.
+By default, so-called *prep* events (flex traces only) are removed from the view and represented as a counter (`ConcurrentPreps`) that shows how many of these events are active at a given time.  This option tells acelyzer to keep the events as visible events in their thread.
 
 Consequences when in use:
  * adds a (potentially) large amount of events to become visible that are also often overlapping
