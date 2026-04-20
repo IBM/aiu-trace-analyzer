@@ -357,7 +357,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 self.extract_tables_from_inductor_dir(compiler_info)
             else:
                 raise ValueError(f"{compiler_info} Unrecognized compiler info file type. Expecting file or directory.")
-        except (FileNotFoundError, PermissionError, IndexError) as e:
+        except (FileNotFoundError, PermissionError, IndexError, TypeError) as e:
             aiulog.log(aiulog.ERROR, "UTL: Unable to open/parse log file.", compiler_info, e)
         except ValueError as e:
             aiulog.log(aiulog.ERROR, e)
