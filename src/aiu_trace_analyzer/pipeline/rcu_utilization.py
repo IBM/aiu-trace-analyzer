@@ -156,6 +156,113 @@ class RCUKernelCategoryMap():
         return self.kernel_cat_map.values()
 
 
+class RCUAutopilotCounter():
+    '''
+    This tracks the accumulated time for kernels that belong to the same job.
+    With autopilot=on, there still can be multiple kernels if this is a multi-aiu trace.
+    '''
+    def __init__(self, event: TraceEvent, ideal_dur: float) -> None:
+        self.start = event["ts"]
+        self.end = event["ts"] + event["dur"]
+        self.pid = event["pid"]
+        self.accum_time = event["dur"]
+        self.ideal = ideal_dur
+
+        # only accumulate time actually spent in event (excludes gaps between events)
+        # hardcoded for now, full-span utilization can be computed from parent CPU wait events
+        self.accumulate_event_time = True
+
+    def update(self, event: TraceEvent, ideal_dur: float) -> tuple[float, float]:
+        assert event["ts"] >= self.start, f"UTL: Event processing out-of-order: {self.start} <= {event}"
+        assert event["pid"] == self.pid, f"UTL: Event PID mismatch. Expected {self.pid}, event: {event}"
+        assert ideal_dur == self.ideal, f"UTL: Ideal duration mismatch. Expected {self.ideal}, got: {ideal_dur}"
+        if event["ts"] < self.end:
+            # warning: overlapping kernel events?
+            aiulog.log(aiulog.WARN, "UTL: Overlapping kernel events detected. Overlap time[us]:",
+                       self.end - event["ts"])
+
+        self.start = min(self.start, event["ts"])
+        self.end = max(self.end, event["ts"] + event["dur"])
+
+        if self.accumulate_event_time:
+            self.accum_time += event["dur"]
+            # clamp the total duration to start-end to account for unexpected event overlap
+            self.accum_time = min(self.accum_time, self.end - self.start)
+        else:
+            self.accum_time = self.end - self.start
+
+        return self.start, self.end
+
+    def compute_utilization(self) -> float:
+        # return self.ideal / (self.end - self.start) * 100.0
+        return self.ideal / self.accum_time * 100.0
+
+    def create_counter_event(self, name: str, unit: str) -> tuple[TraceEvent, TraceEvent]:
+        return (
+            TraceEvent({
+                "ph": "C",
+                "ts": self.start,
+                "pid": self.pid,
+                "name": name,
+                "args": {unit: self.compute_utilization()},
+            }),
+            TraceEvent({
+                "ph": "C",
+                "ts": self.end,
+                "pid": self.pid,
+                "name": name,
+                "args": {unit: 0.0}
+            })
+        )
+
+
+class RCUAutopilotRankJobTracker():
+    def __init__(self) -> None:
+        self.counters: dict[int, RCUAutopilotCounter] = {}
+        self.hash_tracker: dict[int, tuple[int, int]] = {}
+
+    def update(self, event: TraceEvent, ideal_dur: float, jobhash: int, rank: int) -> None:
+        if jobhash not in self.counters:
+            self.counters[jobhash] = RCUAutopilotCounter(event, ideal_dur)
+        else:
+            self.counters[jobhash].update(event, ideal_dur)
+        self.job_tracking(jobhash, rank)
+
+    def job_tracking(self, jobhash: int, rank: int) -> bool:
+        '''
+        check/update the job tracking per rank
+        Keep the previous tracked job as is
+        Update the current pending job (if different from previous)
+        Fails if previous and current are already different - needs the old job to be 'emitted'
+        '''
+        if rank not in self.hash_tracker:
+            self.hash_tracker[rank] = (jobhash, jobhash)
+        new_job = (jobhash != self.hash_tracker[rank][1])
+        assert not new_job or not self.new_job_pending(rank), f"UTL: new jobhash already in progress. {rank}:{jobhash}"
+        self.hash_tracker[rank] = (self.hash_tracker[rank][0], jobhash)
+        return new_job
+
+    def new_job_pending(self, rank: int) -> bool:
+        return rank in self.hash_tracker and self.hash_tracker[rank][0] != self.hash_tracker[rank][1]
+
+    def get_completed(self) -> list[RCUAutopilotCounter]:
+        rlist: list[RCUAutopilotCounter] = []
+        for rank, tracker in self.hash_tracker.items():
+            if self.new_job_pending(rank):
+                # extract the counter for previous job
+                completed_job = self.counters.pop(tracker[0], None)
+                if completed_job:
+                    rlist.append(completed_job)
+
+                # update tracking to make previous job same as current
+                self.hash_tracker[rank] = (tracker[1], tracker[1])
+
+        return rlist
+
+    def get_all(self) -> list[RCUAutopilotCounter]:
+        return list(self.counters.values())
+
+
 class RCUTableParseMode(Flag):
     ACTIVE_TABLE = auto()
     UNKNOWN = auto()
@@ -193,6 +300,8 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
     _category_splitter = re.compile(r'(\-opCat|\-NA$)')
     _autopilot_pattern = re.compile(r'DSM-AutoPilot BEGIN')
     _iteration_mode_pattern = re.compile(r'^\s+(DECODING|PREFILL)\s+$')
+    _non_kernel_names = [""]
+
     _print_to_log = False
 
     def __init__(
@@ -228,6 +337,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         self.cycle_to_clock_factor = 1.0/core_freq
         self.unscaled = False
         aiulog.log(aiulog.DEBUG, "UTL: Input Ideal Cycle To Clock factor", self.cycle_to_clock_factor)
+        self.zero_counter_tracking = 0.0
 
         self.initialize_tables()
 
@@ -266,7 +376,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             if self.autopilot:
                 aiulog.log(aiulog.WARN, "UTL: Detected autopilot=1. "
                            "PT-activity/categories data will be attempted to get from previous runs with AP=0")
-                self.categories = self.kernel_db.retrieve(self.table_hash)
+                self.categories = {}  # not implemented or self.kernel_db.retrieve(self.table_hash)
             else:
                 self.kernel_db.insert(self.table_hash, self.categories)
 
@@ -353,7 +463,12 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                                 dict[str, int],
                                 RCUTableFingerprint]:
 
+        # detect autopilot on/off
         if self._autopilot_pattern.search(line):
+            if not self.autopilot:
+                aiulog.log(
+                    aiulog.WARN, "UTL: Detected autopilot=on. Event categorization, cycles table matching"
+                    " and other utilization-related data might be unreliable.")
             self.autopilot = True
             return True, parse_mode, current_table, fprint
 
@@ -402,6 +517,10 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
         cycles = int(ldata[1])
         kernel_and_cat = self._category_splitter.split(ldata[0])
+
+        # Skip anything that's not a kernel name
+        if kernel_and_cat[0] in self._non_kernel_names:
+            return True, parse_mode, current_table, fprint
 
         fprint = self._add_kernel(kernel_and_cat, cycles, current_table, fprint)
         return True, parse_mode, current_table, fprint
@@ -539,6 +658,12 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             self.issue_warning("kernel_other")
             kernel = "other"
 
+        # ideal duration cannot be longer than actual duration
+        # removing this item from accumulating in category
+        # not issuing a warning because corresponding event handling already did that
+        if ideal_dur > duration:
+            ideal_dur = 0.0
+
         cat_hash = hash(fprint+pid)
         cat = self.kernel_cat_map[fprint][kernel]
         self.set_categories_for_pid(pid, fprint)
@@ -551,10 +676,62 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         self.categories[cat_hash]["Total"] = (dur+duration, i_dur+ideal_dur, cnt+1)
         return cat
 
+    def _add_final_zero_event(self, pending_zero: TraceEvent, final: bool = False) -> list[TraceEvent]:
+        return [pending_zero] if final else []
+
+    def handle_counter_overlap(
+            self,
+            counter: TraceEvent,
+            trailing_zero: TraceEvent,
+            final: bool = False) -> list[TraceEvent]:
+        '''
+        Expects a counter with utilization value and a corresponding zero-event to close the span.
+        Returns a list of events based on previously tracked zero events.
+         * regular: updates the zero_counter_tracking and returns an updated trailing zero-event for
+           the previous counter plus the current counter.
+         * if there's any overlap, the zero event (or both) are discarded and the tracking is updated as needed
+         * if final is True, another trailing zero-event is created at the new self.zero_counter_tracking
+        '''
+        new_end = trailing_zero["ts"]
+        has_pending_zero = (self.zero_counter_tracking > 0.0)
+
+        # check for unexpected overlap
+        if counter["ts"] <= self.zero_counter_tracking:
+            new_start = self.zero_counter_tracking
+            if new_end < new_start:
+                # current counter is embedded in previously tracked event
+                aiulog.log(
+                    aiulog.WARN, "UTL: Counter embedding detected. Dropping embedded event."
+                    "This is not technically possible and indicates a problem with the trace file.")
+                return []  # dropping embedded counter
+
+            self.zero_counter_tracking = new_end
+            counter["ts"] = new_start  # push start of counter to end of previously tracked event
+            return [counter] + self._add_final_zero_event(trailing_zero, final)
+
+        # kind of the else branch as long as ^^^ returns
+        revents = []
+        if has_pending_zero:
+            # no overlap, so we update zero_counter_tracking and reuse trailing_zero event to close previous span
+            trailing_zero["ts"] = self.zero_counter_tracking
+            revents = [trailing_zero]
+
+        revents.append(counter)
+
+        if final:
+            # if there was a pending zero, we need to create a copy for the final event
+            final_zero = copy.deepcopy(trailing_zero) if has_pending_zero else trailing_zero
+            final_zero["ts"] = new_end
+            revents.append(final_zero)
+
+        self.zero_counter_tracking = new_end
+        return revents
+
 
 class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool):
     _name_converter = re.compile(r"\[N\]")
     _total_cycles_kernel_name = "Total"
+    _utilization_fallback_value = 101.0
     """
     Create a warning about uncertain table matching
     if similarity of a job fingerprint and 2 tables differs by less than this tolerance
@@ -602,21 +779,6 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         # in single-log case: will turn everything into zero, otherwise use event rank
         self.rank_factor = 1 if self.multi_log else 0
 
-        # Start Timestamp of the Last Zero Utilization Event
-        self.last_zero_event_ts = 0.0
-
-        # Event PID of the Last Zero Utilization Event
-        self.last_zero_event_pid = 0
-
-        # Next Event Start Timestamp
-        self.next_event_ts = 0.0
-
-        # Event overlap Status
-        self.event_overlap = False
-
-        # Utilization Percentage of the previous event
-        self.last_event_utilization_percent = 0.0
-
         self.rcuctx: dict[int, RCUUtilizationContext] = {}
         for rank, log in enumerate(log_list):
             aiulog.log(aiulog.DEBUG, "UTL: Building kernel table for", rank)
@@ -630,16 +792,19 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                 core_freq=core_freq,
                 compiler_info=log)
 
+        self.counters = RCUAutopilotRankJobTracker()
+
     def enable(self) -> bool:
+        rval = True
         for _, ctx in self.rcuctx.items():
-            ctx.enable()
+            rval &= ctx.enable()
+        return rval
 
     def extract_kernel_from_event_name(self, event: TraceEvent) -> str:
         rname = event["name"]
         rank = event["pid"] * self.rank_factor
-        autopilot = self.rcuctx[rank].autopilot
 
-        if autopilot:
+        if self.rcuctx[rank].autopilot:
             rname = self._total_cycles_kernel_name
 
         # if a fn_idx was removed from the event name, we have to bring it back in to match the ideal cycles table entry
@@ -668,59 +833,56 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
     def fingerprint_get(self, job: int) -> int:
         return self.fingerprints[job].get()
 
-    # Build a counter and a zero event if there is no event overlap
-    def make_utilization_event(self, event: TraceEvent, utilization: float) -> list[TraceEvent]:
-        self.event_overlap = False
-        revents = []
+    # build a counter and a zero event
+    # ignores input utilization if autopilot is enabled (separate computation, delayed counter creation)
+    def make_utilization_event(self, event: TraceEvent, utilization: float, jobhash: int) -> list[TraceEvent]:
+        revents: list[TraceEvent] = []
+        log_str_100 = ""
+        rank = event["pid"] * self.rank_factor
 
-        if isclose(self.last_zero_event_ts, 0.0, abs_tol=1e-9):
-            self.next_event_ts = 0.0
-            self.last_zero_event_ts = event["ts"] + event["dur"]
-            self.last_event_utilization_percent = utilization
-
-        # Check for event overlap
-        elif event["ts"] < self.last_zero_event_ts:
-            revents.append({
-                "ph": "C",
-                "ts": event["ts"],
-                "pid": event["pid"],
-                "name": RCU_pt_util_counter_name,
-                "args": {RCU_pt_util_counter_unit:
-                         self.last_event_utilization_percent
-                         if (self.last_event_utilization_percent > utilization) else utilization},
-                "dur": self.last_zero_event_ts - event["ts"]
-            })
-
-            self.next_event_ts = self.last_zero_event_ts
-            self.last_zero_event_ts = event["ts"] + event["dur"]
-            self.last_zero_event_pid = event["pid"]
-            self.event_overlap = True
-            self.last_event_utilization_percent = utilization
+        if self.rcuctx[rank].autopilot:
+            ideal = self.get_ideal_dur("Total Cmpt Exec", event["pid"], self.fingerprint_get(jobhash))
+            self.counters.update(event, ideal, jobhash, rank)
+            counters = self.counters.get_completed()
+            for counter in counters:
+                new_event, pending_zero = counter.create_counter_event(
+                    RCU_pt_util_counter_name, RCU_pt_util_counter_unit)
+                revents += self.rcuctx[rank].handle_counter_overlap(new_event, pending_zero)
 
         else:
-            self.next_event_ts = 0.0
-            self.last_event_utilization_percent = utilization
+            # TODO: this should be refactored to maybe use RCUAutopilotCounter, too
+            revents = [TraceEvent({
+                    "ph": "C",
+                    "ts": event["ts"],
+                    "pid": event["pid"],
+                    "name": RCU_pt_util_counter_name,
+                    "args": {RCU_pt_util_counter_unit: utilization},
+                    "dur": event["dur"]  # temporary duration in cycles- remove before viz
+                })]
+            if utilization > 0.0:   # add a reset-to-zero event only if util is non-zero
+                revents.append(TraceEvent({
+                    "ph": "C",
+                    "ts": event["ts"]+event["dur"],
+                    "pid": event["pid"],
+                    "name": RCU_pt_util_counter_name,
+                    "args": {RCU_pt_util_counter_unit: 0.0}
+                }))
+            log_str_100 = f"(pid, utilization, event) {event['pid']}, {utilization}, {event}"
 
-        # Add the non-zero utilization event
-        revents.append({
-                "ph": "C",
-                "ts": event["ts"] if (self.next_event_ts == 0.0) else self.next_event_ts,
-                "pid": event["pid"],
-                "name": RCU_pt_util_counter_name,
-                "args": {RCU_pt_util_counter_unit: utilization},
-                "dur": event["dur"]  # temporary duration in cycles- remove before viz
-            })
+        revents = self._check_counter_sanity(revents, log_str_100)
 
-        # Add a reset-to-zero event only if the utilization is non-zero and if there is no event overlap
-        if utilization > 0.0 and (not self.event_overlap):
-            revents.append({
-                "ph": "C",
-                "ts": event["ts"]+event["dur"],
-                "pid": event["pid"],
-                "name": RCU_pt_util_counter_name,
-                "args": {RCU_pt_util_counter_unit: 0.0}
-            })
         return revents
+
+    def _check_counter_sanity(self, counters: list[TraceEvent], log_str: str) -> list[TraceEvent]:
+        # check sanity of generated counter events
+        for idx, counter in enumerate(counters):
+            if counter["args"][RCU_pt_util_counter_unit] > 100.0:
+                aiulog.log(aiulog.WARN, "UTL: Event with +100% utilization. "
+                           "This could indicate a problem with table fingerprinting: ",
+                           log_str, counter)
+                self.issue_warning("util_100")
+                counters[idx]["args"][RCU_pt_util_counter_unit] = self._utilization_fallback_value
+        return counters
 
     def update_fprint_matches(self):
         for job, event_fprint in self.fingerprints.items():
@@ -750,18 +912,14 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         # run fingerprint-similarity check for all jobs
         self.update_fprint_matches()
 
-        revents = super().drain()
+        revents = []
+        for counter in self.counters.get_all():
+            new_event, pending_zero = counter.create_counter_event(RCU_pt_util_counter_name, RCU_pt_util_counter_unit)
+            rank = new_event["pid"] * self.rank_factor
+            revents += self.rcuctx[rank].handle_counter_overlap(new_event, pending_zero, final=True)
+            revents = self._check_counter_sanity(revents, "")
 
-        # Add the last reset-to-zero event
-        if self.last_zero_event_ts > 0.0:
-            revents.append({
-                "ph": "C",
-                "ts": self.last_zero_event_ts,
-                "pid": self.last_zero_event_pid,
-                "name": RCU_pt_util_counter_name,
-                "args": {RCU_pt_util_counter_unit: 0.0}
-                })
-        return revents
+        return revents + super().drain()
 
     def generate_fprint_jobhash(self, event: TraceEvent) -> int:
         jobhash = event["args"]["jobhash"]
@@ -814,31 +972,25 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
     cmpt_dur = float(event["dur"])
     utilization = abs(ideal_dur/cmpt_dur) if not isclose(cmpt_dur, 0.0, abs_tol=1e-9) else 0.0
 
-    if utilization > 1.0:   # warning about >100% utilization
-        aiulog.log(aiulog.DEBUG, "UTL: Event with +100% utilization. "
-                   "This could indicate a problem with table fingerprinting: "
-                   "(pid, ideal, observed, event)", pid, ideal_dur, cmpt_dur, event)
-        context.issue_warning("util_100")
-        utilization = 1.0
+    detected_category = context.accumulate_categories(
+            pid,
+            kernel_name,
+            ideal_dur,
+            cmpt_dur,
+            job_fingerprint)
+
+    # prevent overwriting "cat" field in case events already have one
+    if "cat" in event:
+        event["args"]["user_cat"] = detected_category
+    else:
+        event["cat"] = detected_category
+
+    util_counter = context.make_utilization_event(event, utilization*100.0, jobhash)
 
     if utilization > 0.0:
+        # note: with autopilot on, the utilization is computed asynchronously.
+        # In that case, this value could be unreliable
         event["args"]["pt_active"] = utilization
         event["args"]["core used"] = True
 
-    if "cat" in event:
-        event["args"]["user_cat"] = context.accumulate_categories(
-            pid,
-            kernel_name,
-            ideal_dur,
-            cmpt_dur,
-            job_fingerprint)
-    else:
-        event["cat"] = context.accumulate_categories(
-            pid,
-            kernel_name,
-            ideal_dur,
-            cmpt_dur,
-            job_fingerprint)
-
-    util_counter = context.make_utilization_event(event, utilization*100.0)
     return [event] + util_counter
