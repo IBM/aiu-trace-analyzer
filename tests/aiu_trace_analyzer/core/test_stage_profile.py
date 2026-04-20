@@ -1,7 +1,10 @@
 # Copyright 2024-2025 IBM Corporation
 
-import pytest
+import json
 import os
+from pathlib import Path
+
+import pytest
 
 from aiu_trace_analyzer.core.stage_profile import StageProfile, StageProfileChecker
 
@@ -42,3 +45,39 @@ def test_fwd_find(default_stage_checker):
     for (stage, found, idx) in test_stages:
         assert default_stage_checker.fwd_find_stage(stage) == found
         assert default_stage_checker.reg_idx == idx
+
+
+def write_profile(tmp_path: Path, profile_data: dict) -> str:
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(json.dumps(profile_data))
+    return str(profile_path)
+
+
+def test_sparse_profile_rejects_ambiguous_repeated_stage_names(tmp_path):
+    profile_data = {
+        "stages": [
+            {"normalize_phase1": True},
+            {"pipeline_barrier": True},
+            {"detect_partial_overlap_events": True},
+        ]
+    }
+
+    with pytest.raises(ValueError, match="Ambiguous repeated stage 'pipeline_barrier'"):
+        StageProfile.from_json(write_profile(tmp_path, profile_data))
+
+
+def test_sparse_profile_supports_ordinal_for_repeated_stage_names(tmp_path):
+    profile_data = {
+        "stages": [
+            {"normalize_phase1": True},
+            {"pipeline_barrier#2": True},
+            {"detect_partial_overlap_events": True},
+        ]
+    }
+
+    stage_profile = StageProfile.from_json(write_profile(tmp_path, profile_data))
+    enabled_barriers = [index for index, (name, enabled) in enumerate(stage_profile.profile) if name == "pipeline_barrier" and enabled]
+
+    assert len(enabled_barriers) == 1
+    enabled_index = enabled_barriers[0]
+    assert sum(1 for name, _enabled in stage_profile.profile[:enabled_index + 1] if name == "pipeline_barrier") == 2
