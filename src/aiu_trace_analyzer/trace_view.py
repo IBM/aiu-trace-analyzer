@@ -85,7 +85,7 @@ class TraceView(object):
 
 class AbstractEventType(object):
     def _del_none(self, dic):
-        for k, v in list(dic.items()):
+        for k, v in dic.items():
             if v is None:
                 del dic[k]
 
