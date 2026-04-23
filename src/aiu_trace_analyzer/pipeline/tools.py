@@ -12,7 +12,7 @@ import aiu_trace_analyzer.logger as aiulog
 
 class PipelineContextTool:
     def __init__(self) -> None:
-        pass
+        super().__init__()
 
     def generate_filename(self, fname, purpose="summary", extension="csv") -> str:
         # build a filename from the provided output file
@@ -172,12 +172,12 @@ class KernelDetailsDB:
             return self.data[hash]
         except KeyError:
             aiulog.log(aiulog.WARN, "APD: Found no data from previous run with autopilot=0.")
-            return {}
+            return AutopilotDetail()
 
 
 class FlexEventMapToTS(object):
     def __init__(self):
-        self.map: dict[str, (str, str)] = {}
+        self.map: dict[str, tuple[str, str]] = {}
         self.add("DmaI", ("TS1", "TS2"))
         self.add("Cmpt Prep", ("TS2", "TS3"))
         self.add("Cmpt Exec", ("TS3", "TS4"))
