@@ -498,10 +498,11 @@ class Acelyzer:
             filterstr=args.event_filter,
             event_limit=event_pipe.EventLimiter(args.event_limit))
         frequency_align_ctx = event_pipe.FlexJobOffsetContext(soc_frequency=args.freq[0])
+        normalize_barrier_ctx = event_pipe.BarrierContext()
         process.register_stage(callback=event_pipe.normalize_phase1, context=normalize_ctx)
         if args.flex_ts_fix:
             process.register_stage(callback=event_pipe.frequency_align_collect, context=frequency_align_ctx)
-        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+        process.register_stage(callback=event_pipe.pipeline_barrier, context=normalize_barrier_ctx)
         if args.flex_ts_fix:
             process.register_stage(callback=event_pipe.frequency_align_apply, context=frequency_align_ctx)
         process.register_stage(callback=event_pipe.normalize_phase2, context=normalize_ctx)
@@ -572,9 +573,10 @@ class Acelyzer:
         overlap_ctx = event_pipe.OverlapDetectionContext(overlap_resolve=overlap_arg,
                                                          ts_shift_threshold=self.defaults["ts_shift_threshold"],
                                                          max_tid_streams=args.max_tid_streams)
+        overlap_barrier_ctx = event_pipe.BarrierContext()
         if overlap_arg == event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_TID:
             process.register_stage(callback=event_pipe.detect_partial_overlap_tids, context=overlap_ctx)
-            process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+            process.register_stage(callback=event_pipe.pipeline_barrier, context=overlap_barrier_ctx)
         process.register_stage(callback=event_pipe.detect_partial_overlap_events, context=overlap_ctx)
 
         # validate that the overlap has not messed up the event stream ordering
@@ -635,10 +637,11 @@ class Acelyzer:
         monotonic_ts_ctx_c = event_pipe.TSSequenceContext(ts3check=True)
         process.register_stage(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_c)
 
+        comm_barrier_ctx = event_pipe.BarrierContext()
         if args.comm_summarize_seq:
             communication_event_ctx = event_pipe.CommunicationGroupContext()
             process.register_stage(callback=event_pipe.communication_event_collection, context=communication_event_ctx)
-        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+        process.register_stage(callback=event_pipe.pipeline_barrier, context=comm_barrier_ctx)
 
         if args.comm_summarize_seq:
             process.register_stage(callback=event_pipe.communication_event_apply, context=communication_event_ctx)
@@ -659,9 +662,10 @@ class Acelyzer:
         categorizer_ctx = event_pipe.EventCategorizerContext(with_zero_align=(args.format == "timeline"))
 
         launch_flows_ctx = event_pipe.LaunchFLowContext()
+        categorize_barrier_ctx = event_pipe.BarrierContext()
         process.register_stage(callback=event_pipe.launch_flow_collect, context=launch_flows_ctx)
         process.register_stage(callback=event_pipe.event_categorizer, context=categorizer_ctx)
-        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+        process.register_stage(callback=event_pipe.pipeline_barrier, context=categorize_barrier_ctx)
         process.register_stage(callback=event_pipe.event_categorizer_update, context=categorizer_ctx)
         process.register_stage(callback=event_pipe.launch_flow_create_missing, context=launch_flows_ctx)
 
