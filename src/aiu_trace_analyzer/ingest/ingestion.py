@@ -35,7 +35,8 @@ class AbstractTraceIngest:
             jobdata: GlobalIngestData = GlobalIngestData(),
             data_dialect: InputDialect = InputDialectTORCH(),
             scale: float = 1.0,
-            show_warnings: bool = True) -> None:
+            show_warnings: bool = True,
+            verification_mode: bool = False) -> None:
         self.source_uri = source_uri
         self.scale = scale
         self.ts_offset = None
@@ -52,6 +53,7 @@ class AbstractTraceIngest:
                 text="Ingestion: detected negative duration event(s). Events ignored:{d[count]}",
                 data={"count": 0})
         }
+        self.verification_mode = verification_mode
         self._initialized = False
         self.other_metadata = {}
         self.jobhash = jobdata.add_job_info(source_uri, data_dialect)
@@ -189,12 +191,27 @@ class AbstractTraceIngest:
                 event[the_args]["otid"] = event["tid"]
                 event["tid"] = hash(event["tid"])
 
+        return event
+
+    def _add_job_hash(self, event: TraceEvent, the_args: str) -> TraceEvent:
         if event["ph"] not in ["F", "f", "s", "t", "C", "M"]:
             event[the_args]["jobhash"] = self.jobhash
         return event
 
+    def _detect_args_type(self, event: TraceEvent) -> str:
+        if "attr" in event:
+            return "attr"
+        else:
+            return "args"
+
     # update event data with things like ts-offset or ts-scaling
     def updated_event(self, event: TraceEvent) -> TraceEvent:
+        the_args = self._detect_args_type(event)
+        if self.verification_mode:
+            if the_args in event:
+                event = self._add_job_hash(event, the_args)
+            return event
+
         if event["ph"] not in "XBE":
             if event["ph"] in "Mbei":
                 event = self._rank_device_annotation(event, "args")
@@ -205,15 +222,13 @@ class AbstractTraceIngest:
         if "dur" in event:
             event["dur"] = float(event["dur"] * self.scale)
 
-        the_args = "args"
-        if "attr" in event:
-            the_args = "attr"
         if the_args not in event:
             event[the_args] = {}
 
         event = self._rank_device_annotation(event, the_args)
         event = self._pid_correction(event, the_args)
         event = self._tid_correction(event, the_args)
+        event = self._add_job_hash(event, the_args)
         return event
 
 
@@ -234,12 +249,14 @@ class JsonEventTraceIngest(AbstractTraceIngest):
             data_dialect: InputDialect,
             scale: float = 1.0,
             keep_processed: bool = False,
-            show_warnings: bool = True) -> None:
+            show_warnings: bool = True,
+            verification_mode: bool = False) -> None:
         super().__init__(source_uri,
                          jobdata=jobdata,
                          data_dialect=data_dialect,
                          scale=scale,
-                         show_warnings=show_warnings)
+                         show_warnings=show_warnings,
+                         verification_mode=verification_mode)
 
         self.data: dict = {}
         self.last_ts: float = 0.0
@@ -378,12 +395,20 @@ class MemoryJsonTraceIngest(JsonEventTraceIngest):
             jobdata: GlobalIngestData = GlobalIngestData(),
             scale: float = 1.0,
             show_warnings: bool = True,
-            direct_data: memoryview = None):
+            direct_data: memoryview = None,
+            verification_mode: bool = False):
         keep_processed = True
         data = json.loads(direct_data.tobytes())
 
         data_dialect = InputDialectTORCH() if self.is_torch_profile(data) else InputDialectFLEX()
-        super().__init__(source_uri, jobdata, data_dialect, scale, keep_processed, show_warnings)
+        super().__init__(
+            source_uri,
+            jobdata,
+            data_dialect,
+            scale,
+            keep_processed,
+            show_warnings,
+            verification_mode=verification_mode)
 
         self._initialize_data(data)
 
@@ -398,13 +423,21 @@ class JsonFileEventTraceIngest(JsonEventTraceIngest):
             jobdata: GlobalIngestData = GlobalIngestData(),
             scale: float = 1.0,
             keep_processed: bool = False,
-            show_warnings: bool = True):
+            show_warnings: bool = True,
+            verification_mode: bool = False):
 
         with open(source_uri, 'r') as sourcefile:
             data = json.load(sourcefile)
 
         data_dialect = InputDialectTORCH() if self.is_torch_profile(data) else InputDialectFLEX()
-        super().__init__(source_uri, jobdata, data_dialect, scale, keep_processed, show_warnings)
+        super().__init__(
+            source_uri,
+            jobdata,
+            data_dialect,
+            scale,
+            keep_processed,
+            show_warnings,
+            verification_mode=verification_mode)
 
         self._initialize_data(data)
 
@@ -500,8 +533,16 @@ class MultifileIngest(AbstractTraceIngest):
     Performs a round-robin over all files
     and skips any iterators that are exhausted.
     '''
-    def __init__(self, source_uri, show_warnings: bool = True, direct_data: memoryview = None) -> None:
-        super().__init__("top_level_multifile", show_warnings=show_warnings)
+    def __init__(
+            self,
+            source_uri,
+            show_warnings: bool = True,
+            direct_data: memoryview = None,
+            verification_mode: bool = False) -> None:
+        super().__init__(
+            "top_level_multifile",
+            show_warnings=show_warnings,
+            verification_mode=verification_mode)
 
         self.split_pattern = re.compile(r"[,\s]")
         filelist = self.generate_filelist(source_uri)
@@ -521,13 +562,18 @@ class MultifileIngest(AbstractTraceIngest):
         _added_new = True
         self.ftype = self.detect_ftype(ingest)
         if self.ftype == self.FTYPE_JSON:
-            self.ingesters.append(JsonFileEventTraceIngest(ingest, show_warnings=self.show_warnings))
+            self.ingesters.append(JsonFileEventTraceIngest(
+                ingest,
+                show_warnings=self.show_warnings,
+                verification_mode=self.verification_mode))
         elif self.ftype == self.FTYPE_PFTRACE:
             self.ingesters.append(ProtobufIngest(ingest))
         elif self.ftype == self.FTYPE_API:
-            self.ingesters.append(
-                MemoryJsonTraceIngest(ingest, show_warnings=self.show_warnings, direct_data=self.direct_data)
-            )
+            self.ingesters.append(MemoryJsonTraceIngest(
+                ingest,
+                show_warnings=self.show_warnings,
+                direct_data=self.direct_data,
+                verification_mode=self.verification_mode))
         else:
             aiulog.log(aiulog.ERROR, "Unrecognized file type. file:", ingest)
             _added_new = False

@@ -56,6 +56,8 @@
         {"tb_refinement_lightweight": true},
         {"cycle_count_conversion_cleanup": true},
         {"calculate_stats_v2": true},
-        {"sort_events": true}
+        {"sort_events": true},
+        {"verify": true},
+        {"verify_cleanup": true}
     ]
 }

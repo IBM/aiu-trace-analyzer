@@ -116,7 +116,11 @@ class Acelyzer:
             "ts_start": 0.0,
             "ts_end": sys.float_info.max,
             "no_count_types": "M",
-        }
+        },
+
+        # by default use regular (or provided) stage processing profile and not verification mode
+        "verification_mode": False,
+        "verification_profile": os.path.join(os.path.dirname(__file__), "../profiles/verification.json"),
     }
 
     # define default event sort key: timestamp + reverse_duration
@@ -130,14 +134,14 @@ class Acelyzer:
                 print(__version__)
                 sys.exit(0)
 
+            aiulog.loglevel = self.args.loglevel
+            aiulog.log(aiulog.INFO, "Starting Test parser")
+
             if not self._args_sanity_check(self.args):
                 sys.exit(1)
         except Exception as e:
             print(e)
             sys.exit(1)
-
-        aiulog.loglevel = self.args.loglevel
-        aiulog.log(aiulog.INFO, "Starting Test parser")
 
         self.freq_soc = self.args.freq[0]
         self.freq_core = self.args.freq[1]
@@ -153,7 +157,9 @@ class Acelyzer:
             importer = ingest.MultifileIngest(
                 source_uri=self.args.input,
                 show_warnings=(not self.args.disable_input_warnings),
-                direct_data=self.direct_data)
+                direct_data=self.direct_data,
+                verification_mode=self.args.verification_mode
+            )
         except FileNotFoundError:
             sys.exit(1)
 
@@ -188,7 +194,10 @@ class Acelyzer:
                 return -1
         self.exporter.export_meta(importer.get_passthrough_meta())
 
-        self.register_processing_functions(process, self.args, self.exporter)
+        if not self.args.verification_mode:
+            self.register_processing_functions(process, self.args, self.exporter)
+        else:
+            self.register_verification_functions(process, args=self.args, exporter=self.exporter)
 
         # create main engine and run
         dr = engine.Engine(importer, process, self.exporter)
@@ -354,6 +363,10 @@ class Acelyzer:
                             default=self.defaults["sync_to_dev"],
                             help="When set, use epoch from device timers")
 
+        parser.add_argument("-V", "--verify", dest="verification_mode", action="store_const", const=True,
+                            default=self.defaults["verification_mode"],
+                            help="When set, switch to file verification mode with almost no modifications.")
+
         parser.add_argument("--autopilot_data", type=str, default=self.defaults["autopilot_db"],
                             help="(Not yet implemented) Where to look for kernel category data"
                             " from runs with 'autopilot=0'.")
@@ -434,6 +447,9 @@ class Acelyzer:
             else:
                 parsed_args.profile = self.defaults["stage_profile"]
 
+        if parsed_args.verification_mode:
+            parsed_args.profile = self.defaults["verification_profile"]
+
         return parsed_args
 
     def get_output_data(self):
@@ -455,6 +471,9 @@ class Acelyzer:
                                         " directory path provided. No utilization will be plotted.")
             elif not os.path.exists(args.compiler_info):
                 aiulog.log(aiulog.WARN, "Invalid directory path provided. No utilization will be plotted.")
+
+        if args.verification_mode:
+            aiulog.log(aiulog.INFO, "Running VERIFICATION MODE! Using stage profile: ", args.profile)
 
         return True
 
@@ -725,3 +744,12 @@ class Acelyzer:
         process.register_stage(callback=event_pipe.sort_events, context=final_sort_ctx)
 
         # <<< END Event processing functions registration
+
+    def register_verification_functions(self,
+                                        process: processor.EventProcessor,
+                                        args,
+                                        exporter: output.AbstractTraceExporter):
+        verification_ctx = event_pipe.VerificationContext()
+
+        process.register_stage(callback=event_pipe.verify, context=verification_ctx)
+        process.register_stage(callback=event_pipe.verify_cleanup)

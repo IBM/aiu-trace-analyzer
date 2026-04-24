@@ -35,6 +35,9 @@ class StageProfile:
         if 'stages' not in profile_data:
             raise KeyError("Profile data is missing 'stages' key.")
 
+        if len(profile_data['stages']) == 0:
+            return []
+
         # walk the full list and pick up the enabled/disabled flag from the requested config
         next_stage, next_enabled = profile_data['stages'].pop(0).popitem()
         profile: list[tuple[str, bool]] = []
