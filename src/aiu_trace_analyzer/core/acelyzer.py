@@ -517,13 +517,14 @@ class Acelyzer:
             filterstr=args.event_filter,
             event_limit=event_pipe.EventLimiter(args.event_limit))
         frequency_align_ctx = event_pipe.FlexJobOffsetContext(soc_frequency=args.freq[0])
-        process.register_stage(callback=event_pipe.normalize_phase1, context=normalize_ctx)
+        normalize_pre = [(event_pipe.normalize_phase1, normalize_ctx)]
         if args.flex_ts_fix:
-            process.register_stage(callback=event_pipe.frequency_align_collect, context=frequency_align_ctx)
-        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+            normalize_pre.append((event_pipe.frequency_align_collect, frequency_align_ctx))
+        normalize_post = []
         if args.flex_ts_fix:
-            process.register_stage(callback=event_pipe.frequency_align_apply, context=frequency_align_ctx)
-        process.register_stage(callback=event_pipe.normalize_phase2, context=normalize_ctx)
+            normalize_post.append((event_pipe.frequency_align_apply, frequency_align_ctx))
+        normalize_post.append((event_pipe.normalize_phase2, normalize_ctx))
+        processor.PipelineStage(pre_steps=normalize_pre, post_steps=normalize_post).register(process)
 
         # make sure the data in the events have no unexpected values
         process.register_stage(callback=event_pipe.event_sanity_checks)
@@ -592,9 +593,12 @@ class Acelyzer:
                                                          ts_shift_threshold=self.defaults["ts_shift_threshold"],
                                                          max_tid_streams=args.max_tid_streams)
         if overlap_arg == event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_TID:
-            process.register_stage(callback=event_pipe.detect_partial_overlap_tids, context=overlap_ctx)
-            process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
-        process.register_stage(callback=event_pipe.detect_partial_overlap_events, context=overlap_ctx)
+            processor.PipelineStage(
+                pre_steps=[(event_pipe.detect_partial_overlap_tids, overlap_ctx)],
+                post_steps=[(event_pipe.detect_partial_overlap_events, overlap_ctx)],
+            ).register(process)
+        else:
+            process.register_stage(callback=event_pipe.detect_partial_overlap_events, context=overlap_ctx)
 
         # validate that the overlap has not messed up the event stream ordering
         monotonic_ts_ctx_b = event_pipe.TSSequenceContext(ts3check=True)
@@ -654,16 +658,16 @@ class Acelyzer:
         monotonic_ts_ctx_c = event_pipe.TSSequenceContext(ts3check=True)
         process.register_stage(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_c)
 
+        comm_pre: list[tuple] = []
+        comm_post: list[tuple] = []
         if args.comm_summarize_seq:
             communication_event_ctx = event_pipe.CommunicationGroupContext()
-            process.register_stage(callback=event_pipe.communication_event_collection, context=communication_event_ctx)
-        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
-
-        if args.comm_summarize_seq:
-            process.register_stage(callback=event_pipe.communication_event_apply, context=communication_event_ctx)
-
+            comm_pre.append((event_pipe.communication_event_collection, communication_event_ctx))
+            comm_post.append((event_pipe.communication_event_apply, communication_event_ctx))
         if any(args.counter) and "rcu_util" in args.counter and args.compiler_info:
-            process.register_stage(callback=event_pipe.compute_utilization, context=rcu_util_ctx)
+            comm_post.append((event_pipe.compute_utilization, rcu_util_ctx))
+        if comm_pre or comm_post:
+            processor.PipelineStage(pre_steps=comm_pre, post_steps=comm_post).register(process)
 
         # register callback to to the power counter sorting
         # create an event sorter for X-events with a global order across ranks required for flow detection
@@ -678,11 +682,16 @@ class Acelyzer:
         categorizer_ctx = event_pipe.EventCategorizerContext(with_zero_align=(args.format == "timeline"))
 
         launch_flows_ctx = event_pipe.LaunchFLowContext()
-        process.register_stage(callback=event_pipe.launch_flow_collect, context=launch_flows_ctx)
-        process.register_stage(callback=event_pipe.event_categorizer, context=categorizer_ctx)
-        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
-        process.register_stage(callback=event_pipe.event_categorizer_update, context=categorizer_ctx)
-        process.register_stage(callback=event_pipe.launch_flow_create_missing, context=launch_flows_ctx)
+        processor.PipelineStage(
+            pre_steps=[
+                (event_pipe.launch_flow_collect, launch_flows_ctx),
+                (event_pipe.event_categorizer, categorizer_ctx),
+            ],
+            post_steps=[
+                (event_pipe.event_categorizer_update, categorizer_ctx),
+                (event_pipe.launch_flow_create_missing, launch_flows_ctx),
+            ],
+        ).register(process)
 
         if args.flow:
             process.register_stage(callback=event_pipe.flow_prepare_event_data)

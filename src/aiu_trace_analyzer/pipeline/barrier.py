@@ -6,7 +6,7 @@ from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 from aiu_trace_analyzer.pipeline import AbstractContext, AbstractHashQueueContext
 
 
-class _BarrierContext(AbstractContext):
+class BarrierContext(AbstractContext):
     def __init__(self) -> None:
         super().__init__()
         self.hold = []
@@ -20,12 +20,11 @@ class _BarrierContext(AbstractContext):
         return revents
 
 
-_main_barrier_context = _BarrierContext()
+_main_barrier_context = BarrierContext()
 
 
-def pipeline_barrier(event: TraceEvent, _: AbstractContext) -> list[TraceEvent]:
-    bctx = _main_barrier_context
-    bctx.collect(event)
+def pipeline_barrier(event: TraceEvent, ctx: AbstractContext) -> list[TraceEvent]:
+    ctx.collect(event)
     return []
 
 
@@ -44,8 +43,6 @@ class TwoPhaseWithBarrierContext(AbstractHashQueueContext):
         if self.phase == self._COLLECTION_PHASE:
             self.phase = self._APPLICATION_PHASE
         else:
-            # do nothing if this is the application phase
             pass
-        # the queues for these contexts don't contain events (events are held in barrier context),
-        # so nothing to drain here
+        # events are held in the barrier context, not here
         return []
