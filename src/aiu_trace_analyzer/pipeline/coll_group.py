@@ -240,7 +240,7 @@ class CollectiveGroupingContext(EventPairDetectionContext):
 
         # check the sync-groups for completion
         final = len(sync_groups) > 1
-        for _, sg in sync_groups.items():
+        for sg in sync_groups.values():
             final &= sg[0]
         aiulog.log(aiulog.TRACE, "FLOW: current final result: ", final)
         return final
@@ -608,7 +608,7 @@ class CommunicationGroupContext(TwoPhaseWithBarrierContext):
                 "start_ts": event["ts"],
                 "end_ts": event["ts"] + event["dur"],
                 "name": event["name"],
-                "peers": set([int(event["args"]["Peer"])]) if "args" in event and "Peer" in event["args"] else set()
+                "peers": {int(event["args"]["Peer"])} if "args" in event and "Peer" in event["args"] else set()
             }
         else:
             self.queues[sequence]["count"] += 1

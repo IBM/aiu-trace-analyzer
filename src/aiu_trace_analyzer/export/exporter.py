@@ -116,7 +116,7 @@ class TensorBoardFileTraceExporter(JsonFileTraceExporter):
         self.timescale = "ms"
         self.default_extension = '.pt.trace.json'
         self.rank_cnt = 0
-        self.traceview_by_rank = dict()
+        self.traceview_by_rank = {}
 
     # Save events into different files based on ID
     def _parse_events_by_id(self) -> None:
