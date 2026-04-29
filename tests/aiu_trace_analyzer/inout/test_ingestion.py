@@ -35,7 +35,7 @@ def test_json_input(json_input, capsys):
     for _ in json_ingest.__iter__():
         count += 1
 
-    assert count == 20
+    assert count == 22
     capsys.readouterr()
     del json_ingest
 

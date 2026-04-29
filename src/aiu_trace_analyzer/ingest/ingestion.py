@@ -46,11 +46,17 @@ class AbstractTraceIngest:
             "zero_duration": TraceWarning(
                 name="zero_duration",
                 text=f"Ingestion: ..{str(source_uri)[-15:]} Detected 'CompleteEvent' type (ph=X) with zero duration. "
-                     "This should be an 'InstantEvent' type (ph=i). Events skipped: {d[count]}",
+                     "This should be an 'InstantEvent' type (ph=i). Events: {d[count]}",
                 data={"count": 0}),
             "negative_duration": TraceWarning(
                 name="negative_duration",
                 text="Ingestion: detected negative duration event(s). Events ignored:{d[count]}",
+                data={"count": 0}),
+            "zero_with_hw_time": TraceWarning(
+                name="zero_with_hw_time",
+                text=f"Ingestion: ..{str(source_uri)[-15:]} Detected "
+                     "{d[count]} events with zero wallclock but nonzero HW time. "
+                     "Indication of time calibration errors during trace capture.",
                 data={"count": 0})
         }
         self.verification_mode = verification_mode
@@ -204,6 +210,15 @@ class AbstractTraceIngest:
         else:
             return "args"
 
+    def _zero_with_hw_time(self, event: TraceEvent, the_args: str) -> TraceEvent:
+        # check if event with zero duration has non-zero HW cycle diff
+        if math.isclose(event.get("dur", -1.0), 0.0, abs_tol=1e-9) and the_args in event:
+            ts1 = event[the_args].get("TS1", 0)
+            ts5 = event[the_args].get("TS5", 0)
+            if ts1 != ts5:
+                self.warnings['zero_with_hw_time'].update()
+        return event
+
     # update event data with things like ts-offset or ts-scaling
     def updated_event(self, event: TraceEvent) -> TraceEvent:
         the_args = self._detect_args_type(event)
@@ -314,7 +329,7 @@ class JsonEventTraceIngest(AbstractTraceIngest):
         assert self._initialized is True, "ERROR: Data not initialized."
         return self
 
-    def get_next_event(self) -> TraceEvent:
+    def get_next_event(self) -> Optional[TraceEvent]:
         if self._index < self._len:
             item = self.data[self._index]
             self._index += 1
@@ -334,7 +349,7 @@ class JsonEventTraceIngest(AbstractTraceIngest):
 
         if math.isclose(event["dur"], 0.0, abs_tol=1e-9):
             self.issue_warning('zero_duration')
-            return None
+            return event
 
         return event
 
@@ -611,6 +626,8 @@ class MultifileIngest(AbstractTraceIngest):
                     self.disable_ingest(idx)
                     break
         # no extra 'updateEvent' here. That's already done in the specific ingesters
+        event = self._zero_with_hw_time(event, "attr")
+
         return event
 
     def update_event_front(self, event, idx):
