@@ -626,7 +626,7 @@ class MultifileIngest(AbstractTraceIngest):
                     self.disable_ingest(idx)
                     break
         # no extra 'updateEvent' here. That's already done in the specific ingesters
-        event = self._zero_with_hw_time(event, "attr")
+        event = self._zero_with_hw_time(event, self._detect_args_type(event))
 
         return event
 
