@@ -201,6 +201,8 @@ class RCUAutopilotCounter():
 
     def compute_utilization(self) -> float:
         # return self.ideal / (self.end - self.start) * 100.0
+        if isclose(self.accum_time, 0.0, abs_tol=1e-9):
+            return 0.0
         return self.ideal / self.accum_time * 100.0
 
     def create_counter_event(self, name: str, unit: str) -> tuple[TraceEvent, TraceEvent]:
@@ -802,6 +804,14 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                      "jobs: {d[joblist]}",
                 data={"count": 0, "joblist": set()},
                 update_fn={"count": int.__add__, "joblist": set.union}
+            ),
+            # count similarity computation problems
+            TraceWarning(
+                name="similarity_error",
+                text="UTL: Found {d[count]} errors while computing similarity (divide by zero)."
+                     " This indicates a data problem.",
+                data={"count": 0},
+                is_error=True
             )
         ])
 
@@ -928,7 +938,10 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             matching_fprints = []
             for table in self.rcuctx.values():
                 for fprint in table.fingerprints.values():
-                    matching_fprints.append((fprint, event_fprint.similarity(fprint)))
+                    try:
+                        matching_fprints.append((fprint, event_fprint.similarity(fprint)))
+                    except ZeroDivisionError:
+                        self.issue_warning("similarity_error")
 
             if len(matching_fprints) == 0:
                 continue
