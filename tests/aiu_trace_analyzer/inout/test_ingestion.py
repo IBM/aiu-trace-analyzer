@@ -2,7 +2,7 @@
 
 import pytest
 
-from aiu_trace_analyzer.ingest.ingestion import JsonFileEventTraceIngest
+from aiu_trace_analyzer.ingest.ingestion import JsonFileEventTraceIngest, MultifileIngest
 
 
 @pytest.fixture
@@ -35,7 +35,7 @@ def test_json_input(json_input, capsys):
     for _ in json_ingest.__iter__():
         count += 1
 
-    assert count == 22
+    assert count == 23
     capsys.readouterr()
     del json_ingest
 
@@ -119,25 +119,27 @@ def test_json_iterator(generate_event_list, exp_len, json_input):
 
 
 warnings_to_test = [
-    ("zero_duration", "with zero duration", 2),
-    ("negative_duration", "negative duration event", 1)
+    ("zero_duration", "with zero duration", 3, JsonFileEventTraceIngest),
+    ("negative_duration", "negative duration event", 1, JsonFileEventTraceIngest),
+    ("zero_with_hw_time", "zero wallclock but nonzero HW time", 1, MultifileIngest)
 ]
 
 
-@pytest.mark.parametrize("warning_class, expected_text, count", warnings_to_test)
-def test_summary_warnings(warning_class, expected_text, count, json_input, capsys):
+@pytest.mark.parametrize("warning_class, expected_text, count, ingester_class", warnings_to_test)
+def test_summary_warnings(warning_class, expected_text, count, ingester_class, json_input, capsys):
     # create obj for this test because we're testing __del__
-    json_ingest = JsonFileEventTraceIngest(json_input)
+    # Create obj directly (not using fixture) to ensure proper deletion
+    ingest = ingester_class(json_input)
 
     # iterate through events to create issued warnings
-    for _ in json_ingest:
+    for _ in ingest:
         pass
 
-    assert json_ingest.warnings[warning_class].has_warning() is True
-    assert json_ingest.warnings[warning_class].args_list['count'] == count
+    assert ingest.warnings[warning_class].has_warning() is True
+    assert ingest.warnings[warning_class].args_list['count'] == count
 
-    if json_ingest.warnings[warning_class].has_warning():
-        del json_ingest
+    if ingest.warnings[warning_class].has_warning():
+        del ingest
         output = capsys.readouterr()
         assert "WARNING" in output.out
         assert expected_text in output.out
