@@ -42,7 +42,5 @@ class TwoPhaseWithBarrierContext(AbstractHashQueueContext):
     def drain(self) -> list[TraceEvent]:
         if self.phase == self._COLLECTION_PHASE:
             self.phase = self._APPLICATION_PHASE
-        else:
-            pass
         # events are held in the barrier context, not here
         return []

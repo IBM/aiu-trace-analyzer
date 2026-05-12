@@ -624,8 +624,6 @@ class Acelyzer:
             data_transfer_compute_ctx = event_pipe.DataTransferExtractionContext()
             process.register_stage(callback=event_pipe.compute_bandwidth, context=data_transfer_compute_ctx)
 
-        ##############################################################
-        # RCU Util calculation
         if any(args.counter) and "rcu_util" in args.counter and args.compiler_info:
             rcu_util_ctx = event_pipe.MultiRCUUtilizationContext(
                 csv_fname=args.output,
@@ -634,13 +632,12 @@ class Acelyzer:
                 compiler_info=args.compiler_info)
             process.register_stage(callback=event_pipe.compute_utilization_fingerprints, context=rcu_util_ctx)
 
-        ##############################################################
         # dealing with collective call flows
         monotonic_ts_ctx_c = event_pipe.TSSequenceContext(ts3check=True)
         process.register_stage(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_c)
 
-        comm_pre: list[tuple] = []
-        comm_post: list[tuple] = []
+        comm_pre = []
+        comm_post = []
         if args.comm_summarize_seq:
             communication_event_ctx = event_pipe.CommunicationGroupContext()
             comm_pre.append((event_pipe.communication_event_collection, communication_event_ctx))
