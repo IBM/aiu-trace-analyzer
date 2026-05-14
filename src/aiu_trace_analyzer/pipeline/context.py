@@ -40,6 +40,9 @@ class AbstractContext:
             self._disable_warnings()
         return self.is_enabled
 
+    def was_activated(self) -> bool:
+        return self.is_enabled
+
     def _disable_warnings(self) -> None:
         for _, w in self.warnings.items():
             w.occurred = False

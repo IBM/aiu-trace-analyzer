@@ -30,6 +30,8 @@ class InversedTSDetectionContext(AbstractContext):
         self.bad_count = 0
 
     def __del__(self) -> None:
+        if not self.was_activated():
+            return
         if self.bad_count > 0:
             aiulog.log(aiulog.WARN, "TS-Inversed events dropped:", self.bad_count)
 

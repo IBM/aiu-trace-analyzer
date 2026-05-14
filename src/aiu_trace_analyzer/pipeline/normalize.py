@@ -131,6 +131,9 @@ class NormalizationContext(AbstractHashQueueContext):
         self.event_limit = event_limit
 
     def __del__(self) -> None:
+        if not self.was_activated():
+            return
+
         def _print_freq_minmax(key: str):
             freq_min = 1e99
             freq_max = freq_mean = 0.0
