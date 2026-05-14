@@ -370,14 +370,16 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             self.table_hash = self.autopilot_detail.table_hash()
 
     def __del__(self) -> None:
-        if self.is_enabled:
-            if self.multi_table > 0:  # used as index, so 'n-1'
-                aiulog.log(aiulog.WARN, f"UTL: {len(self.fingerprints)}/{self.multi_table+1} unique",
-                           "tables with ideal cycles have been detected."
-                           " Utilization results should be inspected carefully!!!!")
-            if self.unscaled:
-                aiulog.log(aiulog.WARN, "UTL: No ideal/real frequency unscaled (factor 1.0). "
-                           "Utilization might be based on undefined data.")
+        if not self.was_activated():
+            return
+
+        if self.multi_table > 0:  # used as index, so 'n-1'
+            aiulog.log(aiulog.WARN, f"UTL: {len(self.fingerprints)}/{self.multi_table+1} unique",
+                       "tables with ideal cycles have been detected."
+                       " Utilization results should be inspected carefully!!!!")
+        if self.unscaled:
+            aiulog.log(aiulog.WARN, "UTL: No ideal/real frequency unscaled (factor 1.0). "
+                       "Utilization might be based on undefined data.")
 
         # dealing with the kernel_db only makes sense if we detected any table at all
         if _kernel_db_feature_implemented and len(self.kernel_cycles):

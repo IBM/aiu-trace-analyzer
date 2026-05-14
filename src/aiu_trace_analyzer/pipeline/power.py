@@ -36,6 +36,8 @@ class PowerExtractionContext(AbstractHashQueueContext):
         self.bad_events = 0
 
     def __del__(self):
+        if not self.was_activated():
+            return
         if self.bad_events:
             aiulog.log(aiulog.WARN,
                        f"PEC encountered {self.bad_events} bad power events set to 0.0W."
