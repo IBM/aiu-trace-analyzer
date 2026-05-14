@@ -115,12 +115,12 @@ class MpSyncTightContext(EventPairDetectionContext):
             if pid == 0 and cg_name not in self.coll_groups:
                 self.coll_groups.append(cg_name)
 
-            queueID = self.queue_hash(pid, cg_name)
+            queue_id = self.queue_hash(pid, cg_name)
 
-            if queueID in self.queues:
-                self.queues[queueID].append(idx)
+            if queue_id in self.queues:
+                self.queues[queue_id].append(idx)
             else:
-                self.queues[queueID] = [idx]
+                self.queues[queue_id] = [idx]
 
         return []
 
@@ -170,33 +170,33 @@ class MpSyncTightContext(EventPairDetectionContext):
 
         return list_dts_event[-1][1]    # event with the greatest ending dts in the coll-group
 
-    def _sync_mb_recv(self, P_map):
+    def _sync_mb_recv(self, p_map):
 
         TS2_last_recv = []
         for ppid in range(1, self.NP):
-            pid = P_map[ppid]
+            pid = p_map[ppid]
             TS2_last_recv.append(self._get_list_DTS_end_of_coll(pid, 1))
 
         ndarr_DTS_last_recv = np.array(TS2_last_recv)
         mean_DTS_last_recv = ndarr_DTS_last_recv.mean(axis=0)
-        mse_DTS_last_recv = np.square(np.subtract(ndarr_DTS_last_recv, mean_DTS_last_recv)).mean()
-        idx_last_recv_w_min_mse = np.argmin(mse_DTS_last_recv)
+        mse_dts_last_recv = np.square(np.subtract(ndarr_DTS_last_recv, mean_DTS_last_recv)).mean()
+        idx_last_recv_w_min_mse = np.argmin(mse_dts_last_recv)
 
         for ppid in range(2, self.NP):
             dts_shift = (ndarr_DTS_last_recv[ppid - 1][idx_last_recv_w_min_mse] -
                          ndarr_DTS_last_recv[0][idx_last_recv_w_min_mse])
-            self.dts_shifts[P_map[ppid]] -= dts_shift
+            self.dts_shifts[p_map[ppid]] -= dts_shift
 
-    def sync_last_send_recv(self, P_map):
+    def sync_last_send_recv(self, p_map):
 
         self.dts_shifts = [0] * self.NP
 
         if self.NP > 2:
-            self._sync_mb_recv(P_map)
+            self._sync_mb_recv(p_map)
 
         # Now only consider P_map[0] (sender) and P_map[1] (receiver)
-        pid_send = P_map[0]
-        pid_recv = P_map[1]
+        pid_send = p_map[0]
+        pid_recv = p_map[1]
 
         # Like the non-numpy stuff better.
         list_TS5_last_send = self._get_list_DTS_end_of_coll(pid_send, 4)    # index: 0-4
@@ -215,10 +215,10 @@ class MpSyncTightContext(EventPairDetectionContext):
         if self.TP_tree_reduce:
             # shift (multi) receivers for tree for proc-0 is the sender.
             for p in range(1, self.NP):
-                self.dts_shifts[P_map[p]] -= receiver_dts_shift_in_cycle
+                self.dts_shifts[p_map[p]] -= receiver_dts_shift_in_cycle
         else:
             # shift (single) sender
-            self.dts_shifts[P_map[0]] += receiver_dts_shift_in_cycle
+            self.dts_shifts[p_map[0]] += receiver_dts_shift_in_cycle
 
         dts_id_rank0_ref_event = 4 if self.TP_tree_reduce else 1
         dts_2_hts_ref_event = self._get_last_event_in_cg(0, idx_min_dts_diff, dts_id_rank0_ref_event)
@@ -285,13 +285,13 @@ class MpSyncTightContext(EventPairDetectionContext):
 
         while len(self.all_events) > 0:
             e = self.all_events.pop()
-            # e["tsE"] = e["ts"] + e["dur"]
+            # replaced alternative: e["tsE"] = e["ts"] + e["dur"]
             aiulog.log(aiulog.TRACE, "mp_gather_events drain: ", e)
             # if "TS5" in e["args"]:
             revents += [e]
         aiulog.log(aiulog.TRACE, "mp_gather_events drain: ", revents)
 
-        # revents.sort(key=lambda x: x["tsE"])
+        # replaced alternative: revents.sort(key=lambda x: x["tsE"])
         revents.sort(key=lambda x: x["ts"])
 
         return revents

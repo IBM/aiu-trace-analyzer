@@ -107,11 +107,18 @@ class NormalizationContext(AbstractHashQueueContext):
                 is_error=True
             ),
             TraceWarning(
+                name="zero_gap_time",
+                text="Detected {d[count]} identical timestamps between consecutive events. "
+                     "This suggests a timestamp issue in the trace and "
+                     "causes unreliable interval-based frequency calculation.",
+                data={"count": 0}
+            ),
+            TraceWarning(
                 name="epoch_start",
                 text="OVC: reference epoch had to be updated {d[count]} times with newly detected earlier timestamps. "
                      "This indicates events with 0.0-timestamps or out-of-order input events. "
                      "(pid={d[pid]}, job={d[job]}, start={d[epoch_start]})",
-                data={"count": 0, "pid": set([]), "job": set([]), "epoch_start": 0.0},
+                data={"count": 0, "pid": set(), "job": set(), "epoch_start": 0.0},
                 update_fn={
                     "count": int.__add__,
                     "pid": set.union,
@@ -249,7 +256,7 @@ class NormalizationContext(AbstractHashQueueContext):
             job_drift = int(epoch_start
                             - (self.queues[qid]["0"][0] + elapsed_epochs * self.OVERFLOW_TIME_SPAN_US))
             actual_freq = (abs_cycle - self.queues[qid]["0"][2]) / (ts - self.queues[qid]["0"][1]) \
-                if ts != self.queues[qid]["0"][1] else None
+                if not math.isclose(ts, self.queues[qid]["0"][1], abs_tol=1e-9) else None
             self.queues[qid][job] = (epoch_start, ts, cycle)
             aiulog.log(aiulog.DEBUG, "OVC: Next job reference Epoch", qid, job, epoch_start, job_drift, actual_freq)
             mi, ma, cnt, mean, madr = self.frequency_minmax
@@ -341,7 +348,13 @@ class NormalizationContext(AbstractHashQueueContext):
         if self.prev_event_data[qid][self._INTERVAL_KEY].count > 0:
             gap_cycles = int(event["args"][ts_a]) - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_cycle()
             gap_time = event["ts"] - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_ts()
-            gap_freq = float(gap_cycles) / gap_time
+            # Handle zero gap_time to avoid division by zero
+            if gap_time > 0:
+                gap_freq = float(gap_cycles) / gap_time
+            else:
+                # If gap_time is zero, fall back to duration-based frequency
+                self.warnings["zero_gap_time"].update()
+                gap_freq = dur_freq
         else:
             gap_freq = dur_freq
         self.prev_event_data[qid][self._INTERVAL_KEY].update(

@@ -3,7 +3,7 @@
 import re
 
 import aiu_trace_analyzer.logger as aiulog
-from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 from aiu_trace_analyzer.pipeline import AbstractContext, TwoPhaseWithBarrierContext
 
 
@@ -11,6 +11,21 @@ class LaunchFLowContext(TwoPhaseWithBarrierContext):
     launch_pattern = re.compile(r'Launch.*ControlBlock')
 
     def __init__(self, warnings=None):
+        if warnings is None:
+            warnings = []
+        warnings.extend([
+            TraceWarning(
+                name="ts_inconsistency",
+                text="FLOWS: Detected {d[count]} timestamp inconsistencies,"
+                " skipped flow creation for affected iterations",
+                data={"count": 0}
+            ),
+            TraceWarning(
+                name="ts_after_schedwait",
+                text="FLOWS: Ignored {d[count]} events with timestamp after schedule wait",
+                data={"count": 0}
+            )
+        ])
         super().__init__(warnings)
         self.flow_id_seq = 0
 
@@ -67,8 +82,14 @@ class LaunchFLowContext(TwoPhaseWithBarrierContext):
             self.queues[qid]["last_pid_tid"] = (event["pid"], event["tid"])
             self.queues[qid]["last_event"] = event
         else:
-            aiulog.log(aiulog.WARN, "FLOWS: Ignoring event with ts after schedule wait", event)
-        assert self.queues[qid]["last_ts"] <= sched_wait_end, f"{qid}: {event}, {self.queues[qid]}"
+            aiulog.log(aiulog.TRACE, "FLOWS: Ignoring event with ts after schedule wait", event)
+            self.warnings["ts_after_schedwait"].update({"count": 1})
+
+        # Check for timestamp inconsistency and mark queue as invalid if detected
+        if self.queues[qid]["last_ts"] > sched_wait_end:
+            self.warnings["ts_inconsistency"].update({"count": 1})
+            # Mark this queue as invalid to prevent flow event creation
+            self.queues[qid]["invalid"] = True
 
     def max_flow_id_detection(self, observed_id: int) -> None:
         self.flow_id_seq = max(self.flow_id_seq, observed_id)
@@ -100,6 +121,10 @@ class LaunchFLowContext(TwoPhaseWithBarrierContext):
 
         qid = event["args"]["correlation"]
         if qid not in self.queues or "src" not in self.queues[qid]:
+            return []
+
+        # Skip flow creation if queue is marked as invalid due to timestamp issues
+        if self.queues[qid].get("invalid", False):
             return []
 
         launcher = self.queues[qid]["src"]
@@ -134,6 +159,10 @@ class LaunchFLowContext(TwoPhaseWithBarrierContext):
         return_flows = super().drain()
         for id, qdata in self.queues.items():
             if "src" not in qdata or "schedwait" not in qdata:
+                continue
+
+            # Skip flow creation if queue is marked as invalid due to timestamp issues
+            if qdata.get("invalid", False):
                 continue
             launcher = qdata["src"]
             waiter = qdata["schedwait"]

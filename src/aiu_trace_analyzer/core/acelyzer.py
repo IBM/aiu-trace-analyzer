@@ -44,6 +44,7 @@ class Acelyzer:
         # overlap detection defaults (method and potential 'ts-shift' threshold)
         "overlap": "tid",
         "ts_shift_threshold": 0.005,
+        "max_tid_streams": 5,
 
         # event manipulation/extraction
         "split_events": False,
@@ -115,7 +116,11 @@ class Acelyzer:
             "ts_start": 0.0,
             "ts_end": sys.float_info.max,
             "no_count_types": "M",
-        }
+        },
+
+        # by default use regular (or provided) stage processing profile and not verification mode
+        "verification_mode": False,
+        "verification_profile": os.path.join(os.path.dirname(__file__), "../profiles/verification.json"),
     }
 
     # define default event sort key: timestamp + reverse_duration
@@ -129,14 +134,14 @@ class Acelyzer:
                 print(__version__)
                 sys.exit(0)
 
+            aiulog.loglevel = self.args.loglevel
+            aiulog.log(aiulog.INFO, "Starting Test parser")
+
             if not self._args_sanity_check(self.args):
                 sys.exit(1)
         except Exception as e:
             print(e)
             sys.exit(1)
-
-        aiulog.loglevel = self.args.loglevel
-        aiulog.log(aiulog.INFO, "Starting Test parser")
 
         self.freq_soc = self.args.freq[0]
         self.freq_core = self.args.freq[1]
@@ -152,7 +157,9 @@ class Acelyzer:
             importer = ingest.MultifileIngest(
                 source_uri=self.args.input,
                 show_warnings=(not self.args.disable_input_warnings),
-                direct_data=self.direct_data)
+                direct_data=self.direct_data,
+                verification_mode=self.args.verification_mode
+            )
         except FileNotFoundError:
             sys.exit(1)
 
@@ -187,7 +194,10 @@ class Acelyzer:
                 return -1
         self.exporter.export_meta(importer.get_passthrough_meta())
 
-        self.register_processing_functions(process, self.args, self.exporter)
+        if not self.args.verification_mode:
+            self.register_processing_functions(process, self.args, self.exporter)
+        else:
+            self.register_verification_functions(process, args=self.args, exporter=self.exporter)
 
         # create main engine and run
         dr = engine.Engine(importer, process, self.exporter)
@@ -252,10 +262,13 @@ class Acelyzer:
                             help="Space-separated list of counters to extract/display."
                             " Note: power_ts4 and power_ts3 are mutually exclusive.")
 
-        parser.add_argument("-c", "--compiler_log", type=str, default=None,
-                            help="(Comma-separated list of per-rank) Path/Filename of compiler log to ingest"
-                            " compile-time data references. Required e.g. for rcu_util counters."
-                            " Multi-AIU rank outputs need to be sorted by rank.")
+        parser.add_argument("-c", "--compiler_info", type=str, default=None,
+                            help="For existing AIU stack: (Comma-separated list of per-rank)"
+                            " Path/Filename of compiler log to ingest compile-time data references."
+                            " Required e.g. for rcu_util counters."
+                            " Multi-AIU rank outputs need to be sorted by rank."
+                            " For torch-spyre stack: Path to the inductor_spyre directory containing "
+                            " inductor_spyre/<kernel_name>/perf/ideal_cycles.json files.")
 
         parser.add_argument("-D", "--loglevel", type=int, default=self.defaults["loglevel"],
                             choices=range(0, 5), help="Logging level 0(ERROR)..4(TRACE)")
@@ -322,6 +335,9 @@ class Acelyzer:
                             choices=["drop", "tid", "async", "warn", "shift"],
                             help="How to resolve overlapping/non-displayable events )")
 
+        parser.add_argument("--max_tid_streams", type=int, default=self.defaults["max_tid_streams"],
+                            help="Maximum number of TID streams to use for overlap resolution (tid mode)")
+
         parser.add_argument("-P", "--profile", type=str, default="not_set",
                             help="Name of a processing profile json that lists"
                             " the active processing stages to run")
@@ -346,6 +362,10 @@ class Acelyzer:
         parser.add_argument("-T", "--sync_to_dev", dest='sync_to_dev', action='store_const', const=True,
                             default=self.defaults["sync_to_dev"],
                             help="When set, use epoch from device timers")
+
+        parser.add_argument("-V", "--verify", dest="verification_mode", action="store_const", const=True,
+                            default=self.defaults["verification_mode"],
+                            help="When set, switch to file verification mode with almost no modifications.")
 
         parser.add_argument("--autopilot_data", type=str, default=self.defaults["autopilot_db"],
                             help="(Not yet implemented) Where to look for kernel category data"
@@ -427,6 +447,9 @@ class Acelyzer:
             else:
                 parsed_args.profile = self.defaults["stage_profile"]
 
+        if parsed_args.verification_mode:
+            parsed_args.profile = self.defaults["verification_profile"]
+
         return parsed_args
 
     def get_output_data(self):
@@ -442,9 +465,15 @@ class Acelyzer:
             aiulog.log(aiulog.ERROR, "power_ts3 and power_ts4 are mutually exclusive")
             return False
 
-        if "rcu_util" in args.counter and args.compiler_log is None:
-            aiulog.log(aiulog.WARN, "rcu_util counter requested but no compiler log provided."
-                       " No utilization will be plotted.")
+        if "rcu_util" in args.counter:
+            if args.compiler_info is None:
+                aiulog.log(aiulog.WARN, "rcu_util counter requested but no compiler log/inductor spyre"
+                                        " directory path provided. No utilization will be plotted.")
+            elif not os.path.exists(args.compiler_info):
+                aiulog.log(aiulog.WARN, "Invalid directory path provided. No utilization will be plotted.")
+
+        if args.verification_mode:
+            aiulog.log(aiulog.INFO, "Running VERIFICATION MODE! Using stage profile: ", args.profile)
 
         return True
 
@@ -560,7 +589,8 @@ class Acelyzer:
         # register pre-processing: resolve overlap conflicts caused by partially overlapping slices
         overlap_arg = self._overlap_option_from_arg(args.overlap)
         overlap_ctx = event_pipe.OverlapDetectionContext(overlap_resolve=overlap_arg,
-                                                         ts_shift_threshold=self.defaults["ts_shift_threshold"])
+                                                         ts_shift_threshold=self.defaults["ts_shift_threshold"],
+                                                         max_tid_streams=args.max_tid_streams)
         if overlap_arg == event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_TID:
             process.register_stage(callback=event_pipe.detect_partial_overlap_tids, context=overlap_ctx)
             process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
@@ -609,12 +639,14 @@ class Acelyzer:
             data_transfer_compute_ctx = event_pipe.DataTransferExtractionContext()
             process.register_stage(callback=event_pipe.compute_bandwidth, context=data_transfer_compute_ctx)
 
-        if any(args.counter) and "rcu_util" in args.counter and args.compiler_log:
+        ##############################################################
+        # RCU Util calculation
+        if any(args.counter) and "rcu_util" in args.counter and args.compiler_info:
             rcu_util_ctx = event_pipe.MultiRCUUtilizationContext(
-                compiler_log=args.compiler_log,
                 csv_fname=args.output,
                 soc_freq=self.freq_soc,
-                core_freq=self.freq_core)
+                core_freq=self.freq_core,
+                compiler_info=args.compiler_info)
             process.register_stage(callback=event_pipe.compute_utilization_fingerprints, context=rcu_util_ctx)
 
         ##############################################################
@@ -630,7 +662,7 @@ class Acelyzer:
         if args.comm_summarize_seq:
             process.register_stage(callback=event_pipe.communication_event_apply, context=communication_event_ctx)
 
-        if any(args.counter) and "rcu_util" in args.counter and args.compiler_log:
+        if any(args.counter) and "rcu_util" in args.counter and args.compiler_info:
             process.register_stage(callback=event_pipe.compute_utilization, context=rcu_util_ctx)
 
         # register callback to to the power counter sorting
@@ -712,3 +744,12 @@ class Acelyzer:
         process.register_stage(callback=event_pipe.sort_events, context=final_sort_ctx)
 
         # <<< END Event processing functions registration
+
+    def register_verification_functions(self,
+                                        process: processor.EventProcessor,
+                                        args,
+                                        exporter: output.AbstractTraceExporter):
+        verification_ctx = event_pipe.VerificationContext()
+
+        process.register_stage(callback=event_pipe.verify, context=verification_ctx)
+        process.register_stage(callback=event_pipe.verify_cleanup)
