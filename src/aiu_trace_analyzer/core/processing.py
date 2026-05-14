@@ -1,5 +1,6 @@
 # Copyright 2024-2025 IBM Corporation
 
+from typing import Optional
 
 import aiu_trace_analyzer.logger as aiulog
 import aiu_trace_analyzer.trace_view as aiuev
@@ -144,3 +145,32 @@ class EventProcessor:
             for event in pending:
                 next_event_list += self.process(event)
         return next_event_list
+
+
+class PipelineStage:
+    '''
+    Groups pre-steps, an optional barrier, and post-steps into one logical stage.
+
+    A BarrierContext is inserted between the two lists only when post_steps is
+    non-empty. Each instance owns its own BarrierContext so that independent
+    stages do not share the same event queue. See issue #100.
+    '''
+
+    def __init__(
+        self,
+        pre_steps: list,
+        post_steps: Optional[list] = None,
+    ) -> None:
+        from aiu_trace_analyzer.pipeline.barrier import BarrierContext
+        self._pre = pre_steps
+        self._post = post_steps if post_steps is not None else []
+        self._barrier_ctx = BarrierContext() if self._post else None
+
+    def register(self, process) -> None:
+        from aiu_trace_analyzer.pipeline.barrier import pipeline_barrier
+        for cb, ctx in self._pre:
+            process.register_stage(cb, ctx)
+        if self._barrier_ctx is not None:
+            process.register_stage(pipeline_barrier, self._barrier_ctx)
+        for cb, ctx in self._post:
+            process.register_stage(cb, ctx)

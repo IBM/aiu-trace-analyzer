@@ -101,7 +101,7 @@ from aiu_trace_analyzer.pipeline.cmpt_collection import queueing_counter
 from aiu_trace_analyzer.pipeline.rcu_utilization import compute_utilization, compute_utilization_fingerprints
 from aiu_trace_analyzer.pipeline.tb_refinement import tb_refinement_intrusive, tb_refinement_lightweight
 from aiu_trace_analyzer.pipeline.iteration_detect import collect_iteration_stats
-from aiu_trace_analyzer.pipeline.barrier import pipeline_barrier, _main_barrier_context
+from aiu_trace_analyzer.pipeline.barrier import pipeline_barrier, _main_barrier_context, BarrierContext
 from aiu_trace_analyzer.pipeline.flex_job_offset import frequency_align_collect, frequency_align_apply
 from aiu_trace_analyzer.pipeline.flow_launch import launch_flow_collect, launch_flow_create_missing
 from aiu_trace_analyzer.pipeline.power_stats import analyze_power_statistics
