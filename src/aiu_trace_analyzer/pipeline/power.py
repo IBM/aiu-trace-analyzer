@@ -10,6 +10,8 @@ from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.pipeline import AbstractContext, AbstractHashQueueContext
 from aiu_trace_analyzer.pipeline.timesync import get_cycle_ts_as_clock
 
+_CMPT_EXEC = "Cmpt Exec"
+
 
 class PowerExtractionContext(AbstractHashQueueContext):
     '''
@@ -91,7 +93,7 @@ class PowerExtractionContext(AbstractHashQueueContext):
         if self.skip_events is True:
 
             # skip this event if both contain "Cmpt Exec" in the cat
-            if ("Cmpt Exec" in prev['cat']) and ("Cmpt Exec" in this['cat']):
+            if (_CMPT_EXEC in prev['cat']) and (_CMPT_EXEC in this['cat']):
                 aiulog.log(aiulog.TRACE, "dumped event: ", this['cat'])
                 return None
 
@@ -101,7 +103,7 @@ class PowerExtractionContext(AbstractHashQueueContext):
                 return None
 
             # skip this event if prev contains "Cmpt Exec" and this contains " DmaI"
-            if ("Cmpt Exec" in prev['cat']) and (" DmaI" in this['cat']):
+            if (_CMPT_EXEC in prev['cat']) and (" DmaI" in this['cat']):
                 aiulog.log(aiulog.TRACE, "dumped event: ", this['cat'])
                 return None
 
@@ -148,20 +150,20 @@ class PowerExtractionContext(AbstractHashQueueContext):
 
         # possible categories: DmaI, DmaO, AllGather, Exec
         if "DmaI" in cat:
-            cat_type = " DmaI"
+            cat_type = "DmaI"
         elif "DmaO" in cat:
-            cat_type = " DmaO"
+            cat_type = "DmaO"
         elif "AllGather" in cat:
-            cat_type = " AllGather"
+            cat_type = "AllGather"
         elif "AllReduce" in cat:
-            cat_type = " AllReduce"
-        elif "Cmpt Exec" in cat:
-            cat_type = " Cmpt Exec"
+            cat_type = "AllReduce"
+        elif _CMPT_EXEC in cat:
+            cat_type = _CMPT_EXEC
         else:
-            cat_type = " Other"
+            cat_type = "Other"
 
         # overwrite name field
-        prev["name"] += cat_type
+        prev["name"] += f" {cat_type}"
         return prev
 
     def create_zero_event(self, event: TraceEvent, ts) -> Union[TraceEvent, None]:

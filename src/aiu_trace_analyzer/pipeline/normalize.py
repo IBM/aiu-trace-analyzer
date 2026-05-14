@@ -118,7 +118,7 @@ class NormalizationContext(AbstractHashQueueContext):
                 text="OVC: reference epoch had to be updated {d[count]} times with newly detected earlier timestamps. "
                      "This indicates events with 0.0-timestamps or out-of-order input events. "
                      "(pid={d[pid]}, job={d[job]}, start={d[epoch_start]})",
-                data={"count": 0, "pid": set([]), "job": set([]), "epoch_start": 0.0},
+                data={"count": 0, "pid": set(), "job": set(), "epoch_start": 0.0},
                 update_fn={
                     "count": int.__add__,
                     "pid": set.union,

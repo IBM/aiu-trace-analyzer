@@ -197,25 +197,25 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
             return alist + [oevent]
         return []
 
-    def update_async_event_queue(self, queueID, async_event, current) -> list[TraceEvent]:
-        if not async_event and queueID not in self.async_queues:
+    def update_async_event_queue(self, queue_id, async_event, current) -> list[TraceEvent]:
+        if not async_event and queue_id not in self.async_queues:
             # nothing to do, no pending async events to emit or handle
             return []
 
         # if a new async event is provided, lets queue it:
         if async_event:
-            if queueID not in self.async_queues:
-                self.async_queues[queueID] = []
-            self.async_queues[queueID].append(async_event)
+            if queue_id not in self.async_queues:
+                self.async_queues[queue_id] = []
+            self.async_queues[queue_id].append(async_event)
 
         # otherwise: just review any existing async events to emit
-        aiulog.log(aiulog.TRACE, "POD aqueue:", current, [e["ts"] for e in self.async_queues[queueID]])
+        aiulog.log(aiulog.TRACE, "POD aqueue:", current, [e["ts"] for e in self.async_queues[queue_id]])
         # return every async 'e' event with a ts <= current
-        rlist = list(filter(lambda x: x['ts'] <= current, self.async_queues[queueID]))
+        rlist = list(filter(lambda x: x['ts'] <= current, self.async_queues[queue_id]))
         rlist.sort(key=lambda e: e['ts'])
         # keep every async 'e' event until its time has come
-        remain = list(filter(lambda x: x['ts'] > current, self.async_queues[queueID]))
-        self.async_queues[queueID] = remain
+        remain = list(filter(lambda x: x['ts'] > current, self.async_queues[queue_id]))
+        self.async_queues[queue_id] = remain
         return rlist
 
     def collect_tid_space(self, event: TraceEvent) -> None:
@@ -300,7 +300,7 @@ def detect_partial_overlap_events(event: TraceEvent, context: AbstractContext) -
 class TSSequenceContext(AbstractHashQueueContext):
     def __init__(self, ts3check: bool = False):
         super().__init__()
-        self.TS_cmpt_end = {}
+        self.ts_cmpt_end = {}
         self.ts_outsync = (0, 0)
         self.ts_total = 0
         self.ts_check = ts3check
@@ -329,6 +329,7 @@ class TSSequenceContext(AbstractHashQueueContext):
                            self.queues[queue_id], "vs.", event['ts'], event['dur'])
 
         self.queues[queue_id] = (event['ts'], event['dur'])
+        return queue_id
 
     def ts3insert(self, event: TraceEvent, queue_id=None):
         if "Cmpt Exec" not in event["name"]:
@@ -338,17 +339,17 @@ class TSSequenceContext(AbstractHashQueueContext):
         if not queue_id:
             queue_id = event["pid"]
 
-        if queue_id not in self.TS_cmpt_end:
-            self.TS_cmpt_end[queue_id] = (0.0, 0)
+        if queue_id not in self.ts_cmpt_end:
+            self.ts_cmpt_end[queue_id] = (0.0, 0)
 
         try:
-            last_TS = self.TS_cmpt_end[queue_id]
-            if last_TS[0] < event["ts"] and int(event["args"]["TS3"]) < last_TS[1]:
+            last_ts = self.ts_cmpt_end[queue_id]
+            if last_ts[0] < event["ts"] and int(event["args"]["TS3"]) < last_ts[1]:
                 self.ts_outsync = (self.ts_outsync[0]+1, max(self.ts_outsync[1],
-                                                             last_TS[1] - int(event["args"]["TS3"])))
-            self.TS_cmpt_end[queue_id] = (event["ts"], int(event["args"]["TS4"]))
+                                                             last_ts[1] - int(event["args"]["TS3"])))
+            self.ts_cmpt_end[queue_id] = (event["ts"], int(event["args"]["TS4"]))
         except:  # noqa: E722
-            print(self.TS_cmpt_end[queue_id], event)
+            print(self.ts_cmpt_end[queue_id], event)
             raise
 
 

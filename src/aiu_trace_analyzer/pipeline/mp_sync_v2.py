@@ -7,6 +7,9 @@ from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionConte
 import aiu_trace_analyzer.logger as aiulog
 
 
+_STG_PREF = "MP_SYNC_v2:"
+
+
 class MpTsCalibV2Context(EventPairDetectionContext):
     '''
     Multiple process time stamp calibration
@@ -123,11 +126,11 @@ class MpTsCalibV2Context(EventPairDetectionContext):
                         t5_event = self._get_ts5_in_us(event)
                         ts_end_host = event["ts"] + event["dur"]
                         timestamps.append((t5_event, ts_end_host))
-                        aiulog.log(aiulog.DEBUG, "MP_SYNC_v2: different gaps: ",
+                        aiulog.log(aiulog.DEBUG, _STG_PREF, "different gaps: ",
                                    pid, event["ts"], event["dur"], t5_event, timestamps, cg_name, event["name"])
 
                 timestamps.sort(key=lambda x: x[0])     # sort incremental of dev-ts
-                aiulog.log(aiulog.DEBUG, "MP_SYNC_v2: ts sorted: ", pid, timestamps, cg_name)
+                aiulog.log(aiulog.DEBUG, _STG_PREF, "ts sorted: ", pid, timestamps, cg_name)
 
                 assert len(timestamps) > 0
                 dts_ranges_per_pid_cg[queue_id] = (timestamps[0][0], timestamps[-1][0])
@@ -140,7 +143,7 @@ class MpTsCalibV2Context(EventPairDetectionContext):
                 ts_range = dts_ranges_per_pid_cg[self.queue_hash(pid, cg_name)]
                 assert len(ts_range) == 2
                 max_dts_per_pid[pid].append((ts_range[-1], cg_name, ts_range[-1]-ts_range[0]))
-        aiulog.log(aiulog.TRACE, "mp_gather_events max_dts_per_pid: ", max_dts_per_pid)
+        aiulog.log(aiulog.TRACE, f"{_STG_PREF} max_dts_per_pid: {max_dts_per_pid}")
 
         # Compute the mean-diff (mse) of max_TS5 across all ranks, for each collective group
         # Formula: sum<P = 0..NP> ( max_ts5[P] - max_ts5[0] ) / NP
@@ -176,15 +179,15 @@ class MpTsCalibV2Context(EventPairDetectionContext):
             list_dts = [a[0] for a in max_dts_per_pid[pid]]
             list_dts.sort()
             delta_t5_last_cg_to_first_cg[pid] = list_dts[-1] - list_dts[0]
-            aiulog.log(aiulog.INFO, "mp_gather_events delta_t5: ", list_dts)
+            aiulog.log(aiulog.INFO, _STG_PREF, "delta_t5: ", list_dts)
         for pid in self.proc_ids:
             self.dilation_factor[pid] = delta_t5_last_cg_to_first_cg[pid] / delta_t5_last_cg_to_first_cg[0]
 
-        aiulog.log(aiulog.INFO, "MP_SYNC_V2 delta_t5, dilation factor:   ", self.dilation_factor)
-        aiulog.log(aiulog.INFO, "MP_SYNC_V2 delta_t5, ref_dts_cg:        ", self.ref_dts_cg)
-        aiulog.log(aiulog.INFO, "MP_SYNC_V2 delta_t5, ref_hts_p0:        ", ref_hts_p0)
-        aiulog.log(aiulog.INFO, "MP_SYNC_V2 delta_t5, ref_dts_per_pid:   ", self.ref_dts_per_pid)
-        aiulog.log(aiulog.INFO, "MP_SYNC_V2 delta_t5, dts_hts_calib_ref: ", self.dts_hts_calib_ref)
+        aiulog.log(aiulog.INFO, _STG_PREF, "delta_t5, dilation factor:   ", self.dilation_factor)
+        aiulog.log(aiulog.INFO, _STG_PREF, "delta_t5, ref_dts_cg:        ", self.ref_dts_cg)
+        aiulog.log(aiulog.INFO, _STG_PREF, "delta_t5, ref_hts_p0:        ", ref_hts_p0)
+        aiulog.log(aiulog.INFO, _STG_PREF, "delta_t5, ref_dts_per_pid:   ", self.ref_dts_per_pid)
+        aiulog.log(aiulog.INFO, _STG_PREF, "delta_t5, dts_hts_calib_ref: ", self.dts_hts_calib_ref)
 
     # Calibration calculation:
     #   t_p1_syncd_to_p0 = ( t_p1 - t5_ref_p1 ) / D_p1 + t5_ref_p0
@@ -201,9 +204,9 @@ class MpTsCalibV2Context(EventPairDetectionContext):
     def _get_calib_dts(self, t_p1, pid):
         t5_ref_p0 = self.ref_dts_per_pid[0]
         t5_ref_p1 = self.ref_dts_per_pid[pid]
-        D_p1 = self.dilation_factor[pid]
+        d_p1 = self.dilation_factor[pid]
 
-        t_p1_syncd_to_p0 = (t_p1 - t5_ref_p1) / D_p1 + t5_ref_p0
+        t_p1_syncd_to_p0 = (t_p1 - t5_ref_p1) / d_p1 + t5_ref_p0
         return t_p1_syncd_to_p0
 
     # Adjust host-ts from dev-ts
@@ -221,7 +224,7 @@ class MpTsCalibV2Context(EventPairDetectionContext):
                     e["ts"] -= e["dur"]
 
     def drain(self) -> list[TraceEvent]:
-        aiulog.log(aiulog.TRACE, "mp_gather_events drain: ")
+        aiulog.log(aiulog.TRACE, _STG_PREF, "drain: ")
         revents = super().drain()
 
         self.mp_calibrate_dts()
@@ -229,10 +232,10 @@ class MpTsCalibV2Context(EventPairDetectionContext):
 
         while len(self.all_events) > 0:
             e = self.all_events.pop()
-            aiulog.log(aiulog.TRACE, "mp_gather_events drain: ", e)
+            aiulog.log(aiulog.TRACE, _STG_PREF, "drain: ", e)
             # if "TS5" in e["args"]:
             revents += [e]
-        aiulog.log(aiulog.TRACE, "mp_gather_events drain: ", revents)
+        aiulog.log(aiulog.TRACE, _STG_PREF, "drain: ", revents)
         return revents
 
 
