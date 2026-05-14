@@ -51,6 +51,9 @@
 
     {"name": "CaseZeroDurA",  "cat": "CatA",   "ph": "X",    "pid": 0,    "tid": 0,  "ts": 170, "dur": 0.0, "comment": "Zero-duration event type X. Should create a warning."},
     {"name": "CaseZeroDurB",   "cat": "CatA",     "ph": "B",    "pid": 0,    "tid": 5,  "ts": 180, "comment": "Zero-duration event type BE. Should create a warning."},
-    {"name": "CaseZeroDurB",   "cat": "CatA",     "ph": "E",    "pid": 0,    "tid": 5,  "ts": 180}
+    {"name": "CaseZeroDurB",   "cat": "CatA",     "ph": "E",    "pid": 0,    "tid": 5,  "ts": 180},
+    {"name": "CaseZeroDurC",  "cat": "CatA",   "ph": "X",    "pid": 0,    "tid": 0,  "ts": 190, "dur": 0.0,
+        "args": {"TS1": "100", "TS2": "200", "TS3": "300", "TS4": "400", "TS5": "500"},
+        "comment": "Zero-duration event with non-zero HW-time. Should create a warning."}
 
 ]

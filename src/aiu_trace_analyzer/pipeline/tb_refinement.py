@@ -89,7 +89,7 @@ class DeviceRankInfo():
 
 
 class RefinementContext(AbstractHashQueueContext):
-    name_converter = re.compile(r"([\D\[\]-]+)(\d+)")
+    name_converter = re.compile(r"(\D+)(\d+)")
 
     def __init__(self, exporter: output.AbstractTraceExporter, keep_names: bool = False) -> None:
         super().__init__()

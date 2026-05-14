@@ -110,3 +110,6 @@ from aiu_trace_analyzer.pipeline.categorize import event_categorizer, event_cate
 
 # for reference of the template, you'd do here:
 #       from aiu_trace_analyzer.pipeline.template import myprocessing
+
+from aiu_trace_analyzer.verification.verify import verify, verify_cleanup
+from aiu_trace_analyzer.verification.verify import VerificationContext

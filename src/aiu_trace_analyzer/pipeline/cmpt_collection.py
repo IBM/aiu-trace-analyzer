@@ -1,10 +1,10 @@
 # Copyright 2024-2025 IBM Corporation
 
 import copy
-import re
 
 import aiu_trace_analyzer.logger as aiulog
-from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
+from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
+from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.pipeline import AbstractContext, AbstractHashQueueContext
 
 
@@ -94,12 +94,13 @@ class QueueingCounterContext(AbstractHashQueueContext):
 
 
 def queueing_counter(event: TraceEvent, queue_coll: AbstractContext, keyval: dict) -> list[TraceEvent]:
+    assert isinstance(queue_coll, QueueingCounterContext), "queue_coll must be a QueueingCounterContext"
+
     revents = [event]
     keep_prep = keyval.get("keep_prep", False)
 
     if event["ph"] in "X":
-        dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
-        if re.search(dialect.get("acc_compute_prep"), event["name"]) is None:
+        if not PipelineContextTool.is_category(event, "acc_compute_prep"):
             return revents
 
         if keep_prep:

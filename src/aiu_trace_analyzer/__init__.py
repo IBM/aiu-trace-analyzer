@@ -1,6 +1,10 @@
 # Copyright 2024-2025 IBM Corporation
 
-__version__ = "1.0.2"
+try:
+    from importlib.metadata import version, PackageNotFoundError
+    __version__ = version("aiu_trace_analyzer")
+except PackageNotFoundError:
+    __version__ = "unknown"
 
 from aiu_trace_analyzer.trace_view import AbstractEventType
 from aiu_trace_analyzer import *

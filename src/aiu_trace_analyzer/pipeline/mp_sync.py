@@ -7,6 +7,9 @@ from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionConte
 import aiu_trace_analyzer.logger as aiulog
 
 
+_STG_PREF = "mp_gather_events"
+
+
 class MpTsCalibContext(EventPairDetectionContext):
     '''
     Multiple process time stamp calibration
@@ -50,7 +53,7 @@ class MpTsCalibContext(EventPairDetectionContext):
         idx = len(self.all_events) - 1
 
         if event["ph"] in ["X", "b"] and "args" in event and "CollGroup" in event["args"]:
-            aiulog.log(aiulog.TRACE, "mp_gather_events 3: ", event)
+            aiulog.log(aiulog.TRACE, f"{_STG_PREF} 3: {event}")
             pid = event["pid"]
             cg_name = event["args"]["CollGroup"]
 
@@ -58,7 +61,7 @@ class MpTsCalibContext(EventPairDetectionContext):
             self.coll_groups[cg_name] = 1
 
             queue_id = self.queue_hash(pid, cg_name)
-            aiulog.log(aiulog.TRACE, "mp_gather_events 3: ", queue_id)
+            aiulog.log(aiulog.TRACE, f"{_STG_PREF} 3: {queue_id}")
             if queue_id in self.queues:
                 self.queues[queue_id].append(idx)
             else:
@@ -123,7 +126,7 @@ class MpTsCalibContext(EventPairDetectionContext):
                 assert len(ts_range) == 2
                 max_stamps[pid].append((ts_range[-1], cg_name, ts_range[-1]-ts_range[0]))
 
-        aiulog.log(aiulog.TRACE, "mp_gather_events max_stamps: ", max_stamps)
+        aiulog.log(aiulog.TRACE, f"{_STG_PREF} max_stamps: {max_stamps}")
 
         for pid in self.proc_ids:
             assert 0 in max_stamps and pid in max_stamps
@@ -139,7 +142,7 @@ class MpTsCalibContext(EventPairDetectionContext):
             delta_stamps.sort(key=lambda x: x[2])
             self.ts_calibs[pid] = delta_stamps[-1][0]
 
-            aiulog.log(aiulog.TRACE, "mp_gather_events cross devices: ", self.ts_calibs)
+            aiulog.log(aiulog.TRACE, f"{_STG_PREF} cross devices: {self.ts_calibs}")
 
             def get_ts_delta(pid, cg_name):
                 _queue_id = self.queue_hash(pid, cg_name)
@@ -148,7 +151,7 @@ class MpTsCalibContext(EventPairDetectionContext):
             self.ts_calibs_host_device[pid] = get_ts_delta(pid, delta_stamps[0][1])
             aiulog.log(aiulog.INFO, "MP_SYNC: shift and name ", self.ts_calibs_host_device[pid], delta_stamps[0][1])
 
-        aiulog.log(aiulog.TRACE, "mp_gather_events host   device: ", self.ts_calibs_host_device)
+        aiulog.log(aiulog.TRACE, f"{_STG_PREF} host   device: {self.ts_calibs_host_device}")
 
     def mp_alter_event_ts(self) -> None:
 
@@ -166,7 +169,7 @@ class MpTsCalibContext(EventPairDetectionContext):
                     aiulog.log(aiulog.INFO, "MP_SYNC: new ts and shift 1 ", e["ts"], self.ts_calibs_host_device[pid])
 
     def drain(self) -> list[TraceEvent]:
-        aiulog.log(aiulog.TRACE, "mp_gather_events drain: ")
+        aiulog.log(aiulog.TRACE, f"{_STG_PREF} drain: ")
         revents = super().drain()
 
         self.mp_calibrate_ts()
@@ -174,10 +177,10 @@ class MpTsCalibContext(EventPairDetectionContext):
 
         while len(self.all_events) > 0:
             e = self.all_events.pop()
-            aiulog.log(aiulog.TRACE, "mp_gather_events drain: ", e)
+            aiulog.log(aiulog.TRACE, f"{_STG_PREF} drain: ", e)
             # if "TS5" in e["args"]:
             revents += [e]
-        aiulog.log(aiulog.TRACE, "mp_gather_events drain: ", revents)
+        aiulog.log(aiulog.TRACE, f"{_STG_PREF} drain: {revents}")
         return revents
 
 

@@ -227,8 +227,8 @@ class TraceWarning:
         self.name = name
         # format-string with {d[key]} placeholders
         self.text: str = text
-        self.args_list: dict[str, any] = {k: v for k, v in data.items()}
-        self.update_fn: dict[str, callable] = {k: v for k, v in update_fn.items()}
+        self.args_list: dict[str, any] = dict(data.items())
+        self.update_fn: dict[str, callable] = dict(update_fn.items())
         self.auto_log = auto_log
         self.warn_level = aiulog.WARN if not is_error else aiulog.ERROR
 
