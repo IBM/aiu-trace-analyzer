@@ -32,6 +32,8 @@ class DataTransferExtractionContext(EventPairDetectionContext):
         self.ecount_out = 0
 
     def __del__(self):
+        if not self.was_activated():
+            return
         aiulog.log(aiulog.INFO, "DTC event stats o/i:", self.ecount_out, '/', self.ecount_in)
 
     # dma (bytes transferred) is per process, so we drop the tid information
