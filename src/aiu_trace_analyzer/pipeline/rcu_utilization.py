@@ -370,7 +370,7 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             self.table_hash = self.autopilot_detail.table_hash()
 
     def __del__(self) -> None:
-        if not self.was_activated():
+        if not self.is_enabled():
             return
 
         if self.multi_table > 0:  # used as index, so 'n-1'

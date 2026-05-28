@@ -72,7 +72,7 @@ class CollectiveGroupingContext(EventPairDetectionContext):
         self.coll_algo = None
 
     def __del__(self) -> None:
-        if not self.was_activated():
+        if not self.is_enabled():
             return
         if self.problem_count:
             aiulog.log(aiulog.WARN, "FLOW: Number of potential problems detected =", self.problem_count)

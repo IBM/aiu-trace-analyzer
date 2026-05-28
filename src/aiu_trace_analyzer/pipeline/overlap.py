@@ -54,7 +54,7 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
         self.max_tid_streams = max_tid_streams
 
     def __del__(self) -> None:
-        if not self.was_activated():
+        if not self.is_enabled():
             return
         level = aiulog.WARN if self.resolved else aiulog.INFO
         aiulog.log(level, "Partial-overlap slices resolved:", self.resolved)

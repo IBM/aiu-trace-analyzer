@@ -36,7 +36,7 @@ class PowerExtractionContext(AbstractHashQueueContext):
         self.bad_events = 0
 
     def __del__(self):
-        if not self.was_activated():
+        if not self.is_enabled():
             return
         if self.bad_events:
             aiulog.log(aiulog.WARN,

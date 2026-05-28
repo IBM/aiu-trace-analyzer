@@ -138,14 +138,14 @@ def test_drain(abstract_context):
     assert abstract_context.drain() == []
 
 
-def test_was_activated(abstract_context):
-    assert abstract_context.was_activated() is False
+def test_is_enabled(abstract_context):
+    assert abstract_context.is_enabled() is False
 
     abstract_context.disable()
-    assert abstract_context.was_activated() is False
+    assert abstract_context.is_enabled() is False
 
     abstract_context.enable()
-    assert abstract_context.was_activated() is True
+    assert abstract_context.is_enabled() is True
 
     abstract_context.disable()
-    assert abstract_context.was_activated() is True
+    assert abstract_context.is_enabled() is True
