@@ -69,7 +69,7 @@ def test_deactivated_rcu_context_does_not_write_output(tmp_path):
     txt_path = tmp_path / "utilization_categories.txt"
 
     context = RCUUtilizationContext(
-        compiler_log=str(compiler_log),
+        compiler_info=str(compiler_log),
         csv_fname=str(csv_path),
         soc_freq=1000.0,
         core_freq=1000.0,
