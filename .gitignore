@@ -79,4 +79,3 @@ venv.bak/
 
 # Pyre type checker
 .pyre/
-graphify-out/

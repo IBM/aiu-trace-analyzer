@@ -520,7 +520,7 @@ class Acelyzer:
         process.register_stage(callback=event_pipe.normalize_phase1, context=normalize_ctx)
         if args.flex_ts_fix:
             process.register_stage(callback=event_pipe.frequency_align_collect, context=frequency_align_ctx)
-        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe.BarrierContext())
+        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
         if args.flex_ts_fix:
             process.register_stage(callback=event_pipe.frequency_align_apply, context=frequency_align_ctx)
         process.register_stage(callback=event_pipe.normalize_phase2, context=normalize_ctx)
@@ -593,7 +593,7 @@ class Acelyzer:
                                                          max_tid_streams=args.max_tid_streams)
         if overlap_arg == event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_TID:
             process.register_stage(callback=event_pipe.detect_partial_overlap_tids, context=overlap_ctx)
-            process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe.BarrierContext())
+            process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
         process.register_stage(callback=event_pipe.detect_partial_overlap_events, context=overlap_ctx)
 
         # validate that the overlap has not messed up the event stream ordering
@@ -654,7 +654,7 @@ class Acelyzer:
         if args.comm_summarize_seq:
             communication_event_ctx = event_pipe.CommunicationGroupContext()
             process.register_stage(callback=event_pipe.communication_event_collection, context=communication_event_ctx)
-        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe.BarrierContext())
+        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
 
         if args.comm_summarize_seq:
             process.register_stage(callback=event_pipe.communication_event_apply, context=communication_event_ctx)
@@ -676,7 +676,7 @@ class Acelyzer:
         launch_flows_ctx = event_pipe.LaunchFLowContext()
         process.register_stage(callback=event_pipe.launch_flow_collect, context=launch_flows_ctx)
         process.register_stage(callback=event_pipe.event_categorizer, context=categorizer_ctx)
-        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe.BarrierContext())
+        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
         process.register_stage(callback=event_pipe.event_categorizer_update, context=categorizer_ctx)
         process.register_stage(callback=event_pipe.launch_flow_create_missing, context=launch_flows_ctx)
 
