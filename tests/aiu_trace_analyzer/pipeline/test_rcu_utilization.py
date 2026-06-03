@@ -7,6 +7,7 @@ from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.rcu_utilization import (
     RCUUtilizationContext,
     MultiRCUUtilizationContext,
+    RCUTableFingerprint,
     compute_utilization
 )
 from acelyzer.acelyzer import main
@@ -137,3 +138,46 @@ def test_rcu_util_category(test_args: str, num_rows: int, num_columns: int, tmp_
     assert csv_dims[1] == num_columns
     assert txt_dims[0] == num_rows
     assert txt_dims[1] == num_columns
+
+
+# Test cases for exception catching during similarity computation
+zerodiv_test_cases = [
+    # (test_id, event_data, table_data, description)
+    ("zero_dataitems", [("kernel1", 100.0)], [],
+     "table fingerprint has zero dataitems"),
+    ("zero_totaltime", [("kernel1", 0.0)], [("kernel1", 100.0)],
+     "event fingerprint has zero totaltime"),
+    ("both_zero", [("kernel1", 0.0)], [],
+     "both dataitems and totaltime are zero"),
+]
+
+
+@pytest.mark.parametrize("test_id,event_data,table_data,description",
+                         zerodiv_test_cases)
+def test_update_fprint_matches_catches_zerodivision(
+        test_id, event_data, table_data, description,
+        multircu_single, rcu_without_table):
+    """Test that update_fprint_matches catches ZeroDivisionError during similarity computation"""
+    # Create a table fingerprint that will cause division by zero
+    bad_fprint = RCUTableFingerprint()
+    for kernel, time in table_data:
+        bad_fprint.add(kernel, time)
+
+    # Create an event fingerprint
+    event_fprint = RCUTableFingerprint()
+    for kernel, time in event_data:
+        event_fprint.add(kernel, time)
+
+    # Add the fingerprints to the context
+    multircu_single.fingerprints["test_job"] = event_fprint
+
+    # Use the existing rcu_without_table fixture and add the bad fingerprint
+    rcu_without_table.fingerprints = {"bad_table": bad_fprint}
+    multircu_single.rcuctx = {"mock": rcu_without_table}
+
+    # This should not raise an exception; it should catch ZeroDivisionError
+    # and issue a warning instead
+    multircu_single.update_fprint_matches()
+
+    # Verify that the similarity_error warning was issued
+    assert "similarity_error" in multircu_single.warnings, f"Failed for case: {description}"
