@@ -136,3 +136,16 @@ def test_issue_warning(abstract_context):
 
 def test_drain(abstract_context):
     assert abstract_context.drain() == []
+
+
+def test_is_enabled(abstract_context):
+    assert abstract_context.is_enabled() is False
+
+    abstract_context.disable()
+    assert abstract_context.is_enabled() is False
+
+    abstract_context.enable()
+    assert abstract_context.is_enabled() is True
+
+    abstract_context.disable()
+    assert abstract_context.is_enabled() is True
