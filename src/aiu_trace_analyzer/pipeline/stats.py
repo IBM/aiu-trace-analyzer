@@ -29,6 +29,8 @@ class StatsExtractionContext(EventPairDetectionContext, PipelineContextTool):
         self.max_ts_map = {}
 
     def __del__(self) -> None:
+        if not self.is_enabled():
+            return
         for pid, data in self.total_util.items():
             mean_pt_util, tot_matmul, tot_other = data
             total = tot_matmul + tot_other
