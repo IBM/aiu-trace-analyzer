@@ -1,0 +1,62 @@
+# Builds sdist+wheel and creates a GitHub Release when a v* tag is pushed.
+# See RELEASING.md for the release process.
+
+name: Release
+
+on:
+  push:
+    tags: [ "v*" ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/python-app.yml
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the release and upload assets
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # setuptools-scm derives the version from git tags
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+
+      - name: Verify artifact version matches tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          twine check dist/*
+          ls "dist/aiu_trace_analyzer-${VERSION}.tar.gz" \
+             "dist/aiu_trace_analyzer-${VERSION}-py3-none-any.whl"
+
+      - name: Determine prerelease
+        id: meta
+        run: |
+          if [[ "$GITHUB_REF_NAME" =~ (a|b|rc|dev)[0-9]*$ ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        run: |
+          ARGS=("$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes)
+          if [ "$PRERELEASE" = "true" ]; then
+            ARGS+=(--prerelease)
+          fi
+          gh release create "${ARGS[@]}" dist/*
