@@ -12,6 +12,19 @@ merged PR titles, contributor mentions, and a full changelog diff link.
   `v1.3.0-rc1` would be normalized by setuptools to `1.3.0rc1` and fail the
   version-matches-tag check. Prerelease tags are automatically marked as a GitHub prerelease.
 
+## One-time PyPI setup (repo admin)
+
+Before the workflow can publish to PyPI, a package Owner on pypi.org must configure a
+Trusted Publisher for this repository:
+
+1. Go to the `aiu-trace-analyzer` project on pypi.org → **Manage** → **Publishing**.
+2. Add a new Trusted Publisher with:
+   - **Owner**: `IBM`
+   - **Repository**: `aiu-trace-analyzer`
+   - **Workflow**: `release.yml`
+   - **Environment**: *(leave blank)*
+3. This is a one-time step — no API token or GitHub secret is needed after this.
+
 ## Steps
 
 1. Tag the release commit on `main` and push the tag:
@@ -21,8 +34,7 @@ merged PR titles, contributor mentions, and a full changelog diff link.
    git push origin vX.Y.Z
    ```
 2. Watch the **Release** workflow under the Actions tab. On success, verify the GitHub
-   Release: the body should contain the auto-generated PR list with the `.tar.gz` and
-   `.whl` attached.
+   Release and confirm the package appears on pypi.org/project/aiu-trace-analyzer.
 
 ## If the release workflow fails
 

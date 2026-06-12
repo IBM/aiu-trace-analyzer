@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write  # create the release and upload assets
+      id-token: write  # PyPI Trusted Publisher (OIDC)
     steps:
       - uses: actions/checkout@v6
         with:
@@ -49,6 +50,9 @@ jobs:
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
 
       - name: Create GitHub Release
         env:
