@@ -89,9 +89,9 @@ class PipelineContextTool:
                     return False
             assert isinstance(attribute, dict) is False, \
                 f"Attribute '{attribute}' is not a leaf node in '{category}'" \
-                f"classifier of {dialect.get("NAME")} dialect."
+                f"classifier of {dialect.get('NAME')} dialect."
             compare_str = ';'.join(deconstruct[1:])  # recombined remaining parts of the string
-            assert len(compare_str) > 0, f"Incorrect format '{category}' classifier of {dialect.get("NAME")} dialect."
+            assert len(compare_str) > 0, f"Incorrect format '{category}' classifier of {dialect.get('NAME')} dialect."
             classifier_re = re.compile(compare_str)
             return (classifier_re.search(str(attribute)) is not None)
 

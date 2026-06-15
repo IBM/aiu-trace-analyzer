@@ -152,7 +152,7 @@ class AbstractTraceIngest:
         if event["name"].endswith("sort_index"):
             event["args"]["sort_index"] = self.rank_pid * 123000 + is_no_cpu
         elif event["name"].endswith("_labels") and event["args"]["labels"][-1] in "0123456789":
-            event["args"]["labels"] = f"{event["args"]["labels"][:-1]}{self.rank_pid}"
+            event["args"]["labels"] = f"{event['args']['labels'][:-1]}{self.rank_pid}"
 
         return (event, finished)
 
