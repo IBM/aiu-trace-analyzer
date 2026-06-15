@@ -164,7 +164,7 @@ class Acelyzer:
             sys.exit(1)
 
         # create event processor
-        profile = StageProfile.from_json(self.args.profile)
+        profile = StageProfile.from_json(self.args.profile, self.args.verification_mode)
         intermediate_file = self.args.output if self.args.intermediate else None
         process = processor.EventProcessor(profile=profile,
                                            intermediate=intermediate_file)
