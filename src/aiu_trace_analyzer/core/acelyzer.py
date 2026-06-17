@@ -750,6 +750,10 @@ class Acelyzer:
                                         args,
                                         exporter: output.AbstractTraceExporter):
         verification_ctx = event_pipe.VerificationContext()
+        kernel_parent_ctx = event_pipe.KernelParentVerificationContext()
 
         process.register_stage(callback=event_pipe.verify, context=verification_ctx)
+        process.register_stage(callback=event_pipe.kernel_parent_collect, context=kernel_parent_ctx)
+        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+        process.register_stage(callback=event_pipe.kernel_parent_verify, context=kernel_parent_ctx)
         process.register_stage(callback=event_pipe.verify_cleanup)

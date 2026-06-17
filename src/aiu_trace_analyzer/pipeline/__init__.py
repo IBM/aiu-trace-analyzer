@@ -113,3 +113,8 @@ from aiu_trace_analyzer.pipeline.categorize import event_categorizer, event_cate
 
 from aiu_trace_analyzer.verification.verify import verify, verify_cleanup
 from aiu_trace_analyzer.verification.verify import VerificationContext
+from aiu_trace_analyzer.verification.kernel_parent_verify import (
+    KernelParentVerificationContext,
+    kernel_parent_collect,
+    kernel_parent_verify
+)

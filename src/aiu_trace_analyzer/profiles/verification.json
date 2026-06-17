@@ -1,6 +1,8 @@
 {
     "stages": [
-        {"verify": true},
+        {"kernel_parent_collect": true},
+        {"pipeline_barrier": true},
+        {"kernel_parent_verify": true},
         {"verify_cleanup": true}
     ]
 }
