@@ -73,8 +73,8 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
 
         # make sure ts is monotonic increasing
         assert current_ts <= event["ts"], (
-            f"Events out-of-order[{event["tid"]}]: {current_ts},"
-            f" {event["ts"]}, {self.queues[queue_id]}")
+            f"Events out-of-order[{event['tid']}]: {current_ts},"
+            f" {event['ts']}, {self.queues[queue_id]}")
 
         event_ts = event["ts"]
         event_end = round(event["ts"] + event["dur"], 4)
