@@ -22,7 +22,7 @@ jobs:
       contents: write  # create the release and upload assets
       id-token: write  # PyPI Trusted Publisher (OIDC)
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # setuptools-scm derives the version from git tags
 
