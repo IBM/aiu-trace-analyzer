@@ -3,7 +3,7 @@
 import pytest
 import math
 
-from aiu_trace_analyzer.types import TraceWarning
+from aiu_trace_analyzer.types import TraceWarning, TRACE_ISSUE_EVENT_NAME
 from aiu_trace_analyzer.pipeline import AbstractContext
 from aiu_trace_analyzer.pipeline.context import AbstractVerificationContext
 
@@ -133,6 +133,23 @@ def test_issue_warning(abstract_context):
     assert abstract_context.warnings["pytest"].args_list["count"] == 2
     assert abstract_context.warnings["pytest"].args_list["max"] == 5.0
     assert abstract_context.warnings["pytest"].__str__() == "A Warning with 2 args: 2 and 5.0"
+
+
+def test_emit_issue_events_none_when_inactive(abstract_context):
+    abstract_context.warnings["pytest"].auto_log = False   # disable auto-output for tests
+    assert abstract_context.emit_issue_events() == []
+
+
+def test_emit_issue_events(abstract_context):
+    abstract_context.warnings["pytest"].auto_log = False   # disable auto-output for tests
+    abstract_context.issue_warning("pytest", {"count": 1, "max": 5.0})
+
+    events = abstract_context.emit_issue_events()
+
+    assert len(events) == 1
+    assert events[0]["ph"] == "M"
+    assert events[0]["name"] == TRACE_ISSUE_EVENT_NAME
+    assert events[0]["args"] == {"finding": "pytest", "text": "A Warning with 2 args: 1 and 5.0"}
 
 
 def test_drain(abstract_context):

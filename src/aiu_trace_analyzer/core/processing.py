@@ -131,6 +131,7 @@ class EventProcessor:
         # walk through the registered pre-processing hooks for the event
         # split any returned list of events into single events for each next stage pre-processor
         next_event_list = []
+        issue_events = []
 
         while len(self.stages) > 0:
             # remove the first hook from the chain to drain and process any remaining/buffered events
@@ -143,4 +144,12 @@ class EventProcessor:
             # then process the events that came back using the remaining pre-processing hooks + pipeline
             for event in pending:
                 next_event_list += self.process(event)
+
+            # collect any warnings the context accumulated (after its own drain) as meta-events
+            if drain_context:
+                issue_events += drain_context.emit_issue_events()
+
+        # fold the accumulated warnings in as meta-events so the exporter can capture them into the output
+        if issue_events:
+            next_event_list += self.convert_events(issue_events)
         return next_event_list

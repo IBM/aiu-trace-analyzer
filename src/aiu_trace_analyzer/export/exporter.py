@@ -10,6 +10,7 @@ import pandas as pd
 
 import aiu_trace_analyzer.logger as aiulog
 import aiu_trace_analyzer.trace_view as tv
+from aiu_trace_analyzer.types import TRACE_ISSUE_EVENT_NAME
 from aiu_trace_analyzer.verification.report import (
     VERIFICATION_RESULT_NAME,
     VERIFICATION_TEST_RESULT_NAME,
@@ -77,6 +78,11 @@ class JsonFileTraceExporter(AbstractTraceExporter):
     # take (a list) of events and append to the traceview
     def export(self, data: list[tv.AbstractEventType]):
         for event in data:
+            # trace_issue meta-events carry accumulated warnings: fold them into otherData
+            # instead of the trace event stream so problems stay visible in the output file
+            if event.ph == "M" and event.name == TRACE_ISSUE_EVENT_NAME:
+                self.traceview.other_data.setdefault("issues", {})[event.args["finding"]] = event.args["text"]
+                continue
             self.traceview.append_trace_event(event.json())
 
     def export_meta(self, meta_data):

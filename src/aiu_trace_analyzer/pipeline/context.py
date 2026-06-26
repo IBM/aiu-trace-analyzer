@@ -1,7 +1,7 @@
 # Copyright 2024-2025 IBM Corporation
 
 import aiu_trace_analyzer.logger as aiulog
-from aiu_trace_analyzer.types import TraceEvent, TraceWarning
+from aiu_trace_analyzer.types import TraceEvent, TraceWarning, TRACE_ISSUE_EVENT_NAME
 
 
 class AbstractContext:
@@ -51,6 +51,20 @@ class AbstractContext:
         for _, w in self.warnings.items():
             if w.has_warning():
                 aiulog.log(aiulog.WARN, w)
+
+    def emit_issue_events(self) -> list[TraceEvent]:
+        '''
+        emit each active warning as a meta-event so the exporter can fold it into the output json.
+        this mirrors the verification-event mechanism (see _emit_verification_events) but targets the
+        regular trace output: the warnings ride through the pipeline as events instead of being tracked
+        on the side, so no context needs to be kept alive past drain().
+        '''
+        return [
+            TraceEvent({"ph": "M", "ts": 0, "pid": 0,
+                        "name": TRACE_ISSUE_EVENT_NAME,
+                        "args": {"finding": name, "text": str(w)}})
+            for name, w in self.warnings.items() if w.has_warning()
+        ]
 
     def add_warning(self, warning: TraceWarning):
         self.warnings[warning.get_name()] = warning
