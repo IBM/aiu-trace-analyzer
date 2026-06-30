@@ -3,8 +3,10 @@
 import pytest
 import math
 
+import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceWarning
 from aiu_trace_analyzer.pipeline import AbstractContext
+from aiu_trace_analyzer.pipeline.context import AbstractVerificationContext
 
 
 @pytest.fixture
@@ -149,3 +151,133 @@ def test_is_enabled(abstract_context):
 
     abstract_context.disable()
     assert abstract_context.is_enabled() is True
+
+
+###########################################################
+# TraceWarning.add_instance / to_verification_event_args tests
+
+
+@pytest.fixture
+def count_warning() -> TraceWarning:
+    return TraceWarning(
+        name="test_w",
+        text="Found {d[count]} issues",
+        data={"count": 0},
+        update_fn={"count": int.__add__},
+        auto_log=False,
+    )
+
+
+@pytest.fixture
+def error_warning() -> TraceWarning:
+    return TraceWarning(
+        name="test_err",
+        text="Found {d[count]} errors",
+        data={"count": 0},
+        update_fn={"count": int.__add__},
+        auto_log=False,
+        is_error=True,
+    )
+
+
+def test_w1_to_verification_event_args_fresh(count_warning):
+    args = count_warning.to_verification_event_args()
+    assert args["finding"] == "test_w"
+    assert args["is_error"] is False
+    assert args["count"] == 0
+    assert args["instances"] == []
+
+
+def test_w2_multiple_instances(count_warning):
+    count_warning.add_instance({"key": "a"})
+    count_warning.add_instance({"key": "b"})
+    count_warning.add_instance({"key": "c"})
+    args = count_warning.to_verification_event_args()
+    assert len(args["instances"]) == 3
+    assert args["instances"][0] == {"key": "a"}
+    assert args["instances"][2] == {"key": "c"}
+
+
+def test_w3_count_key_takes_precedence_over_instances(count_warning):
+    count_warning.update({"count": 5})
+    count_warning.add_instance({"x": 1})
+    args = count_warning.to_verification_event_args()
+    # args_list["count"] == 5 beats len(instances) == 1
+    assert args["count"] == 5
+
+
+def test_w4_error_level_is_error_true(error_warning):
+    args = error_warning.to_verification_event_args()
+    assert args["is_error"] is True
+
+
+###########################################################
+# AbstractVerificationContext tests
+
+
+class _ConcreteVerificationContext(AbstractVerificationContext):
+    test_name = "Unit Test Check"
+
+
+@pytest.fixture
+def verif_context_no_warnings() -> _ConcreteVerificationContext:
+    return _ConcreteVerificationContext(warnings=[])
+
+
+@pytest.fixture
+def verif_context_warn(count_warning) -> _ConcreteVerificationContext:
+    return _ConcreteVerificationContext(warnings=[count_warning])
+
+
+@pytest.fixture
+def verif_context_error(error_warning) -> _ConcreteVerificationContext:
+    return _ConcreteVerificationContext(warnings=[error_warning])
+
+
+def _find_events(events, name):
+    return [e for e in events if e["name"] == name]
+
+
+def test_v1_drain_no_warnings_produces_pass(verif_context_no_warnings):
+    events = verif_context_no_warnings.drain()
+    test_results = _find_events(events, "verification_test_result")
+    assert len(test_results) == 1
+    assert test_results[0]["args"]["result"] == "pass"
+    assert test_results[0]["args"]["test"] == "Unit Test Check"
+
+
+def test_v2_drain_warn_level_warning_produces_warn(verif_context_warn):
+    verif_context_warn.warnings["test_w"].update({"count": 1})
+    events = verif_context_warn.drain()
+    test_result = _find_events(events, "verification_test_result")[0]
+    assert test_result["args"]["result"] == "warn"
+    data_events = _find_events(events, "verification_data")
+    assert len(data_events) == 1
+    assert data_events[0]["args"]["is_error"] is False
+
+
+def test_v3_drain_error_level_warning_produces_fail(verif_context_error):
+    verif_context_error.warnings["test_err"].update({"count": 1})
+    events = verif_context_error.drain()
+    test_result = _find_events(events, "verification_test_result")[0]
+    assert test_result["args"]["result"] == "fail"
+    data_events = _find_events(events, "verification_data")
+    assert data_events[0]["args"]["is_error"] is True
+
+
+def test_v4_drain_propagates_instances(verif_context_warn):
+    verif_context_warn.warnings["test_w"].update({"count": 1})
+    verif_context_warn.warnings["test_w"].add_instance({"detail": "bad_event", "ts": 42.0})
+    events = verif_context_warn.drain()
+    data_event = _find_events(events, "verification_data")[0]
+    assert data_event["args"]["instances"] == [{"detail": "bad_event", "ts": 42.0}]
+
+
+def test_v5_drain_test_name_from_subclass():
+    class _NamedCtx(AbstractVerificationContext):
+        test_name = "My Custom Check"
+
+    ctx = _NamedCtx(warnings=[])
+    events = ctx.drain()
+    test_result = _find_events(events, "verification_test_result")[0]
+    assert test_result["args"]["test"] == "My Custom Check"
