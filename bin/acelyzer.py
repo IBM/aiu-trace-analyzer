@@ -17,7 +17,7 @@ if sys.version_info.major < _min_version[0] or sys.version_info.minor < _min_ver
 ENABLE_TOOL_PROFILER = False
 
 
-def main(input_args=None) -> None:
+def main(input_args=None) -> int:
     '''
     Entry point for the acelyzer command-line tool.
 
@@ -31,11 +31,10 @@ def main(input_args=None) -> None:
                    Example: ['--input', 'trace.json', '--output', 'result.json']
 
     Returns:
-        None
+        int: Exit code (0 = success, non-zero = error).
     '''
     acelyzer = Acelyzer(input_args)
-    rc = acelyzer.run()
-    sys.exit(rc)
+    return acelyzer.run()
 
 
 if __name__ == "__main__":
@@ -43,4 +42,4 @@ if __name__ == "__main__":
         import cProfile
         cProfile.run("main()")
     else:
-        main()
+        sys.exit(main())
