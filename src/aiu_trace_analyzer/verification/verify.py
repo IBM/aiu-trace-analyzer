@@ -20,11 +20,11 @@ adapted based on specific trace analysis requirements.
 import aiu_trace_analyzer.logger as aiulog
 
 from aiu_trace_analyzer.types import TraceEvent
-from aiu_trace_analyzer.pipeline.context import AbstractContext
+from aiu_trace_analyzer.pipeline.context import AbstractContext, AbstractVerificationContext
 from aiu_trace_analyzer.types import TraceWarning
 
 
-class VerificationContext(AbstractContext):
+class VerificationContext(AbstractVerificationContext):
     """
     EXAMPLE: Context class for managing trace event verification state.
 
@@ -43,6 +43,7 @@ class VerificationContext(AbstractContext):
         type_collect (set): Set of unique event phase types encountered.
     """
 
+    test_name = "Phase Type Verification"
     _FWARN_KEY = "failed_verification"
 
     def __init__(self, warnings: list[TraceWarning] = None) -> None:
@@ -95,6 +96,7 @@ class VerificationContext(AbstractContext):
         # X: Complete event, B: Begin event, E: End event, b: Nested begin, e: Nested end
         if event["ph"] not in "XBEbe":
             self.warnings[self._FWARN_KEY].update()
+            self.warnings[self._FWARN_KEY].add_instance({"phase": event["ph"]})
             return False
         return True
 
@@ -102,14 +104,8 @@ class VerificationContext(AbstractContext):
         """
         EXAMPLE: Finalize verification and log collected event types.
 
-        This demonstrates how to implement cleanup/finalization logic in a
-        context. The drain() method is called at the end of trace processing
-        and is useful for logging summaries, finalizing statistics, or
-        performing any end-of-processing tasks.
-
         Returns:
-            list[TraceEvent]: Empty list from parent drain() method. May also return
-                              a list of events that have been held back during processing
+            list[TraceEvent]: Verification M-events from AbstractVerificationContext.drain()
         """
         aiulog.log(aiulog.INFO, "VRF: found types:", self.type_collect)
         return super().drain()

@@ -118,3 +118,4 @@ from aiu_trace_analyzer.verification.kernel_parent_verify import (
     kernel_parent_collect,
     kernel_parent_verify
 )
+from aiu_trace_analyzer.verification.report import verification_result_filter

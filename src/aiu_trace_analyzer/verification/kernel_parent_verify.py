@@ -45,9 +45,10 @@ import math
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 from aiu_trace_analyzer.pipeline import TwoPhaseWithBarrierContext, AbstractContext
+from aiu_trace_analyzer.pipeline.context import AbstractVerificationContext
 
 
-class KernelParentVerificationContext(TwoPhaseWithBarrierContext):
+class KernelParentVerificationContext(AbstractVerificationContext, TwoPhaseWithBarrierContext):
     """
     Context for managing kernel-parent timestamp verification state.
 
@@ -71,6 +72,8 @@ class KernelParentVerificationContext(TwoPhaseWithBarrierContext):
                         - orphan_kernels: Kernels without parent events
                         - orphan_parents: Parents without kernel events
     """
+
+    test_name = "Kernel-Parent Timestamp Check"
 
     def __init__(self, warnings=None):
         """
@@ -101,9 +104,8 @@ class KernelParentVerificationContext(TwoPhaseWithBarrierContext):
             ),
             TraceWarning(
                 name="orphan_parents",
-                text="Kernel-Parent Verification: Parent correlation IDs without kernels: {d[parents]}",
-                data={"parents": set()},
-                update_fn={"parents": lambda s, v: s | {v}},
+                text="Kernel-Parent Verification: Found {d[count]} parent events without kernels",
+                data={"count": 0},
             )
         ])
         super().__init__(warnings)
@@ -224,34 +226,44 @@ class KernelParentVerificationContext(TwoPhaseWithBarrierContext):
                 f"Kernel time: [{kernel_start:.3f}, {kernel_end:.3f}], "
                 f"Parent time: [{parent_start:.3f}, {parent_end:.3f}]"
             )
-            # Update warning counter
+            # Update warning counter and record instance detail for the report
             self.warnings["kernel_outside_parent"].update({"count": 1})
+            self.warnings["kernel_outside_parent"].add_instance({
+                "corr_id": hex(correlation_id),
+                "kernel_start": kernel_start,
+                "kernel_end": kernel_end,
+                "parent_start": parent_start,
+                "parent_end": parent_end,
+            })
 
     def drain(self) -> list[TraceEvent]:
         """
         Finalize verification and detect orphan correlation IDs.
 
         This method is called at the end of each phase. During the collection phase,
-        it switches to the verification phase. During the verification phase, it
-        performs orphan detection:
+        it switches to the verification phase and releases barrier-held events into
+        the downstream stages (kernel_parent_verify, etc.). During the verification
+        phase, it performs orphan detection and emits verification M-events via
+        AbstractVerificationContext.drain().
 
         Orphan Detection:
             - Orphan Parents: Parent events with kernel_count == 0
             - Orphan Kernels: Kernel events where parent_start or parent_end is infinity
 
-        After orphan detection, summary statistics are logged.
-
         Returns:
-            list[TraceEvent]: Empty list (no events are buffered or emitted).
+            list[TraceEvent]: Verification M-events during the application phase; events
+                              released from the barrier during the collection phase.
         """
-        # If still in collection phase, just switch to verification phase
+        # Collection phase: hand off to TwoPhaseWithBarrierContext to switch the phase
+        # and release any barrier-held events into the downstream stages.
         if self.collection_phase():
-            return super().drain()
+            return TwoPhaseWithBarrierContext.drain(self)
 
         for correlation_id, data in self.queues.items():
             # Check for orphan parents (parent without kernels)
             if data["kernel_count"] == 0 and not math.isinf(data["parent_start"]):
-                self.warnings["orphan_parents"].update({"parents": correlation_id})
+                self.warnings["orphan_parents"].update({"count": 1})
+                self.warnings["orphan_parents"].add_instance({"corr_id": hex(correlation_id)})
                 aiulog.log(
                     aiulog.DEBUG,
                     "Kernel-Parent Verification: Orphan parent - "
@@ -267,6 +279,8 @@ class KernelParentVerificationContext(TwoPhaseWithBarrierContext):
                     f"Correlation ID {correlation_id} has {data['kernel_count']} kernel(s) but no parent"
                 )
 
+        # Application phase: MRO resolves super() to AbstractVerificationContext.drain(),
+        # which appends verification_data and verification_test_result M-events.
         return super().drain()
 
 

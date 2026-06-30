@@ -1,5 +1,6 @@
 # Copyright 2024-2025 IBM Corporation
 
+import json
 import sys
 import os
 from collections import defaultdict
@@ -9,6 +10,10 @@ import pandas as pd
 
 import aiu_trace_analyzer.logger as aiulog
 import aiu_trace_analyzer.trace_view as tv
+from aiu_trace_analyzer.verification.report import (
+    VERIFICATION_RESULT_NAME,
+    VERIFICATION_TEST_RESULT_NAME,
+)
 
 
 class AbstractTraceExporter:
@@ -288,3 +293,100 @@ class DataframeExporter(AbstractTraceExporter):
 
     def get_data(self) -> pd.DataFrame:
         return self.df
+
+
+class VerificationReportExporter(AbstractTraceExporter):
+    """
+    Exports a structured verification report instead of a full trace.
+
+    Consumes only verification_data and verification_test_result M-events
+    (produced by the verification pipeline stages) and writes a JSON or
+    human-readable text report.  The `has_errors` property lets the caller
+    propagate a non-zero exit code when errors were detected.
+    """
+
+    def __init__(self, target_uri, fmt="json", settings=None):
+        super().__init__(target_uri, settings=settings)
+        self._fmt = fmt
+        self._findings = []
+        self._test_results = []
+        self._has_errors = False
+        self._input_meta = {}
+
+    @property
+    def has_errors(self) -> bool:
+        return self._has_errors
+
+    def export_meta(self, meta_data):
+        self._input_meta = meta_data if meta_data is not None else {}
+
+    def export(self, data):
+        for event in data:
+            if event.ph != "M":
+                continue
+            if event.name == VERIFICATION_RESULT_NAME:
+                self._findings.append(event.args)
+                if event.args.get("is_error") and event.args.get("count", 0) > 0:
+                    self._has_errors = True
+            elif event.name == VERIFICATION_TEST_RESULT_NAME:
+                self._test_results.append(event.args)
+
+    def get_data(self) -> dict:
+        errors   = [f for f in self._findings if f.get("is_error") and f.get("count", 0) > 0]
+        warnings = [f for f in self._findings if not f.get("is_error") and f.get("count", 0) > 0]
+        passed   = [f for f in self._findings if f.get("count", 0) == 0]
+        return {
+            "version": "1.0",
+            "result": "FAIL" if self._has_errors else "PASS",
+            "metadata": {**self.meta, **self._input_meta},
+            "test_results": self._test_results,
+            "errors": errors,
+            "warnings": warnings,
+            "passed": passed,
+        }
+
+    def _write_json(self, path):
+        with open(path, 'w') as f:
+            json.dump(self.get_data(), f, indent=2, default=str)
+
+    def _write_text(self, path):
+        data = self.get_data()
+        meta = data.get("metadata", {})
+        cmdline = meta.get("CmdLine", "")
+        lines = [
+            "Acelyzer Verification Report",
+            "=" * 29,
+            f"Input:   {cmdline}",
+            "",
+        ]
+
+        def section(title, findings):
+            lines.append(f"{title} ({len(findings)})")
+            lines.append("-" * len(f"{title} ({len(findings)})"))
+            for f in findings:
+                lines.append(f"  {f['finding']}: {f.get('count', 0)} occurrence(s)")
+                for inst in f.get("instances", []):
+                    lines.append("    " + "  ".join(f"{k}={v}" for k, v in inst.items()))
+            lines.append("")
+
+        section("ERRORS",   data["errors"])
+        section("WARNINGS", data["warnings"])
+        section("PASSED",   data["passed"])
+
+        lines.append(f"TESTS APPLIED ({len(data['test_results'])})")
+        lines.append("-" * len(f"TESTS APPLIED ({len(data['test_results'])})"))
+        for tr in data["test_results"]:
+            lines.append(f"  {tr['result'].upper():<5} {tr['test']}")
+        lines.append("")
+        lines.append(f"Result: {data['result']}" +
+                     (" (errors detected)" if data["result"] == "FAIL" else ""))
+
+        with open(path, 'w') as f:
+            f.write("\n".join(lines) + "\n")
+
+    def flush(self):
+        if self.save_to_file:
+            if self._fmt == "text":
+                self._write_text(self.target_uri)
+            else:
+                self._write_json(self.target_uri)

@@ -34,7 +34,8 @@ def main(input_args=None) -> None:
         None
     '''
     acelyzer = Acelyzer(input_args)
-    acelyzer.run()
+    rc = acelyzer.run()
+    sys.exit(rc)
 
 
 if __name__ == "__main__":
