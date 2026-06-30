@@ -1,7 +1,5 @@
 # Copyright 2024-2026 IBM Corporation
 
-import pytest
-
 from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.verification.report import (
     VERIFICATION_RESULT_NAME,

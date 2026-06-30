@@ -332,9 +332,9 @@ class VerificationReportExporter(AbstractTraceExporter):
                 self._test_results.append(event.args)
 
     def get_data(self) -> dict:
-        errors   = [f for f in self._findings if f.get("is_error") and f.get("count", 0) > 0]
+        errors = [f for f in self._findings if f.get("is_error") and f.get("count", 0) > 0]
         warnings = [f for f in self._findings if not f.get("is_error") and f.get("count", 0) > 0]
-        passed   = [f for f in self._findings if f.get("count", 0) == 0]
+        passed = [f for f in self._findings if f.get("count", 0) == 0]
         return {
             "version": "1.0",
             "result": "FAIL" if self._has_errors else "PASS",

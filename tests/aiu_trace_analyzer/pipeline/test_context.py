@@ -3,7 +3,6 @@
 import pytest
 import math
 
-import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceWarning
 from aiu_trace_analyzer.pipeline import AbstractContext
 from aiu_trace_analyzer.pipeline.context import AbstractVerificationContext
