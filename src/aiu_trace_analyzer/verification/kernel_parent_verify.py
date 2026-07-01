@@ -263,7 +263,7 @@ class KernelParentVerificationContext(AbstractVerificationContext, TwoPhaseWithB
             # Check for orphan parents (parent without kernels)
             if data["kernel_count"] == 0 and not math.isinf(data["parent_start"]):
                 self.warnings["orphan_parents"].update({"count": 1})
-                self.warnings["orphan_parents"].add_instance({"corr_id": hex(correlation_id)})
+                self.warnings["orphan_parents"].add_instance({"corr_id": correlation_id})
                 aiulog.log(
                     aiulog.DEBUG,
                     "Kernel-Parent Verification: Orphan parent - "
@@ -272,7 +272,11 @@ class KernelParentVerificationContext(AbstractVerificationContext, TwoPhaseWithB
 
             # Check for orphan kernels (kernels without parent)
             if data["kernel_count"] > 0 and math.isinf(data["parent_start"]):
-                self.warnings["orphan_kernels"].update({"count": data["kernel_count"]})
+                number_of_kernels = data["kernel_count"]
+                self.warnings["orphan_kernels"].update({"count": number_of_kernels})
+                self.warnings["orphan_kernels"].add_instance(
+                    {"corr_id": correlation_id, "count": number_of_kernels}
+                )
                 aiulog.log(
                     aiulog.WARN,
                     "Kernel-Parent Verification: Orphan kernels - "
