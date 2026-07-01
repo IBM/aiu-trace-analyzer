@@ -203,9 +203,8 @@ class KernelParentVerificationContext(TwoPhaseWithBarrierContext):
 
         parent_data = self.queues[correlation_id]
 
-        # If parent timing is not available, this is an orphan kernel
+        # If parent timing is not available, this is an orphan kernel — counted in drain()
         if math.isinf(parent_data["parent_start"]) or math.isinf(parent_data["parent_end"]):
-            self.warnings["orphan_kernels"].update()
             return
 
         # Calculate kernel timing
