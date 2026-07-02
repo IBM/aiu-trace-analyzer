@@ -41,6 +41,12 @@ acelyzer -i tests/test_data/basic_event_test_cases.json
 ```
 This should produce an output file: `processed_trace.json` (see [here](#output-files) for details about the output).
 
+The Trace Analyzer also has a **verification mode** (`-V`) that can be used to verify the data integrity and correctness of a trace:
+```
+acelyzer -i tests/test_data/basic_event_test_casese.json
+```
+This should produce an output file: `report.json` with details about detected problems in the trace data (see [here](#verify)).
+
 The input can be either a single json file, a comma-separated list of files or file patterns. *Note* that if you use a **file pattern**, it has to be **quoted** to prevent the shell from expanding the pattern before input.
 
 The following command will collect all json files of a HAP model run and combine them into `hap_trace.json` also adds counters for utilization and power and a few summary csv files prefixed by the file name. (Note: the input file argument is just an example for a wildcard pattern using quotes to avoid shell expansion, the trace files are not part of this repository).
@@ -231,6 +237,60 @@ Consequences when in use:
  * spans the entire time from posting of the communication to the completion, this can exaggerate communication time e.g. if a recv is posted early for later completion
 
 
+### verify
+
+The `-V` / `--verify` flag switches acelyzer into **verification mode**. In this mode the trace is analyzed for structural problems rather than being transformed for visualization. Almost no modifications are made to the events themselves.
+
+The default set of checks is listed in verification.json profile and differs significantly from the regular processing pipeline.
+
+The default output file in this mode is `report.json`. The report format can be switched to human-readable plain text with `-f text`.
+
+**Exit code**: acelyzer exits with code `1` when any error-level findings are detected, and `0` when all checks pass. This makes verification mode suitable for use in CI/CD pipelines.
+
+Example — verify a trace and write a JSON report:
+```
+acelyzer -V -i trace.json
+```
+
+Example — verify and write a human-readable text report to a custom file:
+```
+acelyzer -V -i trace.json -o my_report.txt -f text
+```
+
+
+### Verification Report Format
+
+The report written by verification mode contains the following top-level fields:
+
+| Field | Description |
+|-------|-------------|
+| `version` | Report format version |
+| `result` | Overall result: `PASS` or `FAIL` |
+| `metadata` | Command line, settings, and input file metadata |
+| `test_results` | List of tests that were applied, each with a `test` name and `result` (`PASS`/`WARN`/`FAIL`); a test may contain multile checks that get listed under `errors`, `warnings`, or `passed` |
+| `errors` | Findings that caused a `FAIL` result — each entry has a `finding` description, occurrence `count`, and optional `instances` with details |
+| `warnings` | Findings that were noted but did not cause a `FAIL`; like `errors`, they come with `finding`, `count`, and optional `instances` |
+| `passed` | Checks that completed with zero issues |
+
+Example JSON report (abbreviated):
+```json
+{
+  "version": "1.0",
+  "result": "PASS",
+  "metadata": { ... },
+  "test_results": [
+    { "test": "Phase Type Verification", "result": "pass" },
+    { "test": "Kernel Parent Verification", "result": "pass" }
+  ],
+  "errors": [],
+  "warnings": [],
+  "passed": [ ... ]
+}
+```
+
+The text format (`-f text`) produces the same information as a human-readable report with sections for `ERRORS`, `WARNINGS`, `PASSED`, and `TESTS APPLIED`, followed by the overall `Result`.
+
+
 ### keep_prep
 
 By default, so-called *prep* events (flex traces only) are removed from the view and represented as a counter (`ConcurrentPreps`) that shows how many of these events are active at a given time.  This option tells acelyzer to keep the events as visible events in their thread.
@@ -365,7 +425,7 @@ output_format = "pddf"
 args = [
     "-i", f"{TRACE_BASE}/{TRACE_NAME}/*rank_*-of_4-job-[345].json",
     "-c", f"{TRACE_BASE}/{TRACE_NAME}/compiler-log.txt",
-    "--disable_file",
+    "--disable_file",     # disable creation of files (optional)
     "-f", output_format]
 
 # create, run, and extract the result trace data
@@ -374,6 +434,7 @@ ace.run()
 trace_data = ace.get_output_data()
 ```
 
+The same approach works in verification mode (the output will always be a json dict).
 
 ## Developer Info
 
