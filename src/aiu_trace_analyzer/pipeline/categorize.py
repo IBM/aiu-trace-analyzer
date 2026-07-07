@@ -1,6 +1,7 @@
 # Copyright 2024-2025 IBM Corporation
 
 from enum import Enum, auto
+from typing import Optional
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent, TraceWarning
@@ -111,7 +112,7 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
         """
         return "CollGroup" in event["args"]
 
-    def classify_flex(self, event: TraceEvent) -> (EventClass | None):   # noqa: C901
+    def classify_flex(self, event: TraceEvent) -> Optional[EventClass]:   # noqa: C901
         """Classify trace events using FLEX dialect-based classification.
 
         This method is currently kept for verification of the dialect-based classifier.

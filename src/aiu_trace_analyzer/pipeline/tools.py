@@ -31,7 +31,7 @@ class PipelineContextTool:
         return '.'.join(fcomponents)
 
     @staticmethod
-    def get_dialect_of_event(event: TraceEvent) -> InputDialect | None:
+    def get_dialect_of_event(event: TraceEvent) -> Optional[InputDialect]:
         if "args" not in event:
             return None
         if "jobhash" not in event["args"]:

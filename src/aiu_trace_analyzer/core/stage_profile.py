@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 from copy import deepcopy
+from typing import Optional
 
 import aiu_trace_analyzer.logger as aiulog
 
@@ -97,7 +98,7 @@ class StageProfile:
         return ordered, recurring
 
     @staticmethod
-    def _parse_stage_key(stage_key: str) -> tuple[str, int | None]:
+    def _parse_stage_key(stage_key: str) -> tuple[str, Optional[int]]:
         if "#" not in stage_key:
             return stage_key, None
         stage_name, stage_index = stage_key.rsplit("#", 1)
