@@ -29,7 +29,11 @@ class Acelyzer:
 
     defaults = {
         # general defaults
-        "output": {"tb_enabled": "processed_trace.pt.trace.json", "tb_disabled": "processed_trace.json"},
+        "output": {
+            "tb_enabled": "processed_trace.pt.trace.json",
+            "tb_disabled": "processed_trace.json",
+            "verification": "report.json"
+        },
         "format": "json",
         "loglevel": aiulog.INFO,
 
@@ -164,13 +168,17 @@ class Acelyzer:
             sys.exit(1)
 
         # create event processor
-        profile = StageProfile.from_json(self.args.profile)
+        profile = StageProfile.from_json(self.args.profile, self.args.verification_mode)
         intermediate_file = self.args.output if self.args.intermediate else None
         process = processor.EventProcessor(profile=profile,
                                            intermediate=intermediate_file)
 
         # set up output
-        if self.args.tb and self.args.tb_refinement:
+        if self.args.verification_mode:
+            self.exporter = output.VerificationReportExporter(
+                self.args.output, fmt=self.args.format, settings=vars(self.args)
+            )
+        elif self.args.tb and self.args.tb_refinement:
             # prepare traces for TB distributed view
             self.exporter = output.TensorBoardFileTraceExporter(target_uri=self.args.output,
                                                                 timescale=self.args.time_unit,
@@ -203,7 +211,9 @@ class Acelyzer:
         dr = engine.Engine(importer, process, self.exporter)
         rc = dr.run()
 
-        aiulog.log(aiulog.INFO, "Finishing Test parser. Return code=", rc)
+        if self.args.verification_mode and self.exporter.has_errors:
+            rc = 1
+        aiulog.log(aiulog.INFO, "Finishing ... Return code=", rc)
         return rc
 
     def _parse_event_limit_type(self, event_limit_str):
@@ -298,8 +308,9 @@ class Acelyzer:
                             help="List of event types to keep. E.g. 'C' to just keep counters.")
 
         parser.add_argument("-f", "--format", type=str, default=self.defaults["format"],
-                            choices=["json", "pddf", "protobuf"],
-                            help="Type of output format")
+                            choices=["json", "pddf", "protobuf", "text"],
+                            help="Type of output format.\n"
+                            "'text' output only for verification mode. 'protobuf' unsupported/experimental.")
 
         parser.add_argument("--freq", type=str, default=':'.join([str(self.defaults["freq"]),
                                                                   str(self.defaults["ideal_freq"])]),
@@ -418,7 +429,9 @@ class Acelyzer:
 
         parsed_args = parser.parse_args(args)
         if parsed_args.output is None:
-            if parsed_args.tb_refinement:
+            if parsed_args.verification_mode:
+                parsed_args.output = self.defaults["output"]["verification"]
+            elif parsed_args.tb_refinement:
                 parsed_args.output = self.defaults["output"]["tb_enabled"]
             else:
                 parsed_args.output = self.defaults["output"]["tb_disabled"]
@@ -750,6 +763,11 @@ class Acelyzer:
                                         args,
                                         exporter: output.AbstractTraceExporter):
         verification_ctx = event_pipe.VerificationContext()
+        kernel_parent_ctx = event_pipe.KernelParentVerificationContext()
 
         process.register_stage(callback=event_pipe.verify, context=verification_ctx)
+        process.register_stage(callback=event_pipe.kernel_parent_collect, context=kernel_parent_ctx)
+        process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
+        process.register_stage(callback=event_pipe.kernel_parent_verify, context=kernel_parent_ctx)
         process.register_stage(callback=event_pipe.verify_cleanup)
+        process.register_stage(callback=event_pipe.verification_result_filter)

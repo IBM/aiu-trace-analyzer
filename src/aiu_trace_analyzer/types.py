@@ -231,6 +231,7 @@ class TraceWarning:
         self.update_fn: dict[str, callable] = dict(update_fn.items())
         self.auto_log = auto_log
         self.warn_level = aiulog.WARN if not is_error else aiulog.ERROR
+        self._instances: list = []
 
         text_keys = re.findall(r"{d\[([.\w]+)\]}", self.text)
         if len(text_keys) != len(self.args_list):
@@ -290,6 +291,17 @@ class TraceWarning:
 
     def has_warning(self) -> bool:
         return self.occurred
+
+    def add_instance(self, data: dict) -> None:
+        self._instances.append(data)
+
+    def to_verification_event_args(self) -> dict:
+        return {
+            "finding": self.name,
+            "is_error": self.warn_level == aiulog.ERROR,
+            "count": self.args_list.get("count", len(self._instances)),
+            "instances": list(self._instances),
+        }
 
     def __str__(self) -> str:
         return self.text.format(d=self.args_list)

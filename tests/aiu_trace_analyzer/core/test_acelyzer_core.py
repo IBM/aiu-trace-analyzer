@@ -4,6 +4,7 @@ import json
 import pytest
 
 from aiu_trace_analyzer.core.acelyzer import Acelyzer
+from aiu_trace_analyzer.export.exporter import VerificationReportExporter
 
 
 @pytest.fixture
@@ -142,3 +143,53 @@ class TestParseEventLimitType:
         with pytest.raises(expected_error) as exc:
             default_acelyzer._parse_event_limit_type(invalid_input)
         assert error_substring in str(exc.value)
+
+
+###########################################################
+# Verification mode integration tests
+
+_BASE_INPUT = "tests/test_data/basic_event_test_cases.json"
+
+# Minimal trace with a kernel outside its ScheduleCompute parent window.
+# Parent covers [100, 200]; kernel starts at 250 → violation → rc=1.
+_VIOLATION_TRACE = json.dumps({
+    "traceEvents": [
+        {"ph": "X", "name": "ScheduleCompute", "ts": 100.0, "dur": 100.0,
+         "pid": 1, "tid": 1, "args": {"correlation": 42}},
+        {"ph": "X", "name": "KernelExec", "cat": "kernel", "ts": 250.0, "dur": 10.0,
+         "pid": 1, "tid": 1, "args": {"correlation": 42}},
+    ]
+}).encode()
+
+
+def test_c1_verification_mode_default_output():
+    ace = Acelyzer(["-i", _BASE_INPUT, "-V"])
+    assert ace.args.output == "report.json"
+
+
+def test_c2_clean_trace_returns_rc_zero():
+    with open(_BASE_INPUT) as f:
+        buf = f.read().encode()
+    ace = Acelyzer(["-i", "api://jsonbuffer", "-V", "--disable_file"], in_data=buf)
+    rc = ace.run()
+    assert rc == 0
+    assert isinstance(ace.exporter, VerificationReportExporter)
+    assert ace.exporter.has_errors is False
+
+
+def test_c3_violation_trace_returns_rc_one():
+    ace = Acelyzer(["-i", "api://jsonbuffer", "-V", "--disable_file"], in_data=_VIOLATION_TRACE)
+    rc = ace.run()
+    assert rc == 1
+    assert isinstance(ace.exporter, VerificationReportExporter)
+    assert ace.exporter.has_errors is True
+
+
+def test_c4_format_text_accepted_in_verification_mode():
+    ace = Acelyzer(["-i", _BASE_INPUT, "-V", "-f", "text"])
+    assert ace.args.format == "text"
+
+
+def test_c5_format_text_accepted_outside_verification_mode():
+    ace = Acelyzer(["-i", _BASE_INPUT, "-f", "text"])
+    assert ace.args.format == "text"

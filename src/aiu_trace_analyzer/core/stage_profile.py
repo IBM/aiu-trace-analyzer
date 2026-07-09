@@ -12,18 +12,23 @@ import aiu_trace_analyzer.logger as aiulog
 
 class StageProfile:
     _everything_profile = os.path.join(os.path.dirname(__file__), "../profiles/everything.json")
+    _verification_profile = os.path.join(os.path.dirname(__file__), "../profiles/verification.json")
 
     def __init__(self, profile_data: dict, all_stages: dict):
         self.profile = self._ingest_profile_data(profile_data, all_stages)
 
     @classmethod
-    def from_json(cls, file: Path):
+    def from_json(cls, file: Path, verification_mode: bool = False):
+        everything = cls._everything_profile
+        if verification_mode:
+            everything = cls._verification_profile
+
         if not os.path.isfile(file):
             # try find profile file in default install location
-            file = os.path.join(os.path.dirname(__file__), "../profiles/", file)
+            file = Path(os.path.join(os.path.dirname(__file__), "../profiles/", file))
         with open(file, 'r') as config_fd:
             profile_data = json.load(config_fd)
-        with open(cls._everything_profile, 'r') as all_fd:
+        with open(everything, 'r') as all_fd:
             all_stages = json.load(all_fd)
 
         # if a profile is empty, then assume all stages to be enabled

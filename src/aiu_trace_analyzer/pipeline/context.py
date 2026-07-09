@@ -73,3 +73,35 @@ class AbstractContext:
         Events are drained following the sequence of registered processing functions.
         '''
         return []
+
+    def _emit_verification_events(self) -> list[TraceEvent]:
+        return [
+            TraceEvent({"ph": "M", "ts": 0, "pid": 0,
+                        "name": "verification_data",
+                        "args": w.to_verification_event_args()})
+            for w in self.warnings.values()
+        ]
+
+    def _get_test_result_status(self) -> str:
+        if any(w.warn_level == aiulog.ERROR and w.has_warning()
+               for w in self.warnings.values()):
+            return "fail"
+        if any(w.has_warning() for w in self.warnings.values()):
+            return "warn"
+        return "pass"
+
+    def _emit_test_result_event(self, test_name: str) -> TraceEvent:
+        return TraceEvent({"ph": "M", "ts": 0, "pid": 0,
+                           "name": "verification_test_result",
+                           "args": {"test": test_name,
+                                    "result": self._get_test_result_status()}})
+
+
+class AbstractVerificationContext(AbstractContext):
+    test_name: str = ""
+
+    def drain(self) -> list[TraceEvent]:
+        events = super().drain()
+        events += self._emit_verification_events()
+        events.append(self._emit_test_result_event(self.test_name))
+        return events
