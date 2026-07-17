@@ -58,3 +58,17 @@ def test_warning_reaches_exporter_other_data(warned_context):
     output = json.loads(exporter.get_data())
     assert output["otherData"]["issues"] == {"long_dur": "OVC: Detected 3 long event(s)."}
     assert output["traceEvents"] == []
+
+
+def test_drain_warning_bypasses_remaining_pipeline_stages(warned_context):
+    warned_context.issue_warning("long_dur", {"count": 3})
+    proc = _processor_with(warned_context)
+
+    def drop_everything(event, ctx):
+        return []
+
+    proc.stages.append((drop_everything, None, {}))
+
+    drained = proc.drain()
+
+    assert [e for e in drained if e.name == TRACE_ISSUE_EVENT_NAME]

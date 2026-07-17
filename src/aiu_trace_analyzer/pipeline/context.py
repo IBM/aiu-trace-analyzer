@@ -1,7 +1,7 @@
 # Copyright 2024-2025 IBM Corporation
 
 import aiu_trace_analyzer.logger as aiulog
-from aiu_trace_analyzer.types import TraceEvent, TraceWarning, TRACE_ISSUE_EVENT_NAME
+from aiu_trace_analyzer.types import DiagnosticEvent, TraceEvent, TraceWarning, TRACE_ISSUE_EVENT_NAME
 
 
 class AbstractContext:
@@ -60,9 +60,9 @@ class AbstractContext:
         on the side, so no context needs to be kept alive past drain().
         '''
         return [
-            TraceEvent({"ph": "M", "ts": 0, "pid": 0,
-                        "name": TRACE_ISSUE_EVENT_NAME,
-                        "args": {"finding": name, "text": str(w)}})
+            DiagnosticEvent({"ph": "M", "ts": 0, "pid": 0,
+                             "name": TRACE_ISSUE_EVENT_NAME,
+                             "args": {"finding": name, "text": str(w)}})
             for name, w in self.warnings.items() if w.has_warning()
         ]
 
@@ -86,13 +86,13 @@ class AbstractContext:
         a list of events.
         Events are drained following the sequence of registered processing functions.
         '''
-        return []
+        return self.emit_issue_events()
 
     def _emit_verification_events(self) -> list[TraceEvent]:
         return [
-            TraceEvent({"ph": "M", "ts": 0, "pid": 0,
-                        "name": "verification_data",
-                        "args": w.to_verification_event_args()})
+            DiagnosticEvent({"ph": "M", "ts": 0, "pid": 0,
+                             "name": "verification_data",
+                             "args": w.to_verification_event_args()})
             for w in self.warnings.values()
         ]
 
@@ -105,17 +105,16 @@ class AbstractContext:
         return "pass"
 
     def _emit_test_result_event(self, test_name: str) -> TraceEvent:
-        return TraceEvent({"ph": "M", "ts": 0, "pid": 0,
-                           "name": "verification_test_result",
-                           "args": {"test": test_name,
-                                    "result": self._get_test_result_status()}})
+        return DiagnosticEvent({"ph": "M", "ts": 0, "pid": 0,
+                                "name": "verification_test_result",
+                                "args": {"test": test_name,
+                                         "result": self._get_test_result_status()}})
 
 
 class AbstractVerificationContext(AbstractContext):
     test_name: str = ""
 
     def drain(self) -> list[TraceEvent]:
-        events = super().drain()
-        events += self._emit_verification_events()
+        events = self._emit_verification_events()
         events.append(self._emit_test_result_event(self.test_name))
         return events

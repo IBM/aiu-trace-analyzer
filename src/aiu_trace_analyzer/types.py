@@ -11,6 +11,10 @@ class TraceEvent(dict):
     pass
 
 
+class DiagnosticEvent(TraceEvent):
+    pass
+
+
 # name of the meta-event used to carry an accumulated warning through the pipeline
 # so the exporter can fold it into the output json instead of losing it in the console
 TRACE_ISSUE_EVENT_NAME = "trace_issue"

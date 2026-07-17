@@ -5,7 +5,7 @@ import aiu_trace_analyzer.logger as aiulog
 import aiu_trace_analyzer.trace_view as aiuev
 import aiu_trace_analyzer.pipeline.context as procCTX
 
-from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.types import DiagnosticEvent, TraceEvent
 from aiu_trace_analyzer.core.duplicate_hold import IntermediateDuplicateAndHoldContext, duplicate_and_hold
 from aiu_trace_analyzer.export.exporter import JsonFileTraceExporter
 from aiu_trace_analyzer.core.stage_profile import StageProfile, StageProfileChecker
@@ -81,6 +81,11 @@ class EventProcessor:
         # turn into a list, pre/post have do be able to expand single events into lists
         aiulog.log(aiulog.DEBUG, "Processing event:", event)
 
+        if isinstance(event, DiagnosticEvent):
+            output_event_list = self.convert_events([event])
+            self.event_count += len(output_event_list)
+            return output_event_list
+
         event_list = self.pre_process(event)
 
         output_event_list = self.convert_events(event_list)
@@ -131,7 +136,6 @@ class EventProcessor:
         # walk through the registered pre-processing hooks for the event
         # split any returned list of events into single events for each next stage pre-processor
         next_event_list = []
-        issue_events = []
 
         while len(self.stages) > 0:
             # remove the first hook from the chain to drain and process any remaining/buffered events
@@ -145,11 +149,4 @@ class EventProcessor:
             for event in pending:
                 next_event_list += self.process(event)
 
-            # collect any warnings the context accumulated (after its own drain) as meta-events
-            if drain_context:
-                issue_events += drain_context.emit_issue_events()
-
-        # fold the accumulated warnings in as meta-events so the exporter can capture them into the output
-        if issue_events:
-            next_event_list += self.convert_events(issue_events)
         return next_event_list
