@@ -78,10 +78,11 @@ class JsonFileTraceExporter(AbstractTraceExporter):
     # take (a list) of events and append to the traceview
     def export(self, data: list[tv.AbstractEventType]):
         for event in data:
-            # trace_issue meta-events carry accumulated warnings: fold them into otherData
-            # instead of the trace event stream so problems stay visible in the output file
+            # trace_issue meta-events go into otherData, not into the trace event stream
             if event.ph == "M" and event.name == TRACE_ISSUE_EVENT_NAME:
-                self.traceview.other_data.setdefault("issues", {})[event.args["finding"]] = event.args["text"]
+                severity = "error" if "error" in event.args else "warning"
+                issues = self.traceview.other_data.setdefault("issues", {})
+                issues.setdefault(severity, {})[event.args[severity]] = event.args["text"]
                 continue
             self.traceview.append_trace_event(event.json())
 

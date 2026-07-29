@@ -301,13 +301,19 @@ class TraceWarning:
     def has_warning(self) -> bool:
         return self.occurred
 
+    def is_error(self) -> bool:
+        return self.warn_level == aiulog.ERROR
+
+    def severity(self) -> str:
+        return "error" if self.is_error() else "warning"
+
     def add_instance(self, data: dict) -> None:
         self._instances.append(data)
 
     def to_verification_event_args(self) -> dict:
         return {
             "finding": self.name,
-            "is_error": self.warn_level == aiulog.ERROR,
+            "is_error": self.is_error(),
             "count": self.args_list.get("count", len(self._instances)),
             "instances": list(self._instances),
         }

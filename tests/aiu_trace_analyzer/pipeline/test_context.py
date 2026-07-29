@@ -149,7 +149,25 @@ def test_emit_issue_events(abstract_context):
     assert len(events) == 1
     assert events[0]["ph"] == "M"
     assert events[0]["name"] == TRACE_ISSUE_EVENT_NAME
-    assert events[0]["args"] == {"finding": "pytest", "text": "A Warning with 2 args: 1 and 5.0"}
+    assert events[0]["args"] == {"warning": "pytest", "text": "A Warning with 2 args: 1 and 5.0"}
+
+
+def test_emit_issue_events_of_error_warning():
+    error = TraceWarning(
+        name="pytest_err",
+        text="An Error with {d[count]} occurrence(s)",
+        data={"count": 0},
+        update_fn={"count": int.__add__},
+        auto_log=False,
+        is_error=True,
+    )
+    context = AbstractContext(warnings=[error])
+    context.issue_warning("pytest_err", {"count": 1})
+
+    events = context.emit_issue_events()
+
+    assert len(events) == 1
+    assert events[0]["args"] == {"error": "pytest_err", "text": "An Error with 1 occurrence(s)"}
 
 
 def test_drain(abstract_context):

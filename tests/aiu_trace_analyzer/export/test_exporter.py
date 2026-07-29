@@ -14,11 +14,11 @@ def json_exporter() -> JsonFileTraceExporter:
     return JsonFileTraceExporter(target_uri="unused.json")
 
 
-def _issue_event(finding: str, text: str) -> AbstractEventType:
+def _issue_event(name: str, text: str, severity: str = "warning") -> AbstractEventType:
     return AbstractEventType.from_dict({
         "ph": "M", "ts": 0, "pid": 0,
         "name": TRACE_ISSUE_EVENT_NAME,
-        "args": {"finding": finding, "text": text},
+        "args": {severity: name, "text": text},
     })
 
 
@@ -34,7 +34,16 @@ def test_export_captures_issue_events(json_exporter):
     json_exporter.export([_issue_event("long_dur", text)])
 
     other_data = json.loads(json_exporter.get_data())["otherData"]
-    assert other_data["issues"] == {"long_dur": text}
+    assert other_data["issues"] == {"warning": {"long_dur": text}}
+
+
+def test_export_separates_errors_from_warnings(json_exporter):
+    json_exporter.export([_issue_event("long_dur", "warn text"),
+                          _issue_event("bad_ts", "error text", severity="error")])
+
+    other_data = json.loads(json_exporter.get_data())["otherData"]
+    assert other_data["issues"] == {"warning": {"long_dur": "warn text"},
+                                    "error": {"bad_ts": "error text"}}
 
 
 def test_export_issue_events_do_not_leak_into_trace(json_exporter):
