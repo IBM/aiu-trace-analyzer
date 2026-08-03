@@ -283,8 +283,14 @@ def test_v1_drain_no_warnings_produces_pass(verif_context_no_warnings):
 def test_v2_drain_warn_level_warning_produces_warn(verif_context_warn):
     verif_context_warn.warnings["test_w"].update({"count": 1})
     events = verif_context_warn.drain()
+    issue_events = _find_events(events, TRACE_ISSUE_EVENT_NAME)
     test_result = _find_events(events, "verification_test_result")[0]
     assert test_result["args"]["result"] == "warn"
+    assert len(issue_events) == 1
+    assert issue_events[0]["args"] == {
+        "warning": "test_w",
+        "text": "Found 1 issues",
+    }
     data_events = _find_events(events, "verification_data")
     assert len(data_events) == 1
     assert data_events[0]["args"]["is_error"] is False
@@ -293,8 +299,14 @@ def test_v2_drain_warn_level_warning_produces_warn(verif_context_warn):
 def test_v3_drain_error_level_warning_produces_fail(verif_context_error):
     verif_context_error.warnings["test_err"].update({"count": 1})
     events = verif_context_error.drain()
+    issue_events = _find_events(events, TRACE_ISSUE_EVENT_NAME)
     test_result = _find_events(events, "verification_test_result")[0]
     assert test_result["args"]["result"] == "fail"
+    assert len(issue_events) == 1
+    assert issue_events[0]["args"] == {
+        "error": "test_err",
+        "text": "Found 1 errors",
+    }
     data_events = _find_events(events, "verification_data")
     assert data_events[0]["args"]["is_error"] is True
 

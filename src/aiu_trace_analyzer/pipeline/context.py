@@ -112,6 +112,7 @@ class AbstractVerificationContext(AbstractContext):
     test_name: str = ""
 
     def drain(self) -> list[TraceEvent]:
-        events = self._emit_verification_events()
+        events = super().drain()
+        events += self._emit_verification_events()
         events.append(self._emit_test_result_event(self.test_name))
         return events
