@@ -80,9 +80,10 @@ class JsonFileTraceExporter(AbstractTraceExporter):
         for event in data:
             # trace_issue meta-events go into otherData, not into the trace event stream
             if event.ph == "M" and event.name == TRACE_ISSUE_EVENT_NAME:
-                severity = "error" if "error" in event.args else "warning"
-                issues = self.traceview.other_data.setdefault("issues", {})
-                issues.setdefault(severity, {})[event.args[severity]] = event.args["text"]
+                severity = "errors" if event.args["is_error"] else "warnings"
+                findings = self.traceview.other_data.setdefault(severity, [])
+                findings.append({"finding": event.args["finding"],
+                                 "text": event.args["text"]})
                 continue
             self.traceview.append_trace_event(event.json())
 

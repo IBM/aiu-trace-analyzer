@@ -149,7 +149,9 @@ def test_emit_issue_events(abstract_context):
     assert len(events) == 1
     assert events[0]["ph"] == "M"
     assert events[0]["name"] == TRACE_ISSUE_EVENT_NAME
-    assert events[0]["args"] == {"warning": "pytest", "text": "A Warning with 2 args: 1 and 5.0"}
+    assert events[0]["args"] == {"finding": "pytest",
+                                  "text": "A Warning with 2 args: 1 and 5.0",
+                                  "is_error": False}
 
 
 def test_emit_issue_events_of_error_warning():
@@ -167,7 +169,9 @@ def test_emit_issue_events_of_error_warning():
     events = context.emit_issue_events()
 
     assert len(events) == 1
-    assert events[0]["args"] == {"error": "pytest_err", "text": "An Error with 1 occurrence(s)"}
+    assert events[0]["args"] == {"finding": "pytest_err",
+                                  "text": "An Error with 1 occurrence(s)",
+                                  "is_error": True}
 
 
 def test_drain(abstract_context):
@@ -288,8 +292,9 @@ def test_v2_drain_warn_level_warning_produces_warn(verif_context_warn):
     assert test_result["args"]["result"] == "warn"
     assert len(issue_events) == 1
     assert issue_events[0]["args"] == {
-        "warning": "test_w",
+        "finding": "test_w",
         "text": "Found 1 issues",
+        "is_error": False,
     }
     data_events = _find_events(events, "verification_data")
     assert len(data_events) == 1
@@ -304,8 +309,9 @@ def test_v3_drain_error_level_warning_produces_fail(verif_context_error):
     assert test_result["args"]["result"] == "fail"
     assert len(issue_events) == 1
     assert issue_events[0]["args"] == {
-        "error": "test_err",
+        "finding": "test_err",
         "text": "Found 1 errors",
+        "is_error": True,
     }
     data_events = _find_events(events, "verification_data")
     assert data_events[0]["args"]["is_error"] is True

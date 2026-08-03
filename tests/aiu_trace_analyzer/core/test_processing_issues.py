@@ -38,8 +38,9 @@ def test_drain_emits_active_warning_as_meta_event(warned_context):
 
     issue_events = [e for e in drained if e.name == TRACE_ISSUE_EVENT_NAME]
     assert len(issue_events) == 1
-    assert issue_events[0].args == {"warning": "long_dur",
-                                    "text": "OVC: Detected 3 long event(s)."}
+    assert issue_events[0].args == {"finding": "long_dur",
+                                    "text": "OVC: Detected 3 long event(s).",
+                                    "is_error": False}
 
 
 def test_drain_emits_nothing_when_no_warning(warned_context):
@@ -56,7 +57,10 @@ def test_warning_reaches_exporter_other_data(warned_context):
     exporter.export(drained)
 
     output = json.loads(exporter.get_data())
-    assert output["otherData"]["issues"] == {"warning": {"long_dur": "OVC: Detected 3 long event(s)."}}
+    assert output["otherData"]["warnings"] == [{
+        "finding": "long_dur",
+        "text": "OVC: Detected 3 long event(s).",
+    }]
     assert output["traceEvents"] == []
 
 

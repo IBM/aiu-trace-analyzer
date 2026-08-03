@@ -59,7 +59,9 @@ class AbstractContext:
         return [
             DiagnosticEvent({"ph": "M", "ts": 0, "pid": 0,
                              "name": TRACE_ISSUE_EVENT_NAME,
-                             "args": {w.severity(): name, "text": str(w)}})
+                             "args": {"finding": name,
+                                      "text": str(w),
+                                      "is_error": w.is_error()}})
             for name, w in self.warnings.items() if w.has_warning()
         ]
 

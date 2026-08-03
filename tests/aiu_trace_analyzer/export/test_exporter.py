@@ -14,11 +14,11 @@ def json_exporter() -> JsonFileTraceExporter:
     return JsonFileTraceExporter(target_uri="unused.json")
 
 
-def _issue_event(name: str, text: str, severity: str = "warning") -> AbstractEventType:
+def _issue_event(name: str, text: str, is_error: bool = False) -> AbstractEventType:
     return AbstractEventType.from_dict({
         "ph": "M", "ts": 0, "pid": 0,
         "name": TRACE_ISSUE_EVENT_NAME,
-        "args": {severity: name, "text": text},
+        "args": {"finding": name, "text": text, "is_error": is_error},
     })
 
 
@@ -34,16 +34,16 @@ def test_export_captures_issue_events(json_exporter):
     json_exporter.export([_issue_event("long_dur", text)])
 
     other_data = json.loads(json_exporter.get_data())["otherData"]
-    assert other_data["issues"] == {"warning": {"long_dur": text}}
+    assert other_data["warnings"] == [{"finding": "long_dur", "text": text}]
 
 
 def test_export_separates_errors_from_warnings(json_exporter):
     json_exporter.export([_issue_event("long_dur", "warn text"),
-                          _issue_event("bad_ts", "error text", severity="error")])
+                          _issue_event("bad_ts", "error text", is_error=True)])
 
     other_data = json.loads(json_exporter.get_data())["otherData"]
-    assert other_data["issues"] == {"warning": {"long_dur": "warn text"},
-                                    "error": {"bad_ts": "error text"}}
+    assert other_data["warnings"] == [{"finding": "long_dur", "text": "warn text"}]
+    assert other_data["errors"] == [{"finding": "bad_ts", "text": "error text"}]
 
 
 def test_export_issue_events_do_not_leak_into_trace(json_exporter):
@@ -58,4 +58,6 @@ def test_export_issue_events_do_not_leak_into_trace(json_exporter):
 def test_export_no_issue_section_when_absent(json_exporter):
     json_exporter.export([_instant_event()])
 
-    assert "issues" not in json.loads(json_exporter.get_data())["otherData"]
+    other_data = json.loads(json_exporter.get_data())["otherData"]
+    assert "warnings" not in other_data
+    assert "errors" not in other_data
