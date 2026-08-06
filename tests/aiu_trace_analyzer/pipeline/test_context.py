@@ -150,8 +150,8 @@ def test_emit_issue_events(abstract_context):
     assert events[0]["ph"] == "M"
     assert events[0]["name"] == TRACE_ISSUE_EVENT_NAME
     assert events[0]["args"] == {"finding": "pytest",
-                                  "text": "A Warning with 2 args: 1 and 5.0",
-                                  "is_error": False}
+                                 "text": "A Warning with 2 args: 1 and 5.0",
+                                 "is_error": False}
 
 
 def test_emit_issue_events_of_error_warning():
@@ -170,8 +170,8 @@ def test_emit_issue_events_of_error_warning():
 
     assert len(events) == 1
     assert events[0]["args"] == {"finding": "pytest_err",
-                                  "text": "An Error with 1 occurrence(s)",
-                                  "is_error": True}
+                                 "text": "An Error with 1 occurrence(s)",
+                                 "is_error": True}
 
 
 def test_drain(abstract_context):
