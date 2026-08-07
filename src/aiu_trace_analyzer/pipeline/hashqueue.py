@@ -26,7 +26,8 @@ class AbstractHashQueueContext(AbstractContext):
             item = self.queues.popitem()
             if isinstance(item, TraceEvent):
                 revents += item
-        return revents
+        # chain to the base drain anything left there is emitted
+        return revents + super().drain()
 
     def insert(self, event: TraceEvent, queue_id=None) -> int:
         '''

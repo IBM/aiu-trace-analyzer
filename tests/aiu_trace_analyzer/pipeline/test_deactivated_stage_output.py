@@ -12,9 +12,6 @@ from aiu_trace_analyzer.pipeline.stats import StatsExtractionContext
 
 
 def test_deactivated_stage_contexts_do_not_emit_output(monkeypatch, capsys):
-    log_calls = []
-    monkeypatch.setattr(aiulog, "log", lambda *args: log_calls.append(args))
-
     contexts = []
 
     dma_context = DataTransferExtractionContext()
@@ -29,9 +26,9 @@ def test_deactivated_stage_contexts_do_not_emit_output(monkeypatch, capsys):
     contexts.append(inverse_context)
 
     overlap_context = OverlapDetectionContext()
-    overlap_context.resolved = 5
+    overlap_context.issue_warning("overlaps")
     overlap_context.disable()
-    contexts.append(overlap_context)
+    assert overlap_context.warnings["overlaps"].has_warning() is False
 
     power_context = PowerExtractionContext()
     power_context.bad_events = 1
@@ -51,6 +48,10 @@ def test_deactivated_stage_contexts_do_not_emit_output(monkeypatch, capsys):
     coll_context.stale_drop = 2
     coll_context.disable()
     contexts.append(coll_context)
+
+    # capture output only around teardown: context construction may legitimately emit debug logs
+    log_calls = []
+    monkeypatch.setattr(aiulog, "log", lambda *args: log_calls.append(args))
 
     for context in contexts:
         type(context).__del__(context)

@@ -4,7 +4,7 @@ import copy
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.pipeline import AbstractContext, AbstractHashQueueContext, TwoPhaseWithBarrierContext
-from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
+from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, TraceWarning
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
 
 
@@ -44,20 +44,19 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
                  ts_shift_threshold=0.0,
                  max_tid_streams=5,
                  ) -> None:
-        super().__init__()
+        super().__init__(warnings=[
+            TraceWarning(
+                name="overlaps",
+                text="Partial-overlap slices resolved: {d[count]}",
+                data={"count": 0},
+            )
+        ])
         self.overlap_resolve = overlap_resolve
-        self.resolved = 0
         self.async_id = 0
         self.async_queues = {}
         self.ts_shift_threshold = ts_shift_threshold
         self.tid_space = {}
         self.max_tid_streams = max_tid_streams
-
-    def __del__(self) -> None:
-        if not self.is_enabled():
-            return
-        level = aiulog.WARN if self.resolved else aiulog.INFO
-        aiulog.log(level, "Partial-overlap slices resolved:", self.resolved)
 
     # search for events within the same pid/tid
     # accumulate a queue of events for each pid/tid
@@ -145,11 +144,11 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
                        queue_id: int) -> list[TraceEvent]:
         if self.overlap_resolve == self.OVERLAP_RESOLVE_DROP:
             aiulog.log(aiulog.WARN, "Solving overlap conflict by dropping:", oevent)
-            self.resolved += 1
+            self.issue_warning("overlaps")
             return []
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_WARN:
             aiulog.log(aiulog.WARN, "Detected overlap conflict: ", oevent["name"])
-            self.resolved += 1
+            self.issue_warning("overlaps")
             return [oevent]
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_SHIFT:
             ts_shift = self.get_overlap_time(oevent["ts"], oevent["ts"]+oevent["dur"], self.queues[queue_id])
@@ -174,21 +173,21 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
                            "us: increase threshold or use different overlap res option.")
                 rlist = [oevent]
 
-            self.resolved += 1
+            self.issue_warning("overlaps")
             return rlist
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_TID:
             oevent["tid"] = self.find_next_tid(oevent)
             # feed offending event back into the detector with the new TID to make sure
             # there are no collisions there either
             rlist = self.overlap_detection(oevent)
-            self.resolved += 1
+            self.issue_warning("overlaps")
             return rlist
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_ASYNC:
             oevent["id"] = self.async_id
             end_ts = oevent["ts"] + oevent["dur"]
             oevent.pop("dur")
             self.async_id += 1
-            self.resolved += 1
+            self.issue_warning("overlaps")
 
             e_event = copy.deepcopy(oevent)
             oevent["ph"] = "b"
@@ -264,9 +263,9 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
         if self.overlap_resolve == self.OVERLAP_RESOLVE_TID:
             if self.phase == self._COLLECTION_PHASE:
                 self._collect_and_build_tid_space()
-                return super().drain()
-            else:
-                return []
+            # chain to the parent drain in both phases: it advances the two-phase state and
+            # propagates accumulated warnings as trace_issue events
+            return super().drain()
         else:
             revents = []
             # make sure to drain the queue of async 'e' events that might have been hold
@@ -276,7 +275,11 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
                 # make sure to keep everything sorted
                 aq.sort(key=lambda e: e['ts'])
                 revents += aq
-            return revents
+            # these modes don't use the two-phase mechanism and are drained only once, so switch
+            # to the application phase before chaining up to make the parent emit the accumulated
+            # warnings as trace_issue events (rather than deferring to a second drain that never comes)
+            self.phase = self._APPLICATION_PHASE
+            return revents + super().drain()
 
 
 def detect_partial_overlap_tids(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
