@@ -39,6 +39,11 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
     OVERLAP_RESOLVE_WARN = 4
     OVERLAP_RESOLVE_SHIFT = 5
 
+    # default event fields that define the identity of a stream/queue. Derived classes with a static
+    # partitioning can override this by assignment (never in-place: the list is shared by all
+    # instances). Hierarchical keys are supported, e.g. "args.stream".
+    _QUEUE_ID_KEYS = ["pid", "tid"]
+
     def __init__(self,
                  overlap_resolve=OVERLAP_RESOLVE_DROP,
                  ts_shift_threshold=0.0,
@@ -57,6 +62,13 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
         self.ts_shift_threshold = ts_shift_threshold
         self.tid_space = {}
         self.max_tid_streams = max_tid_streams
+        self.queue_id_keys = None  # resolved from the first event, see _select_queue_id_keys()
+
+    # select the event fields that define a stream/queue identity. Called only for the first event,
+    # so the selection may depend on the input dialect (assumed constant for one program execution).
+    # Derived classes can override, e.g. `return super()._select_queue_id_keys(event) + ["args.stream"]`
+    def _select_queue_id_keys(self, _event: TraceEvent) -> list[str]:
+        return self._QUEUE_ID_KEYS
 
     # search for events within the same pid/tid
     # accumulate a queue of events for each pid/tid
@@ -64,7 +76,10 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
     def overlap_detection(self, event: TraceEvent) -> list[TraceEvent]:
 
         tid = event["tid"] if "tid" in event else 0
-        queue_id = self.event_data_hash(event, ["pid", "tid"], ignore_missing=True)
+        if self.queue_id_keys is None:
+            self.queue_id_keys = self._select_queue_id_keys(event)
+            aiulog.log(aiulog.DEBUG, "POD: stream identity keys:", self.queue_id_keys)
+        queue_id = self.event_data_hash(event, self.queue_id_keys, ignore_missing=True)
         if queue_id not in self.queues:
             self.queues[queue_id] = (0.0, False, [])
 
