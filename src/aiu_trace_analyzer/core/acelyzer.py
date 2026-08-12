@@ -762,12 +762,20 @@ class Acelyzer:
                                         process: processor.EventProcessor,
                                         args,
                                         exporter: output.AbstractTraceExporter):
-        verification_ctx = event_pipe.VerificationContext()
+        # for a verification stage example, see verify.py
+
+        overlap_verification_ctx = event_pipe.OverlapVerificationContext()
         kernel_parent_ctx = event_pipe.KernelParentVerificationContext()
 
-        process.register_stage(callback=event_pipe.verify, context=verification_ctx)
+        # register anything that verifies the raw/unsorted order of the input before this sort-stage
+        process.register_stage(callback=event_pipe.sort_events, context=event_pipe.EventSortingContext(
+            event_types=None, sortkey=self._default_sort_ts_and_rev_dur, global_sort=True))
+
+        # anything that requires a sorted event stream below this point
+        process.register_stage(callback=event_pipe.verify_kernel_overlap, context=overlap_verification_ctx)
         process.register_stage(callback=event_pipe.kernel_parent_collect, context=kernel_parent_ctx)
         process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
         process.register_stage(callback=event_pipe.kernel_parent_verify, context=kernel_parent_ctx)
-        process.register_stage(callback=event_pipe.verify_cleanup)
+
+        # drop all regular events and only keep report-data after this stage
         process.register_stage(callback=event_pipe.verification_result_filter)

@@ -1,9 +1,10 @@
 {
     "stages": [
+        {"sort_events": true},
+        {"verify_kernel_overlap": true},
         {"kernel_parent_collect": true},
         {"pipeline_barrier": true},
         {"kernel_parent_verify": true},
-        {"verify_cleanup": true},
         {"verification_result_filter": true}
     ]
 }

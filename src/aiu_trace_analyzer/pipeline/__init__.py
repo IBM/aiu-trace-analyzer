@@ -27,7 +27,10 @@ from aiu_trace_analyzer.pipeline.barrier import TwoPhaseWithBarrierContext
 from aiu_trace_analyzer.pipeline.be_pair import EventPairDetectionContext
 
 # import the separated contexts:
-from aiu_trace_analyzer.pipeline.overlap import OverlapDetectionContext, TSSequenceContext
+from aiu_trace_analyzer.pipeline.overlap import (
+    OverlapDetectionContext,
+    OverlapVerificationContext,
+    TSSequenceContext)
 from aiu_trace_analyzer.pipeline.inverse_ts import InversedTSDetectionContext
 from aiu_trace_analyzer.pipeline.normalize import NormalizationContext, EventLimiter
 from aiu_trace_analyzer.pipeline.sort import EventSortingContext
@@ -65,7 +68,8 @@ from aiu_trace_analyzer.pipeline.overlap import (
     detect_partial_overlap_events,
     assert_ts_sequence,
     assert_global_ts_sequence,
-    recombine_cpu_events)
+    recombine_cpu_events,
+    verify_kernel_overlap)
 from aiu_trace_analyzer.pipeline.inverse_ts import drop_timestamp_reversed_events
 from aiu_trace_analyzer.pipeline.sort import sort_events
 from aiu_trace_analyzer.pipeline.make_slice import create_slice_from_BE
@@ -112,7 +116,7 @@ from aiu_trace_analyzer.pipeline.categorize import event_categorizer, event_cate
 #       from aiu_trace_analyzer.pipeline.template import myprocessing
 
 from aiu_trace_analyzer.verification.verify import verify, verify_cleanup
-from aiu_trace_analyzer.verification.verify import VerificationContext
+from aiu_trace_analyzer.verification.verify import AbstractVerificationContext, VerificationContext
 from aiu_trace_analyzer.verification.kernel_parent_verify import (
     KernelParentVerificationContext,
     kernel_parent_collect,
