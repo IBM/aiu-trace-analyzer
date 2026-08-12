@@ -138,17 +138,22 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
         new_tid = self.tid_space[event["pid"]][event["tid"]]
         return new_tid
 
+    # single funnel for recording a detected overlap: derived classes can override this to
+    # attach per-event detail to the warning (the offending event is not available in issue_warning())
+    def _record_overlap(self, _oevent: TraceEvent) -> None:
+        self.issue_warning("overlaps")
+
     # solve a detected overlap between a pair of pairs
     def handle_overlap(self,
                        oevent: TraceEvent,
                        queue_id: int) -> list[TraceEvent]:
         if self.overlap_resolve == self.OVERLAP_RESOLVE_DROP:
             aiulog.log(aiulog.WARN, "Solving overlap conflict by dropping:", oevent)
-            self.issue_warning("overlaps")
+            self._record_overlap(oevent)
             return []
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_WARN:
             aiulog.log(aiulog.WARN, "Detected overlap conflict: ", oevent["name"])
-            self.issue_warning("overlaps")
+            self._record_overlap(oevent)
             return [oevent]
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_SHIFT:
             ts_shift = self.get_overlap_time(oevent["ts"], oevent["ts"]+oevent["dur"], self.queues[queue_id])
@@ -173,21 +178,22 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
                            "us: increase threshold or use different overlap res option.")
                 rlist = [oevent]
 
-            self.issue_warning("overlaps")
+            self._record_overlap(oevent)
             return rlist
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_TID:
             oevent["tid"] = self.find_next_tid(oevent)
             # feed offending event back into the detector with the new TID to make sure
             # there are no collisions there either
             rlist = self.overlap_detection(oevent)
-            self.issue_warning("overlaps")
+            self._record_overlap(oevent)
             return rlist
         elif self.overlap_resolve == self.OVERLAP_RESOLVE_ASYNC:
+            # record before the event is converted to an async b/e pair (which drops its 'dur')
+            self._record_overlap(oevent)
             oevent["id"] = self.async_id
             end_ts = oevent["ts"] + oevent["dur"]
             oevent.pop("dur")
             self.async_id += 1
-            self.issue_warning("overlaps")
 
             e_event = copy.deepcopy(oevent)
             oevent["ph"] = "b"
