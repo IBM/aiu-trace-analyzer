@@ -35,6 +35,10 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
        is the time stamp indicating until what time it's active
      * need to keep a list of active end ts because conflicts might happen
        within non-critical nested overlapping events
+     * strict mode: any event that starts while another event of the same stream is still
+       running is an overlap. The default (non-strict) mode accepts fully embedded events
+       as a legitimate nesting (e.g. a parent/child function-call relationship) and only
+       flags partial overlaps.
     '''
     OVERLAP_RESOLVE_DROP = 1
     OVERLAP_RESOLVE_TID = 2
@@ -51,6 +55,7 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
                  overlap_resolve=OVERLAP_RESOLVE_DROP,
                  ts_shift_threshold=0.0,
                  max_tid_streams=5,
+                 strict=False,
                  ) -> None:
         super().__init__(warnings=[
             TraceWarning(
@@ -65,6 +70,7 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
         self.ts_shift_threshold = ts_shift_threshold
         self.tid_space = {}
         self.max_tid_streams = max_tid_streams
+        self.strict = strict
         self.queue_id_keys = None  # resolved from the first event, see _select_queue_id_keys()
 
     # select the event fields that define a stream/queue identity. Called only for the first event,
@@ -96,13 +102,23 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
         event_ts = event["ts"]
         event_end = round(event["ts"] + event["dur"], 4)
 
+        # retire the events that have ended before this one starts, so that the blocked status
+        # refers to the ts of this event (every event leaves its own end-ts behind, so a status
+        # that's only updated after the check would keep any queue blocked forever)
+        # in SHIFT-mode, recursion happens within the same queue_id -> the update has to happen later
+        if self.overlap_resolve != self.OVERLAP_RESOLVE_SHIFT:
+            self.update_queue_status(event_ts, queue_id)
+            _, blocked, end_ts = self.queues[queue_id]
+
         aiulog.log(aiulog.TRACE, "POD queue before: ", queue_id, "from", event["pid"], tid, self.queues[queue_id])
         assert (blocked and len(end_ts) > 0) or (not blocked and len(end_ts) == 0)
         if not blocked:
             self.queues[queue_id] = (event_ts, True, [event_end])
             revents = [event]
         else:
-            if self.check_overlap_condition(event_ts, event_end, self.queues[queue_id]):
+            # a blocked queue is all it takes in strict mode: embedded events are overlaps too,
+            # so there's no additional condition to check
+            if self.strict or self.check_overlap_condition(event_ts, event_end, self.queues[queue_id]):
                 # actual overlap
                 revents = self.handle_overlap(event, queue_id)
             else:
@@ -113,7 +129,8 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
         if self.overlap_resolve == self.OVERLAP_RESOLVE_ASYNC:
             aevents = self.update_async_event_queue(queue_id, None, event_ts)
             revents = aevents + revents  # prepend any async events that need to be injected
-        self.update_queue_status(event_ts, queue_id)
+        elif self.overlap_resolve == self.OVERLAP_RESOLVE_SHIFT:
+            self.update_queue_status(event_ts, queue_id)  # shift-mode requires update _after_ resolution
         aiulog.log(aiulog.TRACE, "POD queue after: ", queue_id, "from", event["pid"], tid, self.queues[queue_id])
         return revents
 
@@ -128,10 +145,10 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
             aiulog.log(aiulog.TRACE, "POD overlap detected", qstate, ts, end)
         return overlap
 
-    # remove only keep entries of end timestamps that are later than the new current head
+    # remove only entries of end timestamps that are strictly later than the new current head
     def update_queue_status(self, new_current: float, queue_id: int):
         end_q = self.queues[queue_id][2]
-        new_end_q = list(filter(lambda x: x >= new_current, end_q))
+        new_end_q = list(filter(lambda x: x > new_current, end_q))
         is_blocked = (len(new_end_q) > 0)  # unblock the queue if no more end-ts are remaining
         self.queues[queue_id] = (new_current, is_blocked, new_end_q)
 

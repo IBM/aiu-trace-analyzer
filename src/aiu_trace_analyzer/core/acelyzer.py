@@ -765,7 +765,9 @@ class Acelyzer:
                                         exporter: output.AbstractTraceExporter):
         # for a verification stage example, see verify.py
 
-        overlap_verification_ctx = verify_pipe.OverlapVerificationContext()
+        # strict: accelerator events have no call/return relationship, so even a fully embedded
+        # event is a data problem and not a legitimate nesting
+        overlap_verification_ctx = verify_pipe.OverlapVerificationContext(strict=True)
         kernel_parent_ctx = verify_pipe.KernelParentVerificationContext()
 
         # register anything that verifies the raw/unsorted order of the input before this sort-stage

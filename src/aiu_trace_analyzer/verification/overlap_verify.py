@@ -38,8 +38,8 @@ class OverlapVerificationContext(OverlapDetectionContext, AbstractVerificationCo
     _STREAM_ARG = "args." + _STREAM_KEY
     _DEFAULT_STREAM = 0  # convention: actual stream numbers start at 1, 0 means 'no stream entry'
 
-    def __init__(self, ts_shift_threshold=0, max_tid_streams=5) -> None:
-        super().__init__(self.OVERLAP_RESOLVE_WARN, ts_shift_threshold, max_tid_streams)
+    def __init__(self, strict=False) -> None:
+        super().__init__(self.OVERLAP_RESOLVE_WARN, strict=strict)
         # replace the resolution-oriented warning of the parent: in verification mode nothing is
         # resolved, a detected overlap is a finding that has to fail the test
         self.add_warning(
