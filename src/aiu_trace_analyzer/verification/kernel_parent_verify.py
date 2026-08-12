@@ -44,8 +44,8 @@ import math
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent, TraceWarning
-from aiu_trace_analyzer.pipeline import TwoPhaseWithBarrierContext, AbstractContext
-from aiu_trace_analyzer.pipeline.context import AbstractVerificationContext
+from aiu_trace_analyzer.pipeline.barrier import TwoPhaseWithBarrierContext
+from aiu_trace_analyzer.pipeline.context import AbstractContext, AbstractVerificationContext
 
 
 class KernelParentVerificationContext(AbstractVerificationContext, TwoPhaseWithBarrierContext):

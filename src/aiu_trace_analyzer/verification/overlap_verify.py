@@ -45,7 +45,7 @@ class OverlapVerificationContext(OverlapDetectionContext, AbstractVerificationCo
         self.add_warning(
             TraceWarning(
                 name=self._OVERLAP_WARNING,
-                text="Overlapping compute events detected: {d[count]}",
+                text="Overlapping accelerator events detected: {d[count]}",
                 data={"count": 0},
                 is_error=True,
             )
