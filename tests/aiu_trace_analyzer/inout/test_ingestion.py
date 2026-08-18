@@ -40,6 +40,34 @@ def test_json_input(json_input, capsys):
     del json_ingest
 
 
+def test_multifile_ingest_empty_device_properties(tmp_path):
+    trace_file = tmp_path / "empty_device_properties.json"
+
+    trace_file.write_text(
+        """
+{
+  "deviceProperties": [],
+  "traceEvents": [
+    {
+      "name": "kernel_1",
+      "cat": "kernel",
+      "ph": "X",
+      "pid": 0,
+      "tid": 1,
+      "ts": 0,
+      "dur": 10
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+
+    ingest = MultifileIngest(str(trace_file))
+
+    assert ingest.other_metadata["deviceProperties"] == []
+
+
 input_fail_cases: list[tuple[list, Exception, str]] = [
     (
         [{"ph": "B", "name": "openEvent", "ts": 1, "pid": 0}, {"ph": "E", "name": "closeEvent", "ts": 10, "pid": 0}],
