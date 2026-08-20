@@ -392,7 +392,9 @@ class NormalizationContext(AbstractHashQueueContext):
             self.event_limit.is_ignored_type(event["ph"])
 
     def drain(self) -> list[TraceEvent]:
-        return []
+        # the queues of this context hold epoch/ts/cycle state, not events, so there's nothing
+        # of our own to drain. Still chain up: the base drain emits the accumulated warnings.
+        return super().drain()
 
 
 def _attr_to_args(event: TraceEvent) -> TraceEvent:

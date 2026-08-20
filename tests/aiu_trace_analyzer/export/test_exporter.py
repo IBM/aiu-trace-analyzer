@@ -61,3 +61,26 @@ def test_export_no_issue_section_when_absent(json_exporter):
     other_data = json.loads(json_exporter.get_data())["otherData"]
     assert "warnings" not in other_data
     assert "errors" not in other_data
+
+
+def test_export_repeated_finding_collapses_to_one_entry(json_exporter):
+    '''
+    a context attached to several pipeline stages (e.g. normalize_phase1 + normalize_phase2) is
+    drained once per stage and reports the same finding each time. Only the last report, which
+    carries the complete counts, may end up in the output.
+    '''
+    json_exporter.export([_issue_event("long_dur", "Detected 2 event(s)."),
+                          _issue_event("long_dur", "Detected 5 event(s).")])
+
+    other_data = json.loads(json_exporter.get_data())["otherData"]
+    assert other_data["warnings"] == [{"finding": "long_dur", "text": "Detected 5 event(s)."}]
+
+
+def test_export_finding_without_optional_args_does_not_crash(json_exporter):
+    '''an M-event named like a finding may also arrive from an input trace, without our args'''
+    foreign = AbstractEventType.from_dict({"ph": "M", "ts": 0, "pid": 0,
+                                           "name": TRACE_ISSUE_EVENT_NAME, "args": {}})
+    json_exporter.export([foreign])
+
+    other_data = json.loads(json_exporter.get_data())["otherData"]
+    assert other_data["warnings"] == [{"finding": "unknown", "text": ""}]

@@ -84,6 +84,10 @@ class AbstractContext:
         drain() needs to do any necessary processing of the buffered events and return anything of value as
         a list of events.
         Events are drained following the sequence of registered processing functions.
+
+        CONTRACT: this base implementation emits the accumulated warnings of the context.
+        Any override MUST chain to super().drain() (e.g. `return revents + super().drain()`),
+        otherwise the warnings of that context are silently dropped instead of being exported.
         '''
         return self.emit_issue_events()
 

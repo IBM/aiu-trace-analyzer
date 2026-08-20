@@ -74,18 +74,38 @@ class JsonFileTraceExporter(AbstractTraceExporter):
     def __init__(self, target_uri, timescale="ms", settings=None) -> None:
         super().__init__(target_uri, settings=settings)
         self.traceview = tv.TraceView(display_time_unit=timescale, other_data=self.meta)
+        self._findings: dict[str, dict] = {}
 
     # take (a list) of events and append to the traceview
     def export(self, data: list[tv.AbstractEventType]):
         for event in data:
             # trace_issue meta-events go into otherData, not into the trace event stream
-            if event.ph == "M" and event.name == TRACE_ISSUE_EVENT_NAME:
-                severity = "errors" if event.args["is_error"] else "warnings"
-                findings = self.traceview.other_data.setdefault(severity, [])
-                findings.append({"finding": event.args["finding"],
-                                 "text": event.args["text"]})
+            # (MetaEvents asserts ph=="M", so the isinstance check covers the phase as well)
+            if isinstance(event, tv.MetaEvents) and event.name == TRACE_ISSUE_EVENT_NAME:
+                self._collect_finding(event)
                 continue
             self.traceview.append_trace_event(event.json())
+
+    def _collect_finding(self, event: tv.MetaEvents) -> None:
+        '''
+        Fold a warning meta-event into otherData, keyed by the name of the finding.
+        A context that is attached to more than one pipeline stage (e.g. normalize_phase1 and
+        normalize_phase2 share one context) is drained once per stage and therefore reports the
+        same finding repeatedly. Keying by name keeps one entry, and since the counters of a
+        warning only ever grow, the last report is the complete one.
+        '''
+        finding = event.args.get("finding", "unknown")
+        self._findings[finding] = {"is_error": bool(event.args.get("is_error", False)),
+                                   "entry": {"finding": finding,
+                                             "text": event.args.get("text", "")}}
+        self._publish_findings()
+
+    def _publish_findings(self) -> None:
+        # rebuild both sections from scratch so an entry never lingers in the wrong severity
+        for section, is_error in (("errors", True), ("warnings", False)):
+            entries = [f["entry"] for f in self._findings.values() if f["is_error"] is is_error]
+            if entries:
+                self.traceview.other_data[section] = entries
 
     def export_meta(self, meta_data):
         self.traceview.add_metadata(meta_data)
