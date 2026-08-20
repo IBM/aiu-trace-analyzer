@@ -61,7 +61,7 @@ class AbstractContext:
                              "name": TRACE_ISSUE_EVENT_NAME,
                              "args": {"finding": name,
                                       "text": str(w),
-                                      "is_error": w.is_error()}})
+                                      "is_error": w.is_error}})
             for name, w in self.warnings.items() if w.has_warning()
         ]
 
@@ -100,7 +100,7 @@ class AbstractContext:
         ]
 
     def _get_test_result_status(self) -> str:
-        if any(w.warn_level == aiulog.ERROR and w.has_warning()
+        if any(w.is_error and w.has_warning()
                for w in self.warnings.values()):
             return "fail"
         if any(w.has_warning() for w in self.warnings.values()):

@@ -145,7 +145,7 @@ class TraceWarning:
         self.args_list: dict[str, any] = dict(data.items())
         self.update_fn: dict[str, callable] = dict(update_fn.items())
         self.auto_log = auto_log
-        self.warn_level = aiulog.WARN if not is_error else aiulog.ERROR
+        self.is_error: bool = is_error
         self._instances: list = []
 
         text_keys = re.findall(r"{d\[([.\w]+)\]}", self.text)
@@ -161,7 +161,11 @@ class TraceWarning:
 
     def __del__(self) -> None:
         if self.auto_log is True and self.has_warning():
-            aiulog.log(self.warn_level, self)
+            aiulog.log(self.log_level(), self)
+
+    def log_level(self):
+        '''the log level to report this warning at, derived from the is_error flag'''
+        return aiulog.ERROR if self.is_error else aiulog.WARN
 
     def _check_update_fn_keys(self, text_keys: list) -> None:
         # check if the keys for the update functions exist within the output text and the data items
@@ -207,16 +211,13 @@ class TraceWarning:
     def has_warning(self) -> bool:
         return self.occurred
 
-    def is_error(self) -> bool:
-        return self.warn_level == aiulog.ERROR
-
     def add_instance(self, data: dict) -> None:
         self._instances.append(data)
 
     def to_verification_event_args(self) -> dict:
         return {
             "finding": self.name,
-            "is_error": self.is_error(),
+            "is_error": self.is_error,
             "count": self.args_list.get("count", len(self._instances)),
             "instances": list(self._instances),
         }
