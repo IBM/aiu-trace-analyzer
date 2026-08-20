@@ -284,7 +284,7 @@ class KernelParentVerificationContext(AbstractVerificationContext, TwoPhaseWithB
                 )
 
         # Application phase: MRO resolves super() to AbstractVerificationContext.drain(),
-        # which appends verification_data and verification_test_result M-events.
+        # which appends trace_finding and verification_test_result M-events.
         return super().drain()
 
 

@@ -11,7 +11,7 @@ a failing test rather than as a missing entry in the output file.
 
 import pytest
 
-from aiu_trace_analyzer.types import TRACE_ISSUE_EVENT_NAME
+from aiu_trace_analyzer.types import TRACE_FINDING_EVENT_NAME
 from aiu_trace_analyzer.pipeline.categorize import EventCategorizerContext
 from aiu_trace_analyzer.pipeline.normalize import NormalizationContext
 from aiu_trace_analyzer.pipeline.overlap import OverlapDetectionContext
@@ -36,7 +36,7 @@ _MAX_DRAIN_CALLS = 2
 
 def _findings_of(events: list, warning_name: str) -> list:
     return [e for e in events
-            if e["name"] == TRACE_ISSUE_EVENT_NAME and e["args"]["finding"] == warning_name]
+            if e["name"] == TRACE_FINDING_EVENT_NAME and e["args"]["finding"] == warning_name]
 
 
 def _prepared(factory, warning_name):

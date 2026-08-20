@@ -33,9 +33,16 @@ class DiagnosticEvent(TraceEvent):
     pass
 
 
-# name of the meta-event used to carry an accumulated warning through the pipeline
-# so the exporter can fold it into the output json instead of losing it in the console
-TRACE_ISSUE_EVENT_NAME = "trace_issue"
+# Names of the diagnostic meta-events. They live here, next to DiagnosticEvent, because both the
+# regular pipeline and the verification stages emit them: the dependency between those two is
+# one-directional (verification builds on pipeline), so their shared vocabulary belongs below both.
+#
+# trace_finding carries one accumulated warning of a context. Both the trace exporter and the
+# verification report exporter consume it, each keeping the part of the payload their format needs.
+TRACE_FINDING_EVENT_NAME = "trace_finding"
+# verification_test_result reports whether a verification stage ran and what its verdict was. It is
+# emitted once per test rather than per finding, and cannot be derived from the findings alone.
+VERIFICATION_TEST_RESULT_NAME = "verification_test_result"
 
 
 class GlobalIngestData(object):
@@ -214,10 +221,16 @@ class TraceWarning:
     def add_instance(self, data: dict) -> None:
         self._instances.append(data)
 
-    def to_verification_event_args(self) -> dict:
+    def to_finding_args(self) -> dict:
+        '''
+        the full payload of this warning as the args of a finding meta-event. Consumers pick what
+        they need: the trace export keeps the rendered text, the verification report the structured
+        count and instances.
+        '''
         return {
             "finding": self.name,
             "is_error": self.is_error,
+            "text": str(self),
             "count": self.args_list.get("count", len(self._instances)),
             "instances": list(self._instances),
         }

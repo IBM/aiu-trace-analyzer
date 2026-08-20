@@ -1,7 +1,12 @@
 # Copyright 2024-2025 IBM Corporation
 
 import aiu_trace_analyzer.logger as aiulog
-from aiu_trace_analyzer.types import DiagnosticEvent, TraceEvent, TraceWarning, TRACE_ISSUE_EVENT_NAME
+from aiu_trace_analyzer.types import (
+    DiagnosticEvent,
+    TraceEvent,
+    TraceWarning,
+    TRACE_FINDING_EVENT_NAME,
+    VERIFICATION_TEST_RESULT_NAME)
 
 
 class AbstractContext:
@@ -52,18 +57,29 @@ class AbstractContext:
             if w.has_warning():
                 aiulog.log(aiulog.WARN, w)
 
-    def emit_issue_events(self) -> list[TraceEvent]:
+    def _emit_findings(self) -> list[TraceEvent]:
         '''
-        emit each active warning as a meta-event so the exporter can fold it into the output json.
+        Emit every warning of this context as a finding meta-event, so an exporter can turn it into
+        whatever its output format requires.
+
+        All warnings are emitted, including the ones that never fired: a finding with count == 0 is
+        what tells the verification report that a check ran and passed. Filtering is up to the
+        consumer - the trace exporter only keeps the ones that actually fired.
         '''
         return [
             DiagnosticEvent({"ph": "M", "ts": 0, "pid": 0,
-                             "name": TRACE_ISSUE_EVENT_NAME,
-                             "args": {"finding": name,
-                                      "text": str(w),
-                                      "is_error": w.is_error}})
-            for name, w in self.warnings.items() if w.has_warning()
+                             "name": TRACE_FINDING_EVENT_NAME,
+                             "args": {**w.to_finding_args(), **self._finding_extra_args()}})
+            for w in self.warnings.values()
         ]
+
+    def _finding_extra_args(self) -> dict:
+        '''
+        additional args to attach to every finding of this context. The base context has no extra
+        provenance to add; AbstractVerificationContext uses this to mark its findings as belonging
+        to a named test.
+        '''
+        return {}
 
     def add_warning(self, warning: TraceWarning):
         self.warnings[warning.get_name()] = warning
@@ -89,15 +105,31 @@ class AbstractContext:
         Any override MUST chain to super().drain() (e.g. `return revents + super().drain()`),
         otherwise the warnings of that context are silently dropped instead of being exported.
         '''
-        return self.emit_issue_events()
+        if not self.is_enabled():
+            # a stage that was disabled by the profile has no findings to report: claiming its
+            # checks passed would be wrong, and its counters were never maintained either.
+            return []
+        return self._emit_findings()
 
-    def _emit_verification_events(self) -> list[TraceEvent]:
-        return [
-            DiagnosticEvent({"ph": "M", "ts": 0, "pid": 0,
-                             "name": "verification_data",
-                             "args": w.to_verification_event_args()})
-            for w in self.warnings.values()
-        ]
+
+class AbstractVerificationContext(AbstractContext):
+    '''
+    Context of a verification stage.
+
+    Adds test identity on top of the plain warning accumulation: its findings are marked with the
+    name of the test they belong to, which is what distinguishes an actual check from an advisory
+    warning of a regular processing stage. On top of the findings it emits one test result event
+    per drain, the only event that reports whether the check ran at all.
+    '''
+    test_name: str = ""
+
+    def drain(self) -> list[TraceEvent]:
+        events = super().drain()
+        events.append(self._emit_test_result_event(self.test_name))
+        return events
+
+    def _finding_extra_args(self) -> dict:
+        return {"test": self.test_name}
 
     def _get_test_result_status(self) -> str:
         if any(w.is_error and w.has_warning()
@@ -109,16 +141,6 @@ class AbstractContext:
 
     def _emit_test_result_event(self, test_name: str) -> TraceEvent:
         return DiagnosticEvent({"ph": "M", "ts": 0, "pid": 0,
-                                "name": "verification_test_result",
+                                "name": VERIFICATION_TEST_RESULT_NAME,
                                 "args": {"test": test_name,
                                          "result": self._get_test_result_status()}})
-
-
-class AbstractVerificationContext(AbstractContext):
-    test_name: str = ""
-
-    def drain(self) -> list[TraceEvent]:
-        events = super().drain()
-        events += self._emit_verification_events()
-        events.append(self._emit_test_result_event(self.test_name))
-        return events

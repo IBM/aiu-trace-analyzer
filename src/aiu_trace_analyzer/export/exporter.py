@@ -10,9 +10,8 @@ import pandas as pd
 
 import aiu_trace_analyzer.logger as aiulog
 import aiu_trace_analyzer.trace_view as tv
-from aiu_trace_analyzer.types import TRACE_ISSUE_EVENT_NAME
-from aiu_trace_analyzer.verification.report import (
-    VERIFICATION_RESULT_NAME,
+from aiu_trace_analyzer.types import (
+    TRACE_FINDING_EVENT_NAME,
     VERIFICATION_TEST_RESULT_NAME,
 )
 
@@ -79,25 +78,34 @@ class JsonFileTraceExporter(AbstractTraceExporter):
     # take (a list) of events and append to the traceview
     def export(self, data: list[tv.AbstractEventType]):
         for event in data:
-            # trace_issue meta-events go into otherData, not into the trace event stream
+            # finding meta-events go into otherData, not into the trace event stream
             # (MetaEvents asserts ph=="M", so the isinstance check covers the phase as well)
-            if isinstance(event, tv.MetaEvents) and event.name == TRACE_ISSUE_EVENT_NAME:
+            if isinstance(event, tv.MetaEvents) and event.name == TRACE_FINDING_EVENT_NAME:
                 self._collect_finding(event)
                 continue
             self.traceview.append_trace_event(event.json())
 
     def _collect_finding(self, event: tv.MetaEvents) -> None:
         '''
-        Fold a warning meta-event into otherData, keyed by the name of the finding.
+        Fold a finding meta-event into otherData, keyed by the name of the finding.
         A context that is attached to more than one pipeline stage (e.g. normalize_phase1 and
         normalize_phase2 share one context) is drained once per stage and therefore reports the
         same finding repeatedly. Keying by name keeps one entry, and since the counters of a
         warning only ever grow, the last report is the complete one.
+
+        Findings that never fired (count == 0) are dropped: they exist for the verification report,
+        which uses them to list the checks that passed. A trace file only reports actual issues.
+        The 'instances' of a finding are left out as well - they can grow without bound and belong
+        in the verification report rather than in a trace file.
         '''
+        count = event.args.get("count", 0)
+        if not count:
+            return
         finding = event.args.get("finding", "unknown")
         self._findings[finding] = {"is_error": bool(event.args.get("is_error", False)),
                                    "entry": {"finding": finding,
-                                             "text": event.args.get("text", "")}}
+                                             "text": event.args.get("text", ""),
+                                             "count": count}}
         self._publish_findings()
 
     def _publish_findings(self) -> None:
@@ -327,7 +335,7 @@ class VerificationReportExporter(AbstractTraceExporter):
     """
     Exports a structured verification report instead of a full trace.
 
-    Consumes only verification_data and verification_test_result M-events
+    Consumes only trace_finding and verification_test_result M-events
     (produced by the verification pipeline stages) and writes a JSON or
     human-readable text report.  The `has_errors` property lets the caller
     propagate a non-zero exit code when errors were detected.
@@ -336,14 +344,14 @@ class VerificationReportExporter(AbstractTraceExporter):
     def __init__(self, target_uri, fmt="json", settings=None):
         super().__init__(target_uri, settings=settings)
         self._fmt = fmt
-        self._findings = []
+        self._findings = {}
         self._test_results = []
-        self._has_errors = False
         self._input_meta = {}
 
     @property
     def has_errors(self) -> bool:
-        return self._has_errors
+        # any error-level finding that fired fails the run, no matter which context reported it
+        return any(f.get("is_error") and f.get("count", 0) > 0 for f in self._findings.values())
 
     def export_meta(self, meta_data):
         self._input_meta = meta_data if meta_data is not None else {}
@@ -352,20 +360,23 @@ class VerificationReportExporter(AbstractTraceExporter):
         for event in data:
             if event.ph != "M":
                 continue
-            if event.name == VERIFICATION_RESULT_NAME:
-                self._findings.append(event.args)
-                if event.args.get("is_error") and event.args.get("count", 0) > 0:
-                    self._has_errors = True
+            if event.name == TRACE_FINDING_EVENT_NAME:
+                # keyed by name: a context attached to several stages reports the same finding once
+                # per stage, and the last report carries the complete counts
+                self._findings[event.args.get("finding")] = event.args
             elif event.name == VERIFICATION_TEST_RESULT_NAME:
                 self._test_results.append(event.args)
 
     def get_data(self) -> dict:
-        errors = [f for f in self._findings if f.get("is_error") and f.get("count", 0) > 0]
-        warnings = [f for f in self._findings if not f.get("is_error") and f.get("count", 0) > 0]
-        passed = [f for f in self._findings if f.get("count", 0) == 0]
+        findings = list(self._findings.values())
+        errors = [f for f in findings if f.get("is_error") and f.get("count", 0) > 0]
+        warnings = [f for f in findings if not f.get("is_error") and f.get("count", 0) > 0]
+        # only a check that belongs to a test can be reported as passed. Findings without a test are
+        # advisory warnings of regular processing stages: silent is not the same as verified.
+        passed = [f for f in findings if f.get("count", 0) == 0 and "test" in f]
         return {
             "version": "1.0",
-            "result": "FAIL" if self._has_errors else "PASS",
+            "result": "FAIL" if self.has_errors else "PASS",
             "metadata": {**self.meta, **self._input_meta},
             "test_results": self._test_results,
             "errors": errors,
