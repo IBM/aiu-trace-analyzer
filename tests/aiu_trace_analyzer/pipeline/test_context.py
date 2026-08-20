@@ -405,3 +405,19 @@ def test_v7_findings_of_a_plain_context_have_no_test_provenance(abstract_context
     abstract_context.enable()
 
     assert "test" not in abstract_context.drain()[0]["args"]
+
+
+def test_v8_context_without_test_name_claims_no_provenance(count_warning):
+    '''
+    a verification context that forgets its test_name must not attribute its findings to a nameless
+    test: the report would list them as verified without being able to say by what.
+    '''
+    class _NamelessCtx(AbstractVerificationContext):
+        pass
+
+    ctx = _enabled(_NamelessCtx(warnings=[count_warning]))
+
+    findings = _find_events(ctx.drain(), TRACE_FINDING_EVENT_NAME)
+
+    assert len(findings) == 1
+    assert "test" not in findings[0]["args"]

@@ -120,16 +120,26 @@ class AbstractVerificationContext(AbstractContext):
     name of the test they belong to, which is what distinguishes an actual check from an advisory
     warning of a regular processing stage. On top of the findings it emits one test result event
     per drain, the only event that reports whether the check ran at all.
+
+    Derived classes MUST set test_name: without it the report cannot attribute the findings, and a
+    check that reported nothing is indistinguishable from an advisory warning that stayed quiet.
     '''
     test_name: str = ""
 
     def drain(self) -> list[TraceEvent]:
+        if not self.test_name:
+            aiulog.log(aiulog.ERROR,
+                       f"{type(self).__name__} is a verification context without a test_name."
+                       " Its findings cannot be attributed to a test and will not be reported"
+                       " as verified. Set the test_name class attribute.")
         events = super().drain()
         events.append(self._emit_test_result_event(self.test_name))
         return events
 
     def _finding_extra_args(self) -> dict:
-        return {"test": self.test_name}
+        # only a named test can claim its findings: an empty name would make them look verified
+        # while leaving the report unable to say by what
+        return {"test": self.test_name} if self.test_name else {}
 
     def _get_test_result_status(self) -> str:
         if any(w.is_error and w.has_warning()
