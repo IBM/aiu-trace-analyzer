@@ -42,10 +42,14 @@ class TwoPhaseWithBarrierContext(AbstractHashQueueContext):
 
     def drain(self) -> list[TraceEvent]:
         if self.phase == self._COLLECTION_PHASE:
+            # first drain call: switch to the application phase. Defer to the application-phase
+            # drain so parent drain is not called twice and cross-phase state in self.queues
+            # survives the transition.
             self.phase = self._APPLICATION_PHASE
+            revents = []
         else:
-            # do nothing if this is the application phase
-            pass
-        # the queues for these contexts don't contain events (events are held in barrier context),
-        # so nothing to drain here
-        return []
+            # application phase (final drain call): the cross-phase state has been consumed, so
+            # it is safe to chain the parent drain, which flushes the (event-less) queues and
+            # emits any additional events if needed.
+            revents = super().drain()
+        return revents

@@ -124,10 +124,10 @@ class AbstractTraceIngest:
         # special treatment of deviceProperties list
         current_dev_properties = self.other_metadata.pop("deviceProperties", [])
         additional_dev_properties = metadata.pop("deviceProperties", [{}])
-        assert len(additional_dev_properties) == 1, \
+        assert len(additional_dev_properties) <= 1, \
             f"Combining incoming metadata with multiple deviceProperties is not supported {additional_dev_properties}"
 
-        if "id" in additional_dev_properties[0]:
+        if additional_dev_properties and "id" in additional_dev_properties[0]:
             new_id = additional_dev_properties[0]["id"]
             for entry in current_dev_properties:
                 if "id" in entry and entry["id"] == new_id:
