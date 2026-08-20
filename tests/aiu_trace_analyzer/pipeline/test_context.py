@@ -135,9 +135,31 @@ def test_issue_warning(abstract_context):
     assert abstract_context.warnings["pytest"].__str__() == "A Warning with 2 args: 2 and 5.0"
 
 
-def test_emit_issue_events_none_when_inactive(abstract_context):
+def test_emit_issue_events_none_when_no_warning_issued(abstract_context):
+    # nothing has been issued yet, so has_warning() is False for every warning of the context.
+    # NOTE: this is independent of context.enabled - emit_issue_events() does not look at it.
     abstract_context.warnings["pytest"].auto_log = False   # disable auto-output for tests
     assert abstract_context.emit_issue_events() == []
+
+
+def test_emit_issue_events_only_for_issued_warnings():
+    # two warnings on one context, only one of them fired: exactly one event
+    warnings = [
+        TraceWarning(name="fired", text="fired {d[count]} time(s)",
+                     data={"count": 0}, auto_log=False),
+        TraceWarning(name="quiet", text="quiet {d[count]} time(s)",
+                     data={"count": 0}, auto_log=False),
+    ]
+    context = AbstractContext(warnings=warnings)
+    context.issue_warning("fired", {"count": 1})
+
+    events = context.emit_issue_events()
+
+    assert [e["args"]["finding"] for e in events] == ["fired"]
+
+    # ... and both once the second one fires too
+    context.issue_warning("quiet", {"count": 1})
+    assert sorted(e["args"]["finding"] for e in context.emit_issue_events()) == ["fired", "quiet"]
 
 
 def test_emit_issue_events(abstract_context):

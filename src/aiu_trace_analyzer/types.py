@@ -210,9 +210,6 @@ class TraceWarning:
     def is_error(self) -> bool:
         return self.warn_level == aiulog.ERROR
 
-    def severity(self) -> str:
-        return "error" if self.is_error() else "warning"
-
     def add_instance(self, data: dict) -> None:
         self._instances.append(data)
 
