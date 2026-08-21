@@ -6,6 +6,7 @@ import copy
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.pipeline import AbstractContext, AbstractHashQueueContext
+from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
 
 
 class IterationStatus(object):
@@ -149,7 +150,7 @@ class IterationDectectContext(AbstractHashQueueContext):
 def collect_iteration_stats(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
     assert isinstance(context, IterationDectectContext)
 
-    if event["ph"] in "X" and "args" in event and "TS1" in event["args"] and "Cmpt Exec" in event["name"]:
+    if event["ph"] == "X" and PipelineContextTool.is_acc_kernel(event):
         context.detect_iteration(event)
 
     return [event]
