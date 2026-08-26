@@ -5,5 +5,6 @@ max-complexity = 17
 
 per-file-ignores =
     src/aiu_trace_analyzer/pipeline/__init__.py:F401
+    src/aiu_trace_analyzer/verification/__init__.py:F401
     src/aiu_trace_analyzer/__init__.py:F401,F403
     src/aiu_trace_analyzer/core/acelyzer.py:C901

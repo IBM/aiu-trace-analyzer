@@ -111,11 +111,4 @@ from aiu_trace_analyzer.pipeline.categorize import event_categorizer, event_cate
 # for reference of the template, you'd do here:
 #       from aiu_trace_analyzer.pipeline.template import myprocessing
 
-from aiu_trace_analyzer.verification.verify import verify, verify_cleanup
-from aiu_trace_analyzer.verification.verify import VerificationContext
-from aiu_trace_analyzer.verification.kernel_parent_verify import (
-    KernelParentVerificationContext,
-    kernel_parent_collect,
-    kernel_parent_verify
-)
-from aiu_trace_analyzer.verification.report import verification_result_filter
+# NOTE: the verification stages live in aiu_trace_analyzer.verification

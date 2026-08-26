@@ -15,6 +15,7 @@ import aiu_trace_analyzer.ingest.ingestion as ingest
 import aiu_trace_analyzer.export.exporter as output
 import aiu_trace_analyzer.logger as aiulog
 import aiu_trace_analyzer.pipeline as event_pipe
+import aiu_trace_analyzer.verification as verify_pipe
 from aiu_trace_analyzer import __version__
 
 
@@ -762,12 +763,22 @@ class Acelyzer:
                                         process: processor.EventProcessor,
                                         args,
                                         exporter: output.AbstractTraceExporter):
-        verification_ctx = event_pipe.VerificationContext()
-        kernel_parent_ctx = event_pipe.KernelParentVerificationContext()
+        # for a verification stage example, see verify.py
 
-        process.register_stage(callback=event_pipe.verify, context=verification_ctx)
-        process.register_stage(callback=event_pipe.kernel_parent_collect, context=kernel_parent_ctx)
+        # strict: accelerator events have no call/return relationship, so even a fully embedded
+        # event is a data problem and not a legitimate nesting
+        overlap_verification_ctx = verify_pipe.OverlapVerificationContext(strict=True)
+        kernel_parent_ctx = verify_pipe.KernelParentVerificationContext()
+
+        # register anything that verifies the raw/unsorted order of the input before this sort-stage
+        process.register_stage(callback=event_pipe.sort_events, context=event_pipe.EventSortingContext(
+            event_types=None, sortkey=self._default_sort_ts_and_rev_dur, global_sort=True))
+
+        # anything that requires a sorted event stream below this point
+        process.register_stage(callback=verify_pipe.verify_kernel_overlap, context=overlap_verification_ctx)
+        process.register_stage(callback=verify_pipe.kernel_parent_collect, context=kernel_parent_ctx)
         process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
-        process.register_stage(callback=event_pipe.kernel_parent_verify, context=kernel_parent_ctx)
-        process.register_stage(callback=event_pipe.verify_cleanup)
-        process.register_stage(callback=event_pipe.verification_result_filter)
+        process.register_stage(callback=verify_pipe.kernel_parent_verify, context=kernel_parent_ctx)
+
+        # drop all regular events and only keep report-data after this stage
+        process.register_stage(callback=verify_pipe.verification_result_filter)
