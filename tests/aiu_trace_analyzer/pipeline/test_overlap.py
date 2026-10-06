@@ -2,7 +2,12 @@
 
 import pytest
 
-from aiu_trace_analyzer.pipeline.overlap import OverlapDetectionContext, recombine_cpu_events
+import aiu_trace_analyzer.logger as aiulog
+from aiu_trace_analyzer.pipeline.overlap import (
+    OverlapDetectionContext,
+    TSSequenceContext,
+    recombine_cpu_events,
+)
 from aiu_trace_analyzer.types import TraceEvent
 
 
@@ -110,3 +115,77 @@ def test_strict_flags_every_event_of_an_embedded_chain():
     events = [_x_event(0.0, 100.0), _x_event(10.0, 5.0), _x_event(20.0, 5.0), _x_event(30.0, 5.0)]
     assert _detect(events, strict=True) == 3
     assert _detect(events, strict=False) == 0
+
+
+###########################################################
+# timestamp sequence checking
+
+def test_ts_sequence_logs_out_of_order_timestamp(monkeypatch):
+    context = TSSequenceContext()
+    log_calls = []
+    monkeypatch.setattr(aiulog, "log", lambda *args: log_calls.append(args))
+
+    context.insert(_x_event(10.0, 1.0))
+    context.insert(_x_event(5.0, 1.0))
+
+    error_logs = [call for call in log_calls if call[0] == aiulog.ERROR]
+
+    assert len(error_logs) == 1
+    assert error_logs[0][1] == "Events out of order:"
+
+
+def test_ts_sequence_logs_secondary_duration_order(monkeypatch):
+    context = TSSequenceContext()
+    log_calls = []
+    monkeypatch.setattr(aiulog, "log", lambda *args: log_calls.append(args))
+
+    context.insert(_x_event(10.0, 1.0))
+    context.insert(_x_event(10.0, 2.0))
+
+    error_logs = [call for call in log_calls if call[0] == aiulog.ERROR]
+
+    assert len(error_logs) == 1
+    assert error_logs[0][1] == "Secondary key (dur) out of order"
+
+
+def test_ts_sequence_accepts_ordered_timestamps(monkeypatch):
+    context = TSSequenceContext()
+    log_calls = []
+    monkeypatch.setattr(aiulog, "log", lambda *args: log_calls.append(args))
+
+    context.insert(_x_event(5.0, 2.0))
+    context.insert(_x_event(10.0, 1.0))
+
+    error_logs = [call for call in log_calls if call[0] == aiulog.ERROR]
+
+    assert error_logs == []
+
+
+def test_ts_sequence_tracks_cmpt_exec_cycle_overlap():
+    context = TSSequenceContext(ts3check=True)
+
+    first_event = _x_event(10.0, 1.0, name="Cmpt Exec")
+    first_event["args"].update({"TS3": "100", "TS4": "200"})
+
+    second_event = _x_event(20.0, 1.0, name="Cmpt Exec")
+    second_event["args"].update({"TS3": "150", "TS4": "250"})
+
+    context.ts3insert(first_event)
+    context.ts3insert(second_event)
+
+    assert context.ts_outsync == (1, 50)
+
+
+def test_ts_sequence_accepts_non_overlapping_cmpt_exec_cycles():
+    context = TSSequenceContext(ts3check=True)
+
+    first_event = _x_event(10.0, 1.0, name="Cmpt Exec")
+    first_event["args"].update({"TS3": "100", "TS4": "200"})
+
+    second_event = _x_event(20.0, 1.0, name="Cmpt Exec")
+    second_event["args"].update({"TS3": "200", "TS4": "250"})
+
+    context.ts3insert(first_event)
+    context.ts3insert(second_event)
+
+    assert context.ts_outsync == (0, 0)
