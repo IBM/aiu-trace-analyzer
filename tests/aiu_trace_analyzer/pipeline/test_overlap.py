@@ -6,6 +6,8 @@ import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.pipeline.overlap import (
     OverlapDetectionContext,
     TSSequenceContext,
+    assert_global_ts_sequence,
+    assert_ts_sequence,
     recombine_cpu_events,
 )
 from aiu_trace_analyzer.types import TraceEvent
@@ -120,72 +122,106 @@ def test_strict_flags_every_event_of_an_embedded_chain():
 ###########################################################
 # timestamp sequence checking
 
-def test_ts_sequence_logs_out_of_order_timestamp(monkeypatch):
-    context = TSSequenceContext()
+# (description, events, expected error message or None)
+list_of_ts_sequence_tests = [
+    ("ordered timestamps",
+     [_x_event(5.0, 2.0), _x_event(10.0, 1.0)], None),
+    ("out-of-order timestamp",
+     [_x_event(10.0, 1.0), _x_event(5.0, 1.0)], "Events out of order:"),
+    ("equal ts, longer dur second",
+     [_x_event(10.0, 1.0), _x_event(10.0, 2.0)],
+     "Secondary key (dur) out of order"),
+    ("lower timestamp on another tid",
+     [_x_event(10.0, 1.0, pid=1, tid=1),
+      _x_event(5.0, 1.0, pid=1, tid=2)], None),
+]
+
+
+@pytest.mark.parametrize(
+    "description,events,expected_msg",
+    list_of_ts_sequence_tests)
+def test_ts_sequence_order(monkeypatch, description, events, expected_msg):
     log_calls = []
     monkeypatch.setattr(aiulog, "log", lambda *args: log_calls.append(args))
-
-    context.insert(_x_event(10.0, 1.0))
-    context.insert(_x_event(5.0, 1.0))
-
-    error_logs = [call for call in log_calls if call[0] == aiulog.ERROR]
-
-    assert len(error_logs) == 1
-    assert error_logs[0][1] == "Events out of order:"
-
-
-def test_ts_sequence_logs_secondary_duration_order(monkeypatch):
     context = TSSequenceContext()
+
+    for event in events:
+        context.insert(event)
+
+    error_msgs = [call[1] for call in log_calls if call[0] == aiulog.ERROR]
+
+    assert error_msgs == ([expected_msg] if expected_msg else []), description
+
+
+def test_global_ts_sequence_flags_lower_timestamp_across_tids(monkeypatch):
     log_calls = []
     monkeypatch.setattr(aiulog, "log", lambda *args: log_calls.append(args))
-
-    context.insert(_x_event(10.0, 1.0))
-    context.insert(_x_event(10.0, 2.0))
-
-    error_logs = [call for call in log_calls if call[0] == aiulog.ERROR]
-
-    assert len(error_logs) == 1
-    assert error_logs[0][1] == "Secondary key (dur) out of order"
-
-
-def test_ts_sequence_accepts_ordered_timestamps(monkeypatch):
     context = TSSequenceContext()
-    log_calls = []
-    monkeypatch.setattr(aiulog, "log", lambda *args: log_calls.append(args))
 
-    context.insert(_x_event(5.0, 2.0))
-    context.insert(_x_event(10.0, 1.0))
+    assert_global_ts_sequence(_x_event(10.0, 1.0, pid=1, tid=1), context)
+    assert_global_ts_sequence(_x_event(5.0, 1.0, pid=1, tid=2), context)
 
-    error_logs = [call for call in log_calls if call[0] == aiulog.ERROR]
+    error_msgs = [call[1] for call in log_calls if call[0] == aiulog.ERROR]
 
-    assert error_logs == []
+    assert error_msgs == ["Events out of order:"]
 
 
-def test_ts_sequence_tracks_cmpt_exec_cycle_overlap():
+def _cmpt_event(ts, ts3, ts4, pid=1) -> TraceEvent:
+    event = _x_event(ts, 1.0, pid=pid, name="Cmpt Exec")
+    event["args"].update({"TS3": str(ts3), "TS4": str(ts4)})
+    return event
+
+
+# (description, ts3check, events, expected ts_outsync, expected ts_total)
+list_of_ts3_tests = [
+    ("overlapping cycles",
+     True,
+     [_cmpt_event(10.0, 100, 200), _cmpt_event(20.0, 150, 250)],
+     (1, 50), 2),
+    ("back-to-back cycles",
+     True,
+     [_cmpt_event(10.0, 100, 200), _cmpt_event(20.0, 200, 250)],
+     (0, 0), 2),
+    ("cycle check disabled",
+     False,
+     [_cmpt_event(10.0, 100, 200), _cmpt_event(20.0, 150, 250)],
+     (0, 0), 0),
+    ("separate pids",
+     True,
+     [_cmpt_event(10.0, 100, 200, pid=1),
+      _cmpt_event(20.0, 150, 250, pid=2)],
+     (0, 0), 2),
+    ("same trace timestamp",
+     True,
+     [_cmpt_event(10.0, 100, 200), _cmpt_event(10.0, 150, 250)],
+     (0, 0), 2),
+]
+
+
+@pytest.mark.parametrize(
+    "description,ts3check,events,expected_outsync,expected_total",
+    list_of_ts3_tests)
+def test_ts_sequence_cmpt_exec_cycles(
+        monkeypatch, description, ts3check, events, expected_outsync, expected_total):
+    monkeypatch.setattr(aiulog, "log", lambda *args: None)
+    context = TSSequenceContext(ts3check=ts3check)
+
+    for event in events:
+        assert_ts_sequence(event, context)
+
+    assert context.ts_outsync == expected_outsync, description
+    assert context.ts_total == expected_total, description
+
+    del context
+
+
+def test_ts_sequence_ignores_non_cmpt_exec_for_cycle_check():
     context = TSSequenceContext(ts3check=True)
 
-    first_event = _x_event(10.0, 1.0, name="Cmpt Exec")
-    first_event["args"].update({"TS3": "100", "TS4": "200"})
+    event = _x_event(10.0, 1.0, name="kernel")
+    event["args"].update({"TS3": "100", "TS4": "200"})
 
-    second_event = _x_event(20.0, 1.0, name="Cmpt Exec")
-    second_event["args"].update({"TS3": "150", "TS4": "250"})
+    assert_ts_sequence(event, context)
 
-    context.ts3insert(first_event)
-    context.ts3insert(second_event)
-
-    assert context.ts_outsync == (1, 50)
-
-
-def test_ts_sequence_accepts_non_overlapping_cmpt_exec_cycles():
-    context = TSSequenceContext(ts3check=True)
-
-    first_event = _x_event(10.0, 1.0, name="Cmpt Exec")
-    first_event["args"].update({"TS3": "100", "TS4": "200"})
-
-    second_event = _x_event(20.0, 1.0, name="Cmpt Exec")
-    second_event["args"].update({"TS3": "200", "TS4": "250"})
-
-    context.ts3insert(first_event)
-    context.ts3insert(second_event)
-
+    assert context.ts_total == 0
     assert context.ts_outsync == (0, 0)
