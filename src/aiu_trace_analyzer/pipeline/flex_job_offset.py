@@ -4,12 +4,13 @@ from math import isclose
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.hw_data import has_hw_ts, get_hw_ts
 from aiu_trace_analyzer.pipeline import AbstractContext
 from aiu_trace_analyzer.pipeline.barrier import TwoPhaseWithBarrierContext
 
 
 def _is_cpu_event(event: TraceEvent) -> bool:
-    return not ("args" in event and "TS1" in event["args"])
+    return not has_hw_ts(event)
 
 
 class FlexJobStats():
@@ -31,8 +32,8 @@ class FlexJobStats():
 
         ts_b = event["ts"]
         ts_e = event["ts"]+event["dur"]
-        cycl_b = int(event["args"]["TS1"]) if not is_cpu_event else None
-        cycl_e = int(event["args"]["TS5"]) if not is_cpu_event else None
+        cycl_b = get_hw_ts(event, 1) if not is_cpu_event else None
+        cycl_e = get_hw_ts(event, 5) if not is_cpu_event else None
         if is_cpu_event:
             self.cpu = (min(self.cpu[0], ts_b), max(self.cpu[1], ts_e))
         else:

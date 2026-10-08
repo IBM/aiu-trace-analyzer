@@ -2,6 +2,7 @@
 
 import pytest
 
+import aiu_trace_analyzer.hw_data as hw_data
 from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
 from aiu_trace_analyzer.dialect import InputDialectFLEX, InputDialectTORCH
 from aiu_trace_analyzer.hw_data import (
@@ -26,6 +27,14 @@ _JOB_WITHOUT_DIALECT = GlobalIngestData.add_job_info("hw_data_test_no_dialect.js
 _UNREGISTERED_JOB = -1
 
 _FLEX_KEYS = ["TS1", "TS2", "TS3", "TS4", "TS5"]
+
+
+@pytest.fixture(autouse=True)
+def all_dialects_enabled(monkeypatch):
+    # the accessor tests cover both layouts; the default dialect gate is tested separately below
+    monkeypatch.setattr(hw_data, "HW_DATA_DIALECTS", {"FLEX", "TORCH"})
+
+
 _VALUES = [2568310617, 2568311551, 2568311560, 2568311560, 2568311566]
 _POWER = 2656188424
 
@@ -195,3 +204,18 @@ def test_set_hw_power_writes_native_format(dialect, native_type, encoding):
 def test_set_hw_power_torch_rejects_float():
     with pytest.raises(TypeError):
         set_hw_power(_event("TORCH"), 12.5)
+
+
+@pytest.mark.parametrize("job", ["registered", "none"])
+def test_torch_gated_by_default(monkeypatch, job):
+    monkeypatch.undo()   # restore the default HW_DATA_DIALECTS
+    assert hw_data.HW_DATA_DIALECTS == {"FLEX"}
+    torch_event = _event("TORCH", job=job)
+    assert not has_hw_ts(torch_event)
+    assert not has_hw_power(torch_event)
+    with pytest.raises(KeyError):
+        get_hw_ts_list(torch_event)
+    with pytest.raises(KeyError):
+        set_hw_ts_list(torch_event, _VALUES)
+    flex_event = _event("FLEX", job=job)
+    assert has_hw_ts(flex_event) and get_hw_ts_list(flex_event) == _VALUES
