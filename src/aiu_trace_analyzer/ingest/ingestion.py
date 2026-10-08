@@ -11,7 +11,8 @@ import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import (
     TraceEvent,
     TraceWarning,
-    GlobalIngestData,
+    GlobalIngestData)
+from aiu_trace_analyzer.dialect import (
     InputDialect,
     InputDialectFLEX,
     InputDialectTORCH)
