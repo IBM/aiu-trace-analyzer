@@ -9,6 +9,7 @@ from aiu_trace_analyzer.pipeline import (
     TwoPhaseWithBarrierContext)
 from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, TraceWarning
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
+from aiu_trace_analyzer.hw_data import get_hw_ts
 
 
 class OverlapTracking(tuple[float, bool, list[float]]):
@@ -390,10 +391,10 @@ class TSSequenceContext(AbstractHashQueueContext):
 
         try:
             last_ts = self.ts_cmpt_end[queue_id]
-            if last_ts[0] < event["ts"] and int(event["args"]["TS3"]) < last_ts[1]:
-                self.ts_outsync = (self.ts_outsync[0]+1, max(self.ts_outsync[1],
-                                                             last_ts[1] - int(event["args"]["TS3"])))
-            self.ts_cmpt_end[queue_id] = (event["ts"], int(event["args"]["TS4"]))
+            ts3 = get_hw_ts(event, 3)
+            if last_ts[0] < event["ts"] and ts3 < last_ts[1]:
+                self.ts_outsync = (self.ts_outsync[0]+1, max(self.ts_outsync[1], last_ts[1] - ts3))
+            self.ts_cmpt_end[queue_id] = (event["ts"], get_hw_ts(event, 4))
         except:  # noqa: E722
             print(self.ts_cmpt_end[queue_id], event)
             raise

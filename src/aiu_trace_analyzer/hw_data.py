@@ -4,7 +4,7 @@
 Dialect-aware access to the HW data of trace events: the 5 device cycle timestamps (TS1..TS5) and the power value.
 
 The storage layout differs between input dialects and is defined by the dialect entries
-'hw_ts_key', 'hw_power_key', and 'hw_value_type' (see types.py):
+'hw_ts_key', 'hw_power_key', and 'hw_value_type' (see dialect.py):
   FLEX:  args["TS1"] ... args["TS5"], args["Power"]; values written back as decimal str
   TORCH: args["cycles_ts"] = [ts1, ..., ts5], args["charge"]; values written back as int
 
@@ -13,6 +13,9 @@ Timestamp indices are 1-based to match the TS1..TS5 naming: get_hw_ts(event, 3) 
 
 The layout is selected via the dialect of the event's job (args.jobhash). If the event has no jobhash or
 its job is not registered, the layout is detected from the keys present in the event.
+
+HW data is only reported for dialects in HW_DATA_DIALECTS; events of other dialects behave as if they had
+no HW data. This keeps stages FLEX-only until the TORCH HW-data path is complete.
 '''
 
 from typing import Optional
@@ -22,9 +25,13 @@ from aiu_trace_analyzer.dialect import InputDialect, InputDialectFLEX, InputDial
 
 HW_TS_COUNT = 5
 
+# dialects whose HW data is exposed (add TORCH once the TORCH HW-data path is complete)
+HW_DATA_DIALECTS = {"FLEX"}
+
 
 class _HwLayout:
     def __init__(self, dialect: InputDialect) -> None:
+        self.dialect_name = dialect.get("NAME")
         ts_keys = dialect.get("hw_ts_key").split(",")
         # a single key holds the list of all timestamps; otherwise one key per timestamp
         self.ts_list_key = ts_keys[0] if len(ts_keys) == 1 else None
@@ -93,9 +100,10 @@ def _args_and_layout(event: TraceEvent, args_key: str) -> tuple[Optional[dict], 
     if not isinstance(args, dict):
         return None, None
     dialect = find_dialect_of_event(event, args_key)
-    if dialect is not None:
-        return args, _layout_of_dialect(dialect)
-    return args, _sniff_layout(args)
+    layout = _layout_of_dialect(dialect) if dialect is not None else _sniff_layout(args)
+    if layout is None or layout.dialect_name not in HW_DATA_DIALECTS:
+        return args, None
+    return args, layout
 
 
 def _to_int(value) -> int:

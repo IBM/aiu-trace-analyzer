@@ -12,6 +12,7 @@ from aiu_trace_analyzer.types import (
     TraceEvent,
     TraceWarning,
     GlobalIngestData)
+from aiu_trace_analyzer.hw_data import has_hw_ts, get_hw_ts
 from aiu_trace_analyzer.dialect import (
     InputDialect,
     InputDialectFLEX,
@@ -213,10 +214,8 @@ class AbstractTraceIngest:
 
     def _zero_with_hw_time(self, event: TraceEvent, the_args: str) -> TraceEvent:
         # check if event with zero duration has non-zero HW cycle diff
-        if math.isclose(event.get("dur", -1.0), 0.0, abs_tol=1e-9) and the_args in event:
-            ts1 = event[the_args].get("TS1", 0)
-            ts5 = event[the_args].get("TS5", 0)
-            if ts1 != ts5:
+        if math.isclose(event.get("dur", -1.0), 0.0, abs_tol=1e-9) and has_hw_ts(event, the_args):
+            if get_hw_ts(event, 1, the_args) != get_hw_ts(event, 5, the_args):
                 self.warnings['zero_with_hw_time'].update()
         return event
 
