@@ -1,13 +1,10 @@
 # Copyright 2024-2025 IBM Corporation
 
-import hashlib
-import json
-import copy
-import re
 from typing import Optional
 
-from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, InputDialect
-import aiu_trace_analyzer.logger as aiulog
+from aiu_trace_analyzer.types import TraceEvent
+import aiu_trace_analyzer.dialect as dialect
+from aiu_trace_analyzer.dialect import InputDialect
 
 
 class PipelineContextTool:
@@ -30,149 +27,30 @@ class PipelineContextTool:
 
         return '.'.join(fcomponents)
 
+    # dialect-based classification lives in aiu_trace_analyzer.dialect; kept here for existing callers
     @staticmethod
     def get_dialect_of_event(event: TraceEvent) -> Optional[InputDialect]:
-        if "args" not in event:
-            return None
-        if "jobhash" not in event["args"]:
-            print("ERROR: no jobhash in event. You hit a bug in the code.")
-            return None
-        return GlobalIngestData.get_dialect(event["args"]["jobhash"])
+        return dialect.get_dialect_of_event(event)
 
     @staticmethod
     def get_context_id(event: TraceEvent) -> int:
-        dialect = PipelineContextTool.get_dialect_of_event(event)
-        if dialect is None:
-            return 0
-        if dialect.get("NAME") == "FLEX":
-            return event["args"]["jobhash"]
-        elif dialect.get("NAME") == "TORCH":
-            return event["args"]["correlation"]
-        else:
-            return 0
+        return dialect.get_context_id(event)
 
     @staticmethod
     def is_flex_event(event: TraceEvent) -> bool:
-        '''
-        Returns True for events that do not contain the information that torch profiler would add
-        '''
-        is_torch = "args" in event and ("External id" in event["args"] or "Python id" in event["args"])
-        return (is_torch is False)
+        return dialect.is_flex_event(event)
 
     @staticmethod
     def is_acc_event(event: TraceEvent) -> bool:
-        return PipelineContextTool.is_category(event, "acc_event_cat")
+        return dialect.is_acc_event(event)
 
     @staticmethod
     def is_acc_kernel(event: TraceEvent) -> bool:
-        return PipelineContextTool.is_category(event, "acc_kernel")
+        return dialect.is_acc_kernel(event)
 
     @staticmethod
     def is_category(event: TraceEvent, category: str) -> bool:
-        dialect = PipelineContextTool.get_dialect_of_event(event)
-        if not dialect:
-            return False
-
-        deconstruct = dialect.get(category).split(';')
-
-        classifier = deconstruct[0].split('.')
-
-        if len(classifier) == 1:
-            return event["name"] == classifier[0]
-
-        if classifier[0] == "is":
-            attribute = event
-            for c in classifier[1:]:
-                if c in attribute:
-                    attribute = attribute[c]
-                else:
-                    return False
-            assert isinstance(attribute, dict) is False, \
-                f"Attribute '{attribute}' is not a leaf node in '{category}'" \
-                f"classifier of {dialect.get('NAME')} dialect."
-            compare_str = ';'.join(deconstruct[1:])  # recombined remaining parts of the string
-            assert len(compare_str) > 0, f"Incorrect format '{category}' classifier of {dialect.get('NAME')} dialect."
-            classifier_re = re.compile(compare_str)
-            return (classifier_re.search(str(attribute)) is not None)
-
-        elif classifier[0] == "has":
-            assert len(classifier) > 1, f"Not enough parameters in '{category}' classifier. 'has' requires at least 1"
-
-            attribute = event
-            for c in classifier[1:]:
-                if c in attribute:
-                    attribute = attribute[c]
-                else:
-                    return False
-            return True
-
-        else:
-            aiulog.log(aiulog.WARN, f"Dialect entry for {category} has unknown operator:", classifier[0])
-        return False
-
-
-class AutopilotDetail:
-    def __init__(self, kernelmap: dict[str, int] = None) -> None:
-        if kernelmap is not None:
-            self.kernelmap = copy.deepcopy(kernelmap)
-        else:
-            self.kernelmap = {}
-
-    def hash(self, input) -> int:
-        return hashlib.shake_256(input).digest()
-
-    def table_hash(self):
-        tableh = hashlib.sha256()
-        for kernel_id in sorted(self.kernelmap.keys()):
-            tableh.update(str(kernel_id).encode())
-
-        return tableh.hexdigest()
-
-
-class KernelDetailsDB:
-    """
-    The lists/database functionality receives a hash and maps it to:
-     * the reference to a measured mapping: kernel_name -> runtime_percentage
-    """
-
-    def __init__(self, db_url: str, autopilot: bool) -> None:
-        self.db_url = db_url
-        self.autopilot = autopilot
-        try:
-            with open(self.db_url, 'r') as db:
-                self.data = json.load(db)
-        except FileNotFoundError:
-            aiulog.log(aiulog.WARN, "APD: Unable to find an existing kernel db. Creating new at:", self.db_url)
-            self.data = {}
-        except IOError as e:
-            aiulog.log(aiulog.ERROR, "APD: IO-Error. Cannot continue")
-            raise e
-
-    def __del__(self):
-        self.persist_db()
-
-    def persist_db(self):
-        if self.autopilot:
-            return
-        try:
-            with open(self.db_url, 'w') as db:
-                aiulog.log(aiulog.DEBUG, "APD: Exporting kernel detail db into:", self.db_url)
-                json.dump(self.data, db)
-        except FileNotFoundError:
-            aiulog.log(aiulog.ERROR, "APD: Failed to export/refresh kernel datail db into:", self.db_url)
-        except IOError as e:
-            aiulog.log(aiulog.ERROR, "APD: IO-Error. Connot continue")
-            raise e
-
-    def insert(self, hash: str, mapping_table: AutopilotDetail):
-        self.data[hash] = mapping_table
-
-    def retrieve(self, hash: str) -> AutopilotDetail:
-        try:
-            return self.data[hash]
-        except KeyError:
-            aiulog.log(aiulog.WARN, "APD: Found no data from previous run with autopilot=0.")
-            return AutopilotDetail()
+        return dialect.is_category(event, category)
 
 
 class FlexEventMapToTS(object):

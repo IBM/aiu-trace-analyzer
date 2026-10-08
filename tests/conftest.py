@@ -4,7 +4,8 @@ import random
 import glob
 import pytest
 
-from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, InputDialectFLEX
+from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
+from aiu_trace_analyzer.dialect import InputDialectFLEX
 
 
 @pytest.fixture(scope="module")
