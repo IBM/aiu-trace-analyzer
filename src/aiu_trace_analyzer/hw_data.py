@@ -54,6 +54,14 @@ class _HwLayout:
             return self.ts_list_key in args
         return self.ts_keys[0] in args
 
+    def uses_any_key(self, args: dict) -> bool:
+        # any key of this layout present, including incomplete timestamp sets
+        if self.power_key in args:
+            return True
+        if self.ts_list_key:
+            return self.ts_list_key in args
+        return any(k in args for k in self.ts_keys)
+
     def get_ts_raw(self, args: dict, n: int):
         if self.ts_list_key:
             return args[self.ts_list_key][n - 1]
@@ -75,6 +83,26 @@ class _HwLayout:
             for k, v in zip(self.ts_keys, values):
                 args[k] = self.to_native(v)
 
+    def canonical(self, value):
+        # str values (dec/hex) are parsed and written in the native type; other values and unparsable str stay unchanged
+        if not isinstance(value, str):
+            return value
+        try:
+            return self.to_native(int(value, 0))
+        except ValueError:
+            return value
+
+    def canonicalize(self, args: dict) -> None:
+        if self.ts_list_key:
+            if self.ts_list_key in args:
+                args[self.ts_list_key] = [self.canonical(v) for v in args[self.ts_list_key]]
+        else:
+            for k in self.ts_keys:
+                if k in args:
+                    args[k] = self.canonical(args[k])
+        if self.power_key in args:
+            args[self.power_key] = self.canonical(args[self.power_key])
+
 
 # layouts by dialect name; dialects are singletons with static entries
 _layouts: dict[str, _HwLayout] = {}
@@ -90,7 +118,7 @@ def _layout_of_dialect(dialect: InputDialect) -> _HwLayout:
 def _sniff_layout(args: dict) -> Optional[_HwLayout]:
     for dialect in (InputDialectTORCH(), InputDialectFLEX()):
         layout = _layout_of_dialect(dialect)
-        if layout.has_ts(args) or layout.power_key in args:
+        if layout.uses_any_key(args):
             return layout
     return None
 
@@ -163,6 +191,19 @@ def set_hw_ts_list(event: TraceEvent, values: list[int], args_key: str = "args")
     if layout is None:
         raise KeyError(f"cannot determine the HW data layout of event: {event.get('name')}")
     layout.set_ts_list(args, values)
+
+
+def canonicalize_hw_data(event: TraceEvent, args_key: str = "args") -> TraceEvent:
+    '''
+    rewrites the HW timestamps and power value that are present as str (dec/hex) in the native value type
+    of the event's dialect (e.g. FLEX "0x10" -> "16"); works on incomplete timestamp sets,
+    leaves non-str and unparsable values unchanged.
+    Updates the event in place and returns it.
+    '''
+    args, layout = _args_and_layout(event, args_key)
+    if layout is not None:
+        layout.canonicalize(args)
+    return event
 
 
 def has_hw_power(event: TraceEvent, args_key: str = "args") -> bool:

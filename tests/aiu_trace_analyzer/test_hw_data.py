@@ -15,6 +15,7 @@ from aiu_trace_analyzer.hw_data import (
     has_hw_power,
     get_hw_power,
     set_hw_power,
+    canonicalize_hw_data,
 )
 
 GlobalIngestData()
@@ -219,3 +220,38 @@ def test_torch_gated_by_default(monkeypatch, job):
         set_hw_ts_list(torch_event, _VALUES)
     flex_event = _event("FLEX", job=job)
     assert has_hw_ts(flex_event) and get_hw_ts_list(flex_event) == _VALUES
+
+
+@pytest.mark.parametrize("dialect", ["FLEX", "TORCH"])
+@pytest.mark.parametrize("encoding", ["dec", "hex"])
+def test_canonicalize_hw_data(dialect, encoding):
+    event = _event(dialect, encoding)
+    assert canonicalize_hw_data(event) is event   # updated in place and returned
+    if dialect == "FLEX":
+        assert [event["args"][k] for k in _FLEX_KEYS] == [str(v) for v in _VALUES]
+        assert event["args"]["Power"] == str(_POWER)
+    else:
+        assert event["args"]["cycles_ts"] == _VALUES
+        assert event["args"]["charge"] == _POWER
+
+
+@pytest.mark.parametrize("args, expected", [
+    ({"TS1": "12345"}, {"TS1": "12345"}),                    # decimal str stays
+    ({"TS2": "0x12345"}, {"TS2": "74565"}),                  # incomplete TS set
+    ({"Power": "12345"}, {"Power": "12345"}),
+    ({"Power": "0x10"}, {"Power": "16"}),                    # power only
+    ({"TS1": 7, "Power": 12}, {"TS1": 7, "Power": 12}),      # non-str values stay unchanged
+    ({"TS1": "abc", "Power": "12.5"}, {"TS1": "abc", "Power": "12.5"}),  # unparsable str stays unchanged
+    ({"SOME": "0x10"}, {"SOME": "0x10"}),                    # no HW data
+])
+def test_canonicalize_hw_data_flex_partial(args, expected):
+    event = TraceEvent({"ph": "X", "name": "e", "args": dict(args)})
+    canonicalize_hw_data(event)
+    assert event["args"] == expected
+
+
+def test_canonicalize_hw_data_gated(monkeypatch):
+    monkeypatch.undo()
+    event = _event("TORCH", "hex")
+    canonicalize_hw_data(event)
+    assert event["args"]["cycles_ts"] == [hex(v) for v in _VALUES]

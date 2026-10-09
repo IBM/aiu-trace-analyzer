@@ -5,22 +5,9 @@ from sys import float_info
 
 from aiu_trace_analyzer.pipeline.normalize import (
     _attr_to_args,
-    _hex_to_int_str,
     EventLimiter,
     NormalizationContext
 )
-
-
-@pytest.mark.parametrize("event,key,result",
-                         [
-                             ({'ph': 'X', 'args': {'TS1': '12345'}}, 'TS1', '12345'),
-                             ({'ph': 'X', 'args': {'Power': '12345'}}, 'Power', '12345'),
-                             ({'ph': 'X', 'args': {'TS2': '0x12345'}}, 'TS2', '74565'),
-                             ({'ph': 'X', 'args': {'SOME': 'TEXT'}}, 'SOME', 'TEXT'),
-                         ])
-def test__hex_to_int_str(event, key, result):
-    tevent = _hex_to_int_str(event)
-    assert key in tevent["args"] and tevent["args"][key] == result
 
 
 @pytest.mark.parametrize("event,result",
@@ -346,3 +333,24 @@ class TestEventLimiter:
         # Third event inside increments to 3, and 3 > skip=2, passes
         assert limiter.is_within_limits(event_inside) is True
         assert limiter.event_count == 3
+
+
+@pytest.mark.parametrize("name, ts_in, ts_out, tsxof, ref_cycle", [
+    # no intra-event overflow
+    ("op DmaI", ["1", "2", "2", "3", "5"], ["1", "2", "2", "3", "5"], None, 1),
+    # TS3 wrapped around: TS3..TS5 get one epoch added, reference for Cmpt Prep is TS2
+    ("op Cmpt Prep", ["4294967290", "4294967295", "0x3", "4", "0x6"],
+     ["4294967290", "4294967295", str(3 + (1 << 32)), str(4 + (1 << 32)), str(6 + (1 << 32))], "TS3", 4294967295),
+    # hex input without overflow is written back as decimal str; reference for DmaO is TS4
+    ("op DmaO", ["0x10", "0x11", "0x12", "0x13", "0x14"], ["16", "17", "18", "19", "20"], None, 19),
+])
+def test_tsx_32bit_local_correction(name, ts_in, ts_out, tsxof, ref_cycle, normalization_ctx, monkeypatch):
+    refs = []
+    monkeypatch.setattr(normalization_ctx, "update_reference_overflow", lambda qid, job, ts, cycle: refs.append(cycle))
+    keys = ["TS1", "TS2", "TS3", "TS4", "TS5"]
+    event = {"name": name, "ph": "X", "ts": 3.141, "dur": 1.0, "pid": 0, "tid": 0,
+             "args": {**dict(zip(keys, ts_in)), "jobhash": 0}}
+    args = normalization_ctx.tsx_32bit_local_correction(event)
+    assert [args[k] for k in keys] == ts_out
+    assert args.get("TSxOF") == tsxof
+    assert refs == [ref_cycle]
