@@ -11,6 +11,9 @@ The storage layout differs between input dialects and is defined by the dialect 
 Input values may be int, decimal str, or hex str in either dialect. Getters always return numbers.
 Timestamp indices are 1-based to match the TS1..TS5 naming: get_hw_ts(event, 3) is TS3.
 
+Events with HW data represent one device processing phase (HwPhase), detected with the dialect's classifiers.
+Phase n spans TS<n> -> TS<n+1>; events of no known phase span TS1 -> TS5.
+
 The layout is selected via the dialect of the event's job (args.jobhash). If the event has no jobhash or
 its job is not registered, the layout is detected from the keys present in the event.
 
@@ -18,6 +21,7 @@ HW data is only reported for dialects in HW_DATA_DIALECTS; events of other diale
 no HW data. This keeps stages FLEX-only until the TORCH HW-data path is complete.
 '''
 
+from enum import IntEnum
 from typing import Optional
 
 from aiu_trace_analyzer.types import TraceEvent
@@ -29,8 +33,28 @@ HW_TS_COUNT = 5
 HW_DATA_DIALECTS = {"FLEX"}
 
 
+class HwPhase(IntEnum):
+    '''
+    device processing phase of an event with HW data; phase n spans TS<n> -> TS<n+1>
+    '''
+    DMA_IN = 1
+    CMPT_PREP = 2
+    CMPT_EXEC = 3
+    DMA_OUT = 4
+
+
+# dialect category that identifies each phase, checked in this order
+_PHASE_CATEGORIES = [
+    (HwPhase.DMA_IN, "acc_datatransfer_HtoD"),
+    (HwPhase.CMPT_PREP, "acc_compute_prep"),
+    (HwPhase.CMPT_EXEC, "acc_kernel"),
+    (HwPhase.DMA_OUT, "acc_datatransfer_DtoH"),
+]
+
+
 class _HwLayout:
     def __init__(self, dialect: InputDialect) -> None:
+        self.dialect = dialect
         self.dialect_name = dialect.get("NAME")
         ts_keys = dialect.get("hw_ts_key").split(",")
         # a single key holds the list of all timestamps; otherwise one key per timestamp
@@ -232,3 +256,28 @@ def set_hw_power(event: TraceEvent, value, args_key: str = "args") -> None:
     if layout is None:
         raise KeyError(f"cannot determine the HW data layout of event: {event.get('name')}")
     args[layout.power_key] = layout.to_native(value)
+
+
+def hw_phase(event: TraceEvent, args_key: str = "args") -> Optional[HwPhase]:
+    '''
+    processing phase of an event with HW timestamps; None for events without HW timestamps or of no known phase
+    '''
+    args, layout = _args_and_layout(event, args_key)
+    if layout is None or not layout.has_ts(args):
+        return None
+    for phase, category in _PHASE_CATEGORIES:
+        classifier = layout.dialect.classifier(category)
+        if classifier is not None and classifier.matches(event):
+            return phase
+    return None
+
+
+def hw_ts_span(event: TraceEvent, args_key: str = "args") -> tuple[int, int]:
+    '''
+    1-based indices (first, last) of the HW timestamps that bound the event's phase, e.g. (3, 4) for CMPT_EXEC;
+    (1, HW_TS_COUNT) for events of no known phase
+    '''
+    phase = hw_phase(event, args_key)
+    if phase is None:
+        return 1, HW_TS_COUNT
+    return int(phase), int(phase) + 1

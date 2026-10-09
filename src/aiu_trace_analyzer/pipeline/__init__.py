@@ -78,7 +78,6 @@ from aiu_trace_analyzer.pipeline.timesync import (
     cycle_count_conversion_cleanup,
     realign_dts_to_hts,
     tighten_hts_by_instr_type,
-    get_opIds_from_event,
     cleanup_copy_of_device_ts)
 from aiu_trace_analyzer.pipeline.dma import extract_data_transfer_event, compute_bandwidth
 from aiu_trace_analyzer.pipeline.stats import calculate_stats

@@ -9,9 +9,9 @@ import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, TraceWarning
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.hashqueue import AbstractHashQueueContext
-from aiu_trace_analyzer.pipeline.tools import FlexEventMapToTS
 from aiu_trace_analyzer.hw_data import (
-    has_hw_ts, get_hw_ts, get_hw_ts_list, set_hw_ts_list, hw_ts_label, canonicalize_hw_data)
+    has_hw_ts, get_hw_ts, get_hw_ts_list, set_hw_ts_list, hw_ts_label, canonicalize_hw_data,
+    HwPhase, hw_phase, hw_ts_span)
 
 
 class EventStats(object):
@@ -134,7 +134,6 @@ class NormalizationContext(AbstractHashQueueContext):
         self.OVERFLOW_TIME_TOLERANCE = self.OVERFLOW_TIME_SPAN_US * 0.05  # allow for some tolerance
         self.ignore_crit = ignore_crit
         self.prev_event_data: dict[int, dict[str, EventStats]] = {}
-        self.flex_name_ts_map = FlexEventMapToTS()
         self.event_filter = self.extract_eventfilters(filterstr)
         self.event_count = 0
         self.event_limit = event_limit
@@ -278,24 +277,10 @@ class NormalizationContext(AbstractHashQueueContext):
 
         return elapsed_epochs, drift, actual_freq
 
-    @staticmethod
-    def _get_ref_ts(ev_name: str) -> int:
-        # index of the reference HW timestamp (1-based, i.e. 3 is TS3)
-        if ev_name.endswith(" DmaI"):
-            return 1
-        elif ev_name.endswith(" Cmpt Prep"):
-            return 2
-        elif ev_name.endswith(" Cmpt Exec"):
-            return 3
-        elif ev_name.endswith(" DmaO"):
-            return 4
-        else:
-            return 1
-
     def tsx_32bit_local_correction(self, event: TraceEvent) -> dict:
-        ref_ts = NormalizationContext._get_ref_ts(event["name"])
         if not has_hw_ts(event):
             return event["args"]
+        ref_ts = hw_ts_span(event)[0]   # the first timestamp of the event's phase is the reference
 
         args = event["args"]
         values = get_hw_ts_list(event)
@@ -323,7 +308,7 @@ class NormalizationContext(AbstractHashQueueContext):
             event["ts"],
             get_hw_ts(event, ref_ts))
 
-        if "Cmpt Exec" not in event["name"]:
+        if hw_phase(event) != HwPhase.CMPT_EXEC:
             return args
 
         self.frequency_stats(event)
@@ -337,20 +322,21 @@ class NormalizationContext(AbstractHashQueueContext):
                 self._DURATION_KEY: EventStats(),
                 self._INTERVAL_KEY: EventStats()}
 
-        ts_a, ts_b = self.flex_name_ts_map[event["name"]]
-        dur_cycles = int(event["args"][ts_b]) - int(event["args"][ts_a])
+        ts_a, ts_b = hw_ts_span(event)
+        cycle_a, cycle_b = get_hw_ts(event, ts_a), get_hw_ts(event, ts_b)
+        dur_cycles = cycle_b - cycle_a
         dur_freq = float(dur_cycles) / event["dur"]
         aiulog.log(aiulog.TRACE,
-                   f"{event['args'][ts_a]:10} {event['args'][ts_b]:10} {dur_cycles:10}"
+                   f"{cycle_a:10} {cycle_b:10} {dur_cycles:10}"
                    f" {event['dur']:15} {dur_freq:12.3f} |{event['name']}")
         self.prev_event_data[qid][self._DURATION_KEY].update(
-            (int(event["args"][ts_a]), int(event["args"][ts_b])),
+            (cycle_a, cycle_b),
             (event["ts"], event["dur"]),
             dur_freq)
 
         # compute anticipated frequency based on event interval to previous event
         if self.prev_event_data[qid][self._INTERVAL_KEY].count > 0:
-            gap_cycles = int(event["args"][ts_a]) - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_cycle()
+            gap_cycles = cycle_a - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_cycle()
             gap_time = event["ts"] - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_ts()
             # Handle zero gap_time to avoid division by zero
             if gap_time > 0:
@@ -362,7 +348,7 @@ class NormalizationContext(AbstractHashQueueContext):
         else:
             gap_freq = dur_freq
         self.prev_event_data[qid][self._INTERVAL_KEY].update(
-            (int(event["args"][ts_a]), int(event["args"][ts_b])),
+            (cycle_a, cycle_b),
             (event["ts"], event["dur"]),
             gap_freq)
 

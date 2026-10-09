@@ -16,6 +16,9 @@ from aiu_trace_analyzer.hw_data import (
     get_hw_power,
     set_hw_power,
     canonicalize_hw_data,
+    HwPhase,
+    hw_phase,
+    hw_ts_span,
 )
 
 GlobalIngestData()
@@ -255,3 +258,48 @@ def test_canonicalize_hw_data_gated(monkeypatch):
     event = _event("TORCH", "hex")
     canonicalize_hw_data(event)
     assert event["args"]["cycles_ts"] == [hex(v) for v in _VALUES]
+
+
+def _phase_event(dialect: str, name: str, cat: str = None, job: str = "registered", with_ts: bool = True) -> TraceEvent:
+    event = _event(dialect, job=job, args=_hw_args(dialect, str) if with_ts else {})
+    event["name"] = name
+    if cat:
+        event["cat"] = cat
+    return event
+
+
+@pytest.mark.parametrize("job", ["registered", "none"])
+@pytest.mark.parametrize("name, phase, span", [
+    ("op DmaI", HwPhase.DMA_IN, (1, 2)),
+    ("op Cmpt Prep", HwPhase.CMPT_PREP, (2, 3)),
+    ("op Cmpt Exec", HwPhase.CMPT_EXEC, (3, 4)),
+    ("op DmaO", HwPhase.DMA_OUT, (4, 5)),
+    ("Flex RoundTrip", None, (1, 5)),
+])
+def test_hw_phase_flex(name, phase, span, job):
+    event = _phase_event("FLEX", name, job=job)
+    assert hw_phase(event) == phase
+    assert hw_ts_span(event) == span
+
+
+@pytest.mark.parametrize("name, cat, phase", [
+    ("Memcpy (HtoD)", "gpu_memcpy", HwPhase.DMA_IN),
+    ("embedding", "kernel", HwPhase.CMPT_EXEC),
+    ("Memcpy (DtoH)", "gpu_memcpy", HwPhase.DMA_OUT),
+    ("op Cmpt Prep", "kernel", HwPhase.CMPT_EXEC),    # TORCH has no Cmpt Prep category
+    ("Memset (Device)", "gpu_memset", None),
+])
+def test_hw_phase_torch(name, cat, phase):
+    assert hw_phase(_phase_event("TORCH", name, cat)) == phase
+
+
+@pytest.mark.parametrize("dialect, name", [("FLEX", "op Cmpt Exec"), ("TORCH", "embedding")])
+def test_hw_phase_requires_hw_ts(dialect, name):
+    event = _phase_event(dialect, name, cat="kernel", with_ts=False)
+    assert hw_phase(event) is None
+    assert hw_ts_span(event) == (1, HW_TS_COUNT)
+
+
+def test_hw_phase_torch_gated(monkeypatch):
+    monkeypatch.undo()
+    assert hw_phase(_phase_event("TORCH", "embedding", "kernel")) is None

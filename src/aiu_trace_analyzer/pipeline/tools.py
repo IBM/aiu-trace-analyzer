@@ -51,23 +51,3 @@ class PipelineContextTool:
     @staticmethod
     def is_category(event: TraceEvent, category: str) -> bool:
         return dialect.is_category(event, category)
-
-
-class FlexEventMapToTS(object):
-    def __init__(self):
-        self.map: dict[str, tuple[str, str]] = {}
-        self.add("DmaI", ("TS1", "TS2"))
-        self.add("Cmpt Prep", ("TS2", "TS3"))
-        self.add("Cmpt Exec", ("TS3", "TS4"))
-        self.add("DmaO", ("TS4", "TS5"))
-
-    def add(self,
-            ev_str: str,
-            ts_entries: tuple[str, str]) -> None:
-        self.map[ev_str] = ts_entries
-
-    def __getitem__(self, event_name: str) -> Optional[tuple[str, str]]:
-        for k, v in self.map.items():
-            if k in event_name:
-                return v
-        return None
