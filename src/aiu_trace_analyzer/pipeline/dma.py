@@ -6,6 +6,7 @@ import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionContext
 from aiu_trace_analyzer.pipeline.timesync import get_cycle_ts_as_clock
+from aiu_trace_analyzer.hw_data import HwPhase, hw_phase, hw_ts_span
 
 
 class DataTransferExtractionContext(EventPairDetectionContext):
@@ -177,14 +178,10 @@ def extract_data_transfer_event(event: TraceEvent, context: AbstractContext) -> 
             # Align TSx entries with event timestamps in cycles
             # cycle_count_to_wallclock has added ts_all with converted TS1-5, we just need to get TS3 from there:
 
-            # If event name contains " DmaI" use TS1
-            if " DmaI" in event['name']:
-                ts = int(get_cycle_ts_as_clock(1, event["args"]["ts_all"]))
-            # If event name contains " DmaO" use TS4
-            elif " DmaO" in event['name']:
-                ts = int(get_cycle_ts_as_clock(4, event["args"]["ts_all"]))
-            else:
+            # data transfers are counted at the start of their phase (DmaI: TS1, DmaO: TS4)
+            if hw_phase(event) not in (HwPhase.DMA_IN, HwPhase.DMA_OUT):
                 return [event]
+            ts = int(get_cycle_ts_as_clock(hw_ts_span(event)[0], event["args"]["ts_all"]))
 
             counter = {
                 "ph": "C",

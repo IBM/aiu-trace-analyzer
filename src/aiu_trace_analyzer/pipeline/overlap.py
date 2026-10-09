@@ -9,7 +9,7 @@ from aiu_trace_analyzer.pipeline import (
     TwoPhaseWithBarrierContext)
 from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, TraceWarning
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
-from aiu_trace_analyzer.hw_data import get_hw_ts
+from aiu_trace_analyzer.hw_data import get_hw_ts, HwPhase, hw_phase
 
 
 class OverlapTracking(tuple[float, bool, list[float]]):
@@ -379,7 +379,7 @@ class TSSequenceContext(AbstractHashQueueContext):
         return queue_id
 
     def ts3insert(self, event: TraceEvent, queue_id=None):
-        if "Cmpt Exec" not in event["name"]:
+        if hw_phase(event) != HwPhase.CMPT_EXEC:
             return
 
         self.ts_total += 1
