@@ -146,6 +146,10 @@ class InputDialectFLEX(InputDialect):
         "acc_kernel": "is.name;Cmpt Exec$",
         "acc_event_cat": "has.args.TS1",
         "acc_collective": "has.args.CollGroup",
+        # HW data layout (see hw_data.py): comma-separated keys = one args entry per timestamp
+        "hw_ts_key": "TS1,TS2,TS3,TS4,TS5",
+        "hw_power_key": "Power",
+        "hw_value_type": "str",
     }
 
     def __new__(cls):
@@ -200,6 +204,10 @@ class InputDialectTORCH(InputDialect):
         "acc_kernel": "is.cat;kernel",
         "acc_event_cat": "is.cat;gpu|kernel",
         "acc_collective": "is.name;HCOLL",
+        # HW data layout (see hw_data.py): single key = list of all timestamps
+        "hw_ts_key": "cycles_ts",
+        "hw_power_key": "charge",
+        "hw_value_type": "int",
     }
 
     def __new__(cls):
