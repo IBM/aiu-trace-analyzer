@@ -46,9 +46,10 @@ class MpTsCalibV2Context(EventPairDetectionContext):
         3. dump all_events[] through drain func.
     '''
 
-    def __init__(self, window_size=None) -> None:
+    def __init__(self, soc_frequency: float, window_size=None) -> None:
         super().__init__()
         self.SYNC_TO_DEV = True
+        self.soc_frequency = soc_frequency   # MHz, converts HW cycles to us
 
         self.all_events = []      # gather all events into a buffer
 
@@ -61,7 +62,7 @@ class MpTsCalibV2Context(EventPairDetectionContext):
     def _get_ts5_in_us(self, event: TraceEvent):
         if "ts_dev" in event["args"]:
             return event["args"]["ts_dev"][4]
-        return get_hw_ts(event, 5) / 560
+        return get_hw_ts(event, 5) / self.soc_frequency
 
     def mp_gather_events(self, event: TraceEvent) -> list[TraceEvent]:
 
