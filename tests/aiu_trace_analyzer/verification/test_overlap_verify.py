@@ -2,9 +2,9 @@
 
 from aiu_trace_analyzer.types import (
     GlobalIngestData,
-    InputDialectTORCH,
     TraceEvent,
 )
+from aiu_trace_analyzer.dialect import InputDialectTORCH
 from aiu_trace_analyzer.verification.overlap_verify import (
     OverlapVerificationContext,
     verify_kernel_overlap,

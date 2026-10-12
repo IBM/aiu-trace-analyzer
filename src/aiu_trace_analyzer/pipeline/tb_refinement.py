@@ -2,7 +2,8 @@
 
 import re
 
-from aiu_trace_analyzer.types import InputDialectTORCH, GlobalIngestData
+from aiu_trace_analyzer.types import GlobalIngestData
+from aiu_trace_analyzer.dialect import InputDialectTORCH
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.hashqueue import AbstractHashQueueContext
