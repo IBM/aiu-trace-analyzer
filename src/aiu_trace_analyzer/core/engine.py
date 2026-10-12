@@ -30,6 +30,7 @@ class Engine:
             self.exporter.export(events)
 
         # drain the context buffers (if any)
+        # accumulated warnings ride along as trace_issue meta-events that the exporter captures
         drain = self.processor.drain()
         # export any events emitted during drain
         self.exporter.export(drain)
