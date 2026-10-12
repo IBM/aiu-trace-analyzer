@@ -6,6 +6,7 @@ import math
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.hw_data import get_hw_ts_list
 from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionContext
 
 from aiu_trace_analyzer.pipeline.rcu_utilization import RCU_pt_util_counter_name, RCU_pt_util_counter_unit
@@ -243,10 +244,11 @@ def calculate_stats(event: TraceEvent, context: AbstractContext) -> list[TraceEv
 
         event_start = event["ts"]
         event_dur = event["dur"]
-        ts1ts2 = float(event['args']['TS2']) - float(event['args']['TS1'])
-        ts2ts3 = float(event['args']['TS3']) - float(event['args']['TS2'])
-        ts3ts4 = float(event['args']['TS4']) - float(event['args']['TS3'])
-        ts4ts5 = float(event['args']['TS5']) - float(event['args']['TS4'])
+        ts1, ts2, ts3, ts4, ts5 = (float(ts) for ts in get_hw_ts_list(event))
+        ts1ts2 = ts2 - ts1
+        ts2ts3 = ts3 - ts2
+        ts3ts4 = ts4 - ts3
+        ts4ts5 = ts5 - ts4
         event_pid = event["pid"]
 
         # event duration must be non negative

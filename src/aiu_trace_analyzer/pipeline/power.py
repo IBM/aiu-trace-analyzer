@@ -5,8 +5,9 @@ import copy
 from typing import Union
 
 import aiu_trace_analyzer.logger as aiulog
-from aiu_trace_analyzer.constants import TS_CYCLE_KEY, TS_KEYS_LIST
+from aiu_trace_analyzer.constants import TS_CYCLE_KEY
 from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.hw_data import has_hw_power, get_hw_power, get_hw_ts
 from aiu_trace_analyzer.pipeline import AbstractContext, AbstractHashQueueContext
 from aiu_trace_analyzer.pipeline.timesync import get_cycle_ts_as_clock
 
@@ -259,14 +260,14 @@ class PowerExtractionContext(AbstractHashQueueContext):
         counter = self._base_counter(
             pid=event["pid"],
             cat=event["name"],
-            counter_value=float(event["args"]["Power"])
+            counter_value=get_hw_power(event)
         )
         # Align TSx entries with event timestamps in cycles
         # cycle_count_to_wallclock has added ts_all with converted TS1-5, we just need to get the correct TS from there:
         counter["ts"] = get_cycle_ts_as_clock(self.power_ts, event["args"]["ts_all"])
         # build the _TS_CYCLE_KEY that can be indexed by context.power_ts index
         if self.power_ts == 3:
-            counter[TS_CYCLE_KEY] = float(event["args"][TS_KEYS_LIST[self.power_ts]])
+            counter[TS_CYCLE_KEY] = float(get_hw_ts(event, self.power_ts))
         else:
             counter[TS_CYCLE_KEY] = counter["ts"]   # ts4 power computation based on ts directly
         counters.append(counter)
@@ -282,7 +283,7 @@ def extract_power_event(event: TraceEvent, context: AbstractContext) -> list[Tra
     '''
     assert isinstance(context, PowerExtractionContext)
     if event["ph"] in ["X", "b"] and not context.filter.search(event["name"]):
-        if "args" in event and "Power" in event["args"] and "ts_all" in event["args"]:
+        if has_hw_power(event) and "ts_all" in event["args"]:
             counters = context.build_input_events(event)
             return [event] + counters
 

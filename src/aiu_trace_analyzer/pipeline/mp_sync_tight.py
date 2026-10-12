@@ -5,6 +5,7 @@ import sys
 import numpy as np
 
 from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.hw_data import has_hw_ts
 from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionContext
 from aiu_trace_analyzer.pipeline.timesync import get_opIds_from_event
 import aiu_trace_analyzer.logger as aiulog
@@ -263,7 +264,7 @@ class MpSyncTightContext(EventPairDetectionContext):
     def mp_alter_event_ts(self) -> None:
         for e in self.all_events:
             pid = e["pid"]
-            if "TS5" in e["args"]:
+            if has_hw_ts(e):
                 # e["dur"] has been calibrated correctly in previous pass
                 self._calib_dev_ts(pid, e)
                 op_id = get_opIds_from_event(e)
