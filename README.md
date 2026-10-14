@@ -100,14 +100,14 @@ for vector computations that do not involve the PT-array.
 **Table: Available Performance Metrics/Views**
 | Metrics/Features | Description | Details |
 |------------------|-------------|---------|
-| Power | Device power consumption per computation AIU-kernel function | Accurate for autopilot-off profiling mode |
+| Power | Device power consumption per computation AIU-kernel function | Accurate for autopilot-off/unfused profiling modes |
 | PT active % | Utilization of PT-array in the Rapid-cores per computation AIU-kernel function | Accurate for autopilot-off profiling mode, need redundant run to be effective for autopilot-on mode. |
-| ConcurrentPrep | Number of overlapped computation AIU-kernel functions that are in the preparation stage, indicating the loads to the AIU request queue. | Useful for autopilot-off profiling mode |
+| ConcurrentPrep | Number of overlapped computation AIU-kernel functions that are in the preparation stage, indicating the loads to the AIU request queue. | Useful for autopilot-off profiling mode if prep events available |
 | Non-device activity in `FLEX` | CPU-residing functions defined in AIU-runtime (`FLEX`) |  |
 | Multi-AIU trace view | Timelines of CPU and AIU events from multiple ranks of a multi-AIU workload | Available for autopilot-on mode |
 | Multi-AIU distributed view | Breakdown analysis of elapsed times of computation and communication of a multi-AIU workload | Available for autopilot-on mode via TensorBoard|
 | Kernel time breakdown by categories | Breakdown of execution times over a handful of categories of kernels, where different categories representing different types of computation operations on AIU | Available in text and csv format for autopilot-off profiling mode. Additional run to support autopilot-on mode. |
-| Kernel time breakdown | Function profile of execution time and occurrences of device-residing computation kernels | Available in text and csv format for autopilot-off profiling mode |
+| Kernel time breakdown | Function profile of execution time and occurrences of device-residing computation kernels | Available in text and csv format for autopilot-off/unfused profiling modes |
 | Elapsed time per inference iteration | Averaged elapsed time of an inference iteration | Available in console output for autopilot-off profiling mode, only if autodetection succeeded |
 
 
@@ -128,10 +128,9 @@ POWER users who are interested in expanding the observation scope around and bel
 
 ### Time/Event Synchronization
 
-There are 3 types of time stamps synchronization involved:
+There are 2 types of time stamps synchronization involved:
  1. Mapping of host timestamps and cycles extracted from the device
  2. Synchronization between the event streams when multiple devices are used e.g. when doing Tensor Parallel computation
- 3. When providing a mix of Flex and Pytorch traces, the 2 types of inputs get aligned along specific event names. This also requires the Flex jobs and the Torch profiler iterations to match since there's currently no other reference to allow correct mapping.
 
 
 ### Acelyzer Console Output
@@ -160,7 +159,7 @@ This enables working with very large input data. It allows to limit the number o
 
 This option allows to set the SoC and Ideal frequencies if they differ from the default.
 Right now, we're not scanning a potential log file for this data and thus rely on the user to provide the information.
- * *SoC* frequency is setting the frequency that was used for the cycle counter in the flex events. It is essential to get it at least roughly correct to prevent misaligned AIU-CPU events.
+ * *SoC* frequency is setting the frequency that was used for the cycle counter of the hardware timestamps. It is essential to get it at least roughly correct to prevent misaligned AIU-CPU events.
  * *core* frequency is setting the frequency that was used to calculate the *ideal cycles* that is placed in the compiler log file.  This value is used to compute the utilization of the core PT array by compute kernels that have a non-zero value. If it is not matching the core frequency, it causes the PT array utilization to be miscalculated or cause errors when utilization of >100% is the result of a too-low frequency.
 
 If acelyzer detects a consistent effective frequency for events, it will provide a suggestion like:
@@ -169,7 +168,7 @@ If acelyzer detects a consistent effective frequency for events, it will provide
 ```
 This suggestion will only appear for drift between jobs and thus requires at least 2 jobs at the input.
 
-An additional set of frequency statistics computes min/mean/max observed frequencies based on individual event duration and event intervals between subsequent compute events.  Therefore, it's working for single-job flex traces too.  The corresponding output looks like this:
+An additional set of frequency statistics computes min/mean/max observed frequencies based on individual event duration and event intervals between subsequent compute events.  Therefore, it's working for single-job traces too (if hardware timestamps are available).  The corresponding output looks like this:
 ```
 <timestamp>  WARNING FREQ: Detected Event-duration-based frequency (min/mean/max): <x> <y> <z> ; rel_range=0.023, input_soc_freq/detected=2.08
 <timestamp>  WARNING FREQ: Detected Event-interval-based frequency (min/mean/max): <x> <y> <z> ; rel_range=0.012, input_soc_freq/detected=2.09
@@ -307,7 +306,7 @@ Sometimes the input data results in strange results. Some cases are being discus
 
 ### Misaligned Events: with Gap
 
-This can happen when flex events within a job have hit a cycle counter overflow and the calibration was unable to compute the correct wallclock timestamps.
+This can happen when events with hardware timestamps within a job have hit a cycle counter overflow and the calibration was unable to compute the correct wallclock timestamps.
 Usually, when acelyzer detects the cycle overflow, it creates a new 'counter epoch' and associates the start time of that epoch to a matching wallclock timestamp based on the event that had the overflow.
 If that timestamp is miscalibrated, there's no way for acelyzer to know what the correct timestamp would be and thus re-creates the gap from the input data.
 You'll likely see a warning in the output like:
@@ -345,7 +344,7 @@ What can be done:
 
 ### Misaligned Event: Stretched
 
-This can happen if the 'effective' SoC frequency doesn't fit the actual frequency. The AIU Flex events are based on cycle counters and the conversion from cycles to wallclock is based on a set frequency.
+This can happen if the 'effective' SoC frequency doesn't fit the actual frequency. The hardware timestamps of AIU events are cycle counters and the conversion from cycles to wallclock is based on a set frequency.
 If this frequency is slightly off, you'll see AIU events drift away from their CPU events.
 
 You might see output warnings like:
