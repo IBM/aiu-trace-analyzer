@@ -116,6 +116,11 @@ class NormalizationContext(AbstractHashQueueContext):
                 data={"count": 0}
             ),
             TraceWarning(
+                name="zero_dur_freq",
+                text="Frequency computation: excluded {d[count]} zero-duration event(s) from the frequency statistics.",
+                data={"count": 0}
+            ),
+            TraceWarning(
                 name="epoch_start",
                 text="OVC: reference epoch had to be updated {d[count]} times with newly detected earlier timestamps. "
                      "This indicates events with 0.0-timestamps or out-of-order input events. "
@@ -321,6 +326,11 @@ class NormalizationContext(AbstractHashQueueContext):
             self.prev_event_data[qid] = {
                 self._DURATION_KEY: EventStats(),
                 self._INTERVAL_KEY: EventStats()}
+
+        if event["dur"] <= 0.0:
+            # no frequency information in zero-duration events (ingestion already warns about those)
+            self.warnings["zero_dur_freq"].update()
+            return
 
         ts_a, ts_b = hw_ts_span(event)
         cycle_a, cycle_b = get_hw_ts(event, ts_a), get_hw_ts(event, ts_b)
