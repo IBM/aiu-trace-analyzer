@@ -569,7 +569,7 @@ class Acelyzer:
                                        context=event_pipe.MpSyncTightContext())
             else:
                 process.register_stage(callback=event_pipe.mp_ts_calibration_v2,
-                                       context=event_pipe.MpTsCalibV2Context())
+                                       context=event_pipe.MpTsCalibV2Context(soc_frequency=args.freq[0]))
 
         # process.registerPreProcess(callback=event_pipe.cycle_count_conversion_cleanup)
         # process.registerPreProcess(callback=event_pipe.cycle_count_to_wallclock)

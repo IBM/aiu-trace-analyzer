@@ -2,7 +2,6 @@
 
 import pytest
 
-import aiu_trace_analyzer.hw_data as hw_data
 from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData
 from aiu_trace_analyzer.dialect import InputDialectFLEX, InputDialectTORCH
 from aiu_trace_analyzer.hw_data import (
@@ -31,12 +30,6 @@ _JOB_WITHOUT_DIALECT = GlobalIngestData.add_job_info("hw_data_test_no_dialect.js
 _UNREGISTERED_JOB = -1
 
 _FLEX_KEYS = ["TS1", "TS2", "TS3", "TS4", "TS5"]
-
-
-@pytest.fixture(autouse=True)
-def all_dialects_enabled(monkeypatch):
-    # the accessor tests cover both layouts; the default dialect gate is tested separately below
-    monkeypatch.setattr(hw_data, "HW_DATA_DIALECTS", {"FLEX", "TORCH"})
 
 
 _VALUES = [2568310617, 2568311551, 2568311560, 2568311560, 2568311566]
@@ -210,21 +203,6 @@ def test_set_hw_power_torch_rejects_float():
         set_hw_power(_event("TORCH"), 12.5)
 
 
-@pytest.mark.parametrize("job", ["registered", "none"])
-def test_torch_gated_by_default(monkeypatch, job):
-    monkeypatch.undo()   # restore the default HW_DATA_DIALECTS
-    assert hw_data.HW_DATA_DIALECTS == {"FLEX"}
-    torch_event = _event("TORCH", job=job)
-    assert not has_hw_ts(torch_event)
-    assert not has_hw_power(torch_event)
-    with pytest.raises(KeyError):
-        get_hw_ts_list(torch_event)
-    with pytest.raises(KeyError):
-        set_hw_ts_list(torch_event, _VALUES)
-    flex_event = _event("FLEX", job=job)
-    assert has_hw_ts(flex_event) and get_hw_ts_list(flex_event) == _VALUES
-
-
 @pytest.mark.parametrize("dialect", ["FLEX", "TORCH"])
 @pytest.mark.parametrize("encoding", ["dec", "hex"])
 def test_canonicalize_hw_data(dialect, encoding):
@@ -251,13 +229,6 @@ def test_canonicalize_hw_data_flex_partial(args, expected):
     event = TraceEvent({"ph": "X", "name": "e", "args": dict(args)})
     canonicalize_hw_data(event)
     assert event["args"] == expected
-
-
-def test_canonicalize_hw_data_gated(monkeypatch):
-    monkeypatch.undo()
-    event = _event("TORCH", "hex")
-    canonicalize_hw_data(event)
-    assert event["args"]["cycles_ts"] == [hex(v) for v in _VALUES]
 
 
 def _phase_event(dialect: str, name: str, cat: str = None, job: str = "registered", with_ts: bool = True) -> TraceEvent:
@@ -298,8 +269,3 @@ def test_hw_phase_requires_hw_ts(dialect, name):
     event = _phase_event(dialect, name, cat="kernel", with_ts=False)
     assert hw_phase(event) is None
     assert hw_ts_span(event) == (1, HW_TS_COUNT)
-
-
-def test_hw_phase_torch_gated(monkeypatch):
-    monkeypatch.undo()
-    assert hw_phase(_phase_event("TORCH", "embedding", "kernel")) is None

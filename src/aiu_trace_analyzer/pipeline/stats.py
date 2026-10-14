@@ -256,7 +256,7 @@ def calculate_stats(event: TraceEvent, context: AbstractContext) -> list[TraceEv
             #
             print(f"event_name: {event['name']}, event_start: {event_start}, event_dur: {event_dur}")
 
-        assert event_dur > 0.0
+        assert event_dur >= 0.0
 
         # hash the stripped_name and event_pid
         qid = context.queue_hash(stripped_name, event_pid)

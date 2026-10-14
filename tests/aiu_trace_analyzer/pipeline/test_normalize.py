@@ -354,3 +354,14 @@ def test_tsx_32bit_local_correction(name, ts_in, ts_out, tsxof, ref_cycle, norma
     assert [args[k] for k in keys] == ts_out
     assert args.get("TSxOF") == tsxof
     assert refs == [ref_cycle]
+
+
+def test_frequency_stats_zero_duration(normalization_ctx):
+    # TORCH-style kernel event: zero duration and zero-cycle CMPT_EXEC span (TS3..TS4)
+    event = {"name": "null_op", "cat": "kernel", "ph": "X", "ts": 3.141, "dur": 0.0, "pid": 0, "tid": 0,
+             "args": {"cycles_ts": [3700450849, 3700450849, 3700450855, 3700450855, 3700450861], "jobhash": 0}}
+    normalization_ctx.tsx_32bit_local_correction(event)
+    normalization_ctx.tsx_32bit_local_correction(event)
+    assert normalization_ctx.warnings["zero_dur_freq"].args_list["count"] == 2
+    for stats in normalization_ctx.prev_event_data.values():
+        assert all(s.count == 0 for s in stats.values())

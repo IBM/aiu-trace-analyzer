@@ -16,9 +16,6 @@ Phase n spans TS<n> -> TS<n+1>; events of no known phase span TS1 -> TS5.
 
 The layout is selected via the dialect of the event's job (args.jobhash). If the event has no jobhash or
 its job is not registered, the layout is detected from the keys present in the event.
-
-HW data is only reported for dialects in HW_DATA_DIALECTS; events of other dialects behave as if they had
-no HW data. This keeps stages FLEX-only until the TORCH HW-data path is complete.
 '''
 
 from enum import IntEnum
@@ -28,9 +25,6 @@ from aiu_trace_analyzer.types import TraceEvent
 from aiu_trace_analyzer.dialect import InputDialect, InputDialectFLEX, InputDialectTORCH, find_dialect_of_event
 
 HW_TS_COUNT = 5
-
-# dialects whose HW data is exposed (add TORCH once the TORCH HW-data path is complete)
-HW_DATA_DIALECTS = {"FLEX"}
 
 
 class HwPhase(IntEnum):
@@ -55,7 +49,6 @@ _PHASE_CATEGORIES = [
 class _HwLayout:
     def __init__(self, dialect: InputDialect) -> None:
         self.dialect = dialect
-        self.dialect_name = dialect.get("NAME")
         ts_keys = dialect.get("hw_ts_key").split(",")
         # a single key holds the list of all timestamps; otherwise one key per timestamp
         self.ts_list_key = ts_keys[0] if len(ts_keys) == 1 else None
@@ -153,8 +146,6 @@ def _args_and_layout(event: TraceEvent, args_key: str) -> tuple[Optional[dict], 
         return None, None
     dialect = find_dialect_of_event(event, args_key)
     layout = _layout_of_dialect(dialect) if dialect is not None else _sniff_layout(args)
-    if layout is None or layout.dialect_name not in HW_DATA_DIALECTS:
-        return args, None
     return args, layout
 
 

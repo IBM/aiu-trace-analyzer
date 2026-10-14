@@ -7,11 +7,13 @@ from typing import Union
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.constants import TS_CYCLE_KEY
 from aiu_trace_analyzer.types import TraceEvent
-from aiu_trace_analyzer.hw_data import has_hw_power, get_hw_power, get_hw_ts
+from aiu_trace_analyzer.hw_data import has_hw_power, get_hw_power, get_hw_ts, HwPhase, hw_phase
 from aiu_trace_analyzer.pipeline import AbstractContext, AbstractHashQueueContext
 from aiu_trace_analyzer.pipeline.timesync import get_cycle_ts_as_clock
 
 _CMPT_EXEC = "Cmpt Exec"
+# intermediate counter field: HW phase of the event the counter was built from (removed before emitting)
+_HW_PHASE_KEY = "hw_phase"
 
 
 class PowerExtractionContext(AbstractHashQueueContext):
@@ -95,18 +97,18 @@ class PowerExtractionContext(AbstractHashQueueContext):
         # check if self.skip_events is set
         if self.skip_events is True:
 
-            # skip this event if both contain "Cmpt Exec" in the cat
-            if (_CMPT_EXEC in prev['cat']) and (_CMPT_EXEC in this['cat']):
+            # skip this event if both are from Cmpt Exec events
+            if prev[_HW_PHASE_KEY] == HwPhase.CMPT_EXEC and this[_HW_PHASE_KEY] == HwPhase.CMPT_EXEC:
                 aiulog.log(aiulog.TRACE, "dumped event: ", this['cat'])
                 return None
 
-            # skip this event if prev contains " DmaO" and this contains " DmaI"
-            if (" DmaO" in prev['cat']) and (" DmaI" in this['cat']):
+            # skip this event if prev is from a DmaO and this from a DmaI event
+            if prev[_HW_PHASE_KEY] == HwPhase.DMA_OUT and this[_HW_PHASE_KEY] == HwPhase.DMA_IN:
                 aiulog.log(aiulog.TRACE, "dumped event: ", this['cat'])
                 return None
 
-            # skip this event if prev contains "Cmpt Exec" and this contains " DmaI"
-            if (_CMPT_EXEC in prev['cat']) and (" DmaI" in this['cat']):
+            # skip this event if prev is from a Cmpt Exec and this from a DmaI event
+            if prev[_HW_PHASE_KEY] == HwPhase.CMPT_EXEC and this[_HW_PHASE_KEY] == HwPhase.DMA_IN:
                 aiulog.log(aiulog.TRACE, "dumped event: ", this['cat'])
                 return None
 
@@ -150,17 +152,18 @@ class PowerExtractionContext(AbstractHashQueueContext):
             return prev
 
         cat = prev['cat']   # keep name in the category to keep all power readings in one viz track
+        phase = prev[_HW_PHASE_KEY]
 
-        # possible categories: DmaI, DmaO, AllGather, Exec
-        if "DmaI" in cat:
+        # possible categories: DmaI, DmaO, AllGather, Exec (collectives are identified by name)
+        if phase == HwPhase.DMA_IN:
             cat_type = "DmaI"
-        elif "DmaO" in cat:
+        elif phase == HwPhase.DMA_OUT:
             cat_type = "DmaO"
         elif "AllGather" in cat:
             cat_type = "AllGather"
         elif "AllReduce" in cat:
             cat_type = "AllReduce"
-        elif _CMPT_EXEC in cat:
+        elif phase == HwPhase.CMPT_EXEC:
             cat_type = _CMPT_EXEC
         else:
             cat_type = "Other"
@@ -206,8 +209,9 @@ class PowerExtractionContext(AbstractHashQueueContext):
         prev["args"][self.unit] = power
         prev = self.name_from_category(prev)
 
-        # remove intermediate field
+        # remove intermediate fields
         prev.pop(TS_CYCLE_KEY)
+        prev.pop(_HW_PHASE_KEY)
 
         # remove 'cat' field
         prev['cat'] = "Power"+str(self.power_ts)
@@ -223,12 +227,13 @@ class PowerExtractionContext(AbstractHashQueueContext):
         else:
             return [prev]
 
-    def _base_counter(self, pid, cat, counter_value) -> TraceEvent:
+    def _base_counter(self, pid, cat, counter_value, phase) -> TraceEvent:
         return {
             "ph": "C",
             "name": "Power",
             "pid": pid,
             "cat": cat,
+            _HW_PHASE_KEY: phase,
             "args": {
                 self.unit: counter_value,
             }
@@ -240,6 +245,7 @@ class PowerExtractionContext(AbstractHashQueueContext):
             return []
 
         counters = []
+        phase = hw_phase(event)
         queue_id = self.queue_hash(event["pid"])
         if self.power_ts == 4 and queue_id not in self.processed_first:
             # for TS3-based Power, there's no first event in that same sense
@@ -249,7 +255,8 @@ class PowerExtractionContext(AbstractHashQueueContext):
             first_counter_at_ts3 = self._base_counter(
                 pid=event["pid"],
                 cat=event["name"],
-                counter_value=0.0   # first event gets power=0.0
+                counter_value=0.0,   # first event gets power=0.0
+                phase=phase
             )
             first_counter_at_ts3["ts"] = get_cycle_ts_as_clock(3, event["args"]["ts_all"])
             first_counter_at_ts3[TS_CYCLE_KEY] = first_counter_at_ts3["ts"]  # TS4 power is based on ts_all4
@@ -260,7 +267,8 @@ class PowerExtractionContext(AbstractHashQueueContext):
         counter = self._base_counter(
             pid=event["pid"],
             cat=event["name"],
-            counter_value=get_hw_power(event)
+            counter_value=get_hw_power(event),
+            phase=phase
         )
         # Align TSx entries with event timestamps in cycles
         # cycle_count_to_wallclock has added ts_all with converted TS1-5, we just need to get the correct TS from there:
