@@ -30,6 +30,8 @@ class EventClass(Enum):
     MEM_ALLOC_FREE = auto()
     # Device kernel implementing a collective operation (e.g. Allreduce)
     COLLECTIVE_EXEC = auto()
+    # Host-side operation (CPU ops, runtime/API calls, annotations); fallback for host events
+    CPU_OP = auto()
     SEN_DATA_CONVERT = auto()
     MAIU_BARRIER = auto()
     MAIU_WIREUP = auto()
@@ -253,7 +255,10 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
         if "AIU Roundtrip" in event["name"]:
             event_class = EventClass.ROUNDTRIP_AIU
 
-        return self.classify_comm(event, event_class)
+        event_class = self.classify_comm(event, event_class)
+        if event_class == EventClass.OTHER and pct.is_category(event, "acc_host_op"):
+            event_class = EventClass.CPU_OP
+        return event_class
 
     def _classify_host_dma_event(self, event: TraceEvent, event_class: EventClass) -> EventClass:
         """Classify Host DMA protocol events.

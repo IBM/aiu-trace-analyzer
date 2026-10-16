@@ -151,6 +151,7 @@ class InputDialectFLEX(InputDialect):
         "acc_memset": "-",
         "acc_driver_mem": "-",
         "acc_mem_alloc_free": "-",
+        "acc_host_op": "-",
         # HW data layout (see hw_data.py): comma-separated keys = one args entry per timestamp
         "hw_ts_key": "TS1,TS2,TS3,TS4,TS5",
         "hw_power_key": "Power",
@@ -214,6 +215,8 @@ class InputDialectTORCH(InputDialect):
         "acc_memset": "is.cat;^gpu_memset$",
         "acc_driver_mem": "is.cat;^privateuse1_driver$",
         "acc_mem_alloc_free": "is.name;(?i)memset|release|free|alloc",
+        # any category that is not a device category (kernel, gpu_*, privateuse1_driver)
+        "acc_host_op": "is.cat;^(?!kernel$|gpu_|privateuse1_driver$)",
         # HW data layout (see hw_data.py): single key = list of all timestamps
         "hw_ts_key": "cycles_ts",
         "hw_power_key": "charge",

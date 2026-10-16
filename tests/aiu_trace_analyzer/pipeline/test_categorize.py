@@ -25,7 +25,7 @@ def _event(cat: str, name: str, job: int = _TORCH_JOB, rank: int = 0, **args) ->
     ("kernel", "null_op", EventClass.COMPUTE_EXEC),
     ("kernel", _ALLREDUCE_KERNEL, EventClass.COLLECTIVE_EXEC),
     ("kernel", "ncclAllreduce", EventClass.COLLECTIVE_EXEC),
-    ("cpu_op", _ALLREDUCE_KERNEL, EventClass.OTHER),
+    ("cpu_op", _ALLREDUCE_KERNEL, EventClass.CPU_OP),
     ("gpu_memcpy", "Memcpy (HtoD)", EventClass.DATA_IN),
     ("gpu_memcpy", "Memcpy (DtoH)", EventClass.DATA_OUT),
     ("gpu_memcpy", "Memcpy (DtoD)", EventClass.DATA_OTHER),
@@ -33,10 +33,13 @@ def _event(cat: str, name: str, job: int = _TORCH_JOB, rank: int = 0, **args) ->
     ("privateuse1_driver", "Memory (Release)", EventClass.MEM_ALLOC_FREE),
     ("privateuse1_driver", "Memory (Alloc)", EventClass.MEM_ALLOC_FREE),
     ("privateuse1_driver", "Memory (Map)", EventClass.DATA_OTHER),
-    ("privateuse1_runtime", "Memory (Release)", EventClass.OTHER),
+    ("privateuse1_runtime", "Memory (Release)", EventClass.CPU_OP),
     ("privateuse1_runtime", "aiuDataConvert", EventClass.SEN_DATA_CONVERT),
-    ("user_annotation", "execute_context_1(84)_generation_0(0)", EventClass.OTHER),
-    ("cpu_op", "aten::mm", EventClass.OTHER),
+    ("user_annotation", "execute_context_1(84)_generation_0(0)", EventClass.CPU_OP),
+    ("cpu_op", "aten::mm", EventClass.CPU_OP),
+    ("Trace", "PyTorch Profiler (0)", EventClass.CPU_OP),
+    ("python_function", "forward", EventClass.CPU_OP),
+    ("gpu_user_annotation", "device annotation", EventClass.OTHER),
 ])
 @pytest.mark.parametrize("rank", [0, 1])
 def test_classify_torch(cat, name, expected, rank):
@@ -51,6 +54,8 @@ def test_classify_torch(cat, name, expected, rank):
     ("gpu_memcpy", "Memcpy (DtoD)"),
     ("gpu_memset", "Memset (Device)"),
     ("privateuse1_driver", "Memory (Release)"),
+    ("cpu_op", "aten::mm"),
+    ("user_annotation", "execute_context_1(84)_generation_0(0)"),
 ])
 def test_torch_only_rules_do_not_apply_to_flex(cat, name):
     ctx = EventCategorizerContext()
