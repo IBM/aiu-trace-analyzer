@@ -24,6 +24,12 @@ class EventClass(Enum):
     COMPUTE_EXEC = auto()
     DATA_IN = auto()
     DATA_OUT = auto()
+    # Memory transfer that is neither host-to-device nor device-to-host (e.g. device-to-device)
+    DATA_OTHER = auto()
+    # Allocation, release, and memset operations of device memory
+    MEM_ALLOC_FREE = auto()
+    # Device kernel implementing a collective operation (e.g. Allreduce)
+    COLLECTIVE_EXEC = auto()
     SEN_DATA_CONVERT = auto()
     MAIU_BARRIER = auto()
     MAIU_WIREUP = auto()
@@ -215,12 +221,24 @@ class EventCategorizerContext(TwoPhaseWithBarrierContext):
         if pct.is_category(event, "acc_compute_prep"):
             event_class = EventClass.COMPUTE_PREP
         elif pct.is_category(event, "acc_kernel"):
-            event_class = EventClass.COMPUTE_EXEC
+            if pct.is_category(event, "acc_kernel_collective"):
+                event_class = EventClass.COLLECTIVE_EXEC
+            else:
+                event_class = EventClass.COMPUTE_EXEC
         elif pct.is_category(event, "acc_datatransfer_HtoD"):
             # todo: further sub-cat for DMA WAIT FOR ACK
             event_class = EventClass.DATA_IN
         elif pct.is_category(event, "acc_datatransfer_DtoH"):
             event_class = EventClass.DATA_OUT
+        elif pct.is_category(event, "acc_memcpy"):
+            event_class = EventClass.DATA_OTHER
+        elif pct.is_category(event, "acc_memset"):
+            event_class = EventClass.MEM_ALLOC_FREE
+        elif pct.is_category(event, "acc_driver_mem"):
+            if pct.is_category(event, "acc_mem_alloc_free"):
+                event_class = EventClass.MEM_ALLOC_FREE
+            else:
+                event_class = EventClass.DATA_OTHER
 
         if pct.is_category(event, "acc_data_convert"):
             event_class = EventClass.SEN_DATA_CONVERT

@@ -146,6 +146,11 @@ class InputDialectFLEX(InputDialect):
         "acc_kernel": "is.name;Cmpt Exec$",
         "acc_event_cat": "has.args.TS1",
         "acc_collective": "has.args.CollGroup",
+        "acc_kernel_collective": "-",
+        "acc_memcpy": "-",
+        "acc_memset": "-",
+        "acc_driver_mem": "-",
+        "acc_mem_alloc_free": "-",
         # HW data layout (see hw_data.py): comma-separated keys = one args entry per timestamp
         "hw_ts_key": "TS1,TS2,TS3,TS4,TS5",
         "hw_power_key": "Power",
@@ -204,6 +209,11 @@ class InputDialectTORCH(InputDialect):
         "acc_kernel": "is.cat;kernel",
         "acc_event_cat": "is.cat;gpu|kernel",
         "acc_collective": "is.name;HCOLL",
+        "acc_kernel_collective": "is.name;comms/|Allreduce",
+        "acc_memcpy": "is.cat;^gpu_memcpy$",
+        "acc_memset": "is.cat;^gpu_memset$",
+        "acc_driver_mem": "is.cat;^privateuse1_driver$",
+        "acc_mem_alloc_free": "is.name;(?i)memset|release|free|alloc",
         # HW data layout (see hw_data.py): single key = list of all timestamps
         "hw_ts_key": "cycles_ts",
         "hw_power_key": "charge",
