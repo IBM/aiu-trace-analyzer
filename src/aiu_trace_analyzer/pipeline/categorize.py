@@ -6,6 +6,7 @@ from typing import Optional
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 from aiu_trace_analyzer.pipeline.context import AbstractContext
+from aiu_trace_analyzer.pipeline.hashqueue import AbstractHashQueueContext
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool as pct
 from aiu_trace_analyzer.pipeline.barrier import TwoPhaseWithBarrierContext
 
@@ -565,3 +566,180 @@ def event_categorizer_update(event: TraceEvent, context: AbstractContext) -> lis
     event = context.apply_stats(event)
 
     return context.enhanced_events(event)
+
+
+# PID of the synthetic "Category" process. Chosen far above any real or synthetic pid
+# (OS pids, device pids, host pids + 1000, hashed string pids) to avoid collisions.
+CATEGORY_PID = 2_000_000_000
+
+# Digits of the slice timestamps (ns resolution). Timestamps of ~1e12 us carry more precision than
+# a double holds, so unrounded slice boundaries and durations show float noise.
+_TS_DIGITS = 3
+
+# Blame priority of overlapping events on the category track, highest first: a time slice is
+# shown as the highest-priority class covering it. Classes not listed rank below all listed ones.
+_CATEGORY_PRIORITY = [
+    EventClass.COMPUTE_EXEC,
+    EventClass.COLLECTIVE_EXEC,
+    EventClass.DATA_IN,
+    EventClass.DATA_OUT,
+    EventClass.DATA_OTHER,
+    EventClass.MEM_ALLOC_FREE,
+    # host side and anything unclassified only fills what the accelerator events leave open
+    EventClass.SEN_DATA_CONVERT,
+    EventClass.CPU_OP,
+    EventClass.OTHER,
+]
+# host events that only mark scopes (e.g. a whole step) and would hide every gap
+_SCOPE_MARKER_CATEGORIES = ("user_annotation", "Trace")
+_PRIORITY_OF_CLASS = {
+    str(c): rank for rank, c in enumerate(_CATEGORY_PRIORITY + [c for c in EventClass if c not in _CATEGORY_PRIORITY])
+}
+
+# (start, end, class name)
+_Slice = tuple[float, float, str]
+
+
+class _PriorityTrack:
+    """Sweep state of one rank: resolves overlaps by priority while events arrive sorted by start ts.
+
+    When an event starts at ts, nothing that arrives later can start before it. Everything up to ts is
+    therefore decided by the events seen so far, and the finished slices can be emitted right away.
+    Only the events that are still active and the slice currently being extended are kept.
+    """
+
+    def __init__(self) -> None:
+        self.cursor = 0.0
+        self.active: list[tuple[int, float, str]] = []   # (priority, end, class)
+        self.open: Optional[_Slice] = None
+
+    def _extend(self, start: float, end: float, name: str) -> list[_Slice]:
+        # touching slices of the same class are one slice, so embedded events do not fragment it
+        if self.open is not None and self.open[1] == start and self.open[2] == name:
+            self.open = (self.open[0], end, name)
+            return []
+        done = [] if self.open is None else [self.open]
+        self.open = (start, end, name)
+        return done
+
+    def _advance(self, to: float) -> list[_Slice]:
+        done: list[_Slice] = []
+        while self.active and self.cursor < to:
+            # highest priority wins; among equals the one that lasts longest
+            _, end, name = min(self.active, key=lambda a: (a[0], -a[1]))
+            seg_end = min(end, to)
+            done += self._extend(self.cursor, seg_end, name)
+            self.cursor = seg_end
+            self.active = [a for a in self.active if a[1] > self.cursor]
+        self.cursor = max(self.cursor, to)   # time without any active event stays empty
+        return done
+
+    def add(self, start: float, end: float, priority: int, name: str) -> list[_Slice]:
+        """Add an event and return the slices that are final now."""
+        assert self.cursor <= start, f"Events out-of-order: {self.cursor} > {start} ({name})"
+        done = self._advance(start)
+        self.active.append((priority, end, name))
+        return done
+
+    def flush(self) -> list[_Slice]:
+        """Return the remaining slices once no more events will arrive."""
+        done = self._advance(max((a[1] for a in self.active), default=self.cursor))
+        if self.open is not None:
+            done.append(self.open)
+            self.open = None
+        return done
+
+
+class CategoryTrackContext(AbstractHashQueueContext):
+    """Context for the stage that shows the event classes of the events on a 'Category' process.
+
+    All ranks share the same PID; slices are separated by TID = rank, which is also the queue id.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.jobhash: dict[int, int] = {}
+
+    def _slice_events(self, rank: int, pieces: list[_Slice]) -> list[TraceEvent]:
+        # Boundaries are rounded (not ts and dur separately), so that neighbouring slices share
+        # exactly the same boundary value. Slices that vanish by rounding are dropped.
+        events = []
+        for start, end, name in pieces:
+            start, end = round(start, _TS_DIGITS), round(end, _TS_DIGITS)
+            if end > start:
+                events.append(self._slice_event(rank, (start, end, name)))
+        return events
+
+    def _slice_event(self, rank: int, piece: _Slice) -> TraceEvent:
+        start, end, name = piece
+        # jobhash is kept so later stages can still resolve the dialect of these events
+        args = {"rank": rank}
+        if rank in self.jobhash:
+            args["jobhash"] = self.jobhash[rank]
+        return TraceEvent({
+            "ph": "X",
+            "name": name,
+            "cat": "category",
+            "ts": start,
+            "dur": round(end - start, _TS_DIGITS),
+            "pid": CATEGORY_PID,
+            "tid": rank,
+            "args": args,
+        })
+
+    def add_event(self, event: TraceEvent) -> list[TraceEvent]:
+        """Add an event of the sorted event stream and return the category slices that are final now."""
+        if event["dur"] <= 0.0:
+            return []
+        rank = event["args"].get("rank", 0)
+        track = self.queues[self.get_or_create(rank, _PriorityTrack())]
+        if "jobhash" in event["args"]:
+            self.jobhash.setdefault(rank, event["args"]["jobhash"])
+
+        class_name = event["args"]["class"]
+        done = track.add(
+            event["ts"],
+            event["ts"] + event["dur"],
+            _PRIORITY_OF_CLASS.get(class_name, len(_PRIORITY_OF_CLASS)),
+            class_name)
+        return self._slice_events(rank, done)
+
+    def drain(self) -> list[TraceEvent]:
+        if not self.queues:
+            return []
+
+        revents = [
+            TraceEvent({"ph": "M", "name": "process_name", "pid": CATEGORY_PID, "ts": 0,
+                        "args": {"name": "Category"}}),
+            TraceEvent({"ph": "M", "name": "process_sort_index", "pid": CATEGORY_PID, "ts": 0,
+                        "args": {"sort_index": 0}}),
+        ]
+        for rank in sorted(self.queues):
+            revents.append(TraceEvent({
+                "ph": "M", "name": "thread_name", "pid": CATEGORY_PID, "tid": rank, "ts": 0,
+                "args": {"name": f"Rank {rank}"}}))
+            revents += self._slice_events(rank, self.queues[rank].flush())
+        # idempotent: do not emit events twice
+        self.queues.clear()
+        return revents
+
+
+def category_track(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
+    """Pipeline stage that adds the 'Category' process events for classified events.
+
+    The event itself passes through unchanged. The stage emits one slice per class run, named after the
+    event class, with pid CATEGORY_PID and the rank as tid. Where events of one rank overlap, the slice
+    shows the class of highest priority (_CATEGORY_PRIORITY). A slice is emitted as soon as it is final,
+    the last ones when the context is drained.
+
+    Note:
+        Requires the events to arrive sorted by timestamp. All duration events (ph="X") with a class
+        assigned by the categorizer are considered, except scope markers (_SCOPE_MARKER_CATEGORIES).
+        Host-side and unclassified events rank below the accelerator events and only fill the gaps
+        between those. Time not covered by any considered event is left empty.
+    """
+    if event["ph"] != "X" or "class" not in event["args"] or event.get("cat") in _SCOPE_MARKER_CATEGORIES:
+        return [event]
+    assert isinstance(context, CategoryTrackContext)
+
+    return [event] + context.add_event(event)

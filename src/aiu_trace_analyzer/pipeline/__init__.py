@@ -51,7 +51,7 @@ from aiu_trace_analyzer.pipeline.iteration_detect import IterationDectectContext
 from aiu_trace_analyzer.pipeline.flex_job_offset import FlexJobOffsetContext
 from aiu_trace_analyzer.pipeline.flow_launch import LaunchFLowContext
 from aiu_trace_analyzer.pipeline.power_stats import PowerStatisticsContext
-from aiu_trace_analyzer.pipeline.categorize import EventCategorizerContext, EventClass
+from aiu_trace_analyzer.pipeline.categorize import EventCategorizerContext, EventClass, CategoryTrackContext
 
 # for reference of the template, you'd do here:
 #       from aiu_trace_analyzer.pipeline.template import MyStructsAndFunctionsForCrossEventContext
@@ -105,7 +105,7 @@ from aiu_trace_analyzer.pipeline.flex_job_offset import frequency_align_collect,
 from aiu_trace_analyzer.pipeline.flow_launch import launch_flow_collect, launch_flow_create_missing
 from aiu_trace_analyzer.pipeline.power_stats import analyze_power_statistics
 
-from aiu_trace_analyzer.pipeline.categorize import event_categorizer, event_categorizer_update
+from aiu_trace_analyzer.pipeline.categorize import event_categorizer, event_categorizer_update, category_track
 
 # for reference of the template, you'd do here:
 #       from aiu_trace_analyzer.pipeline.template import myprocessing

@@ -269,7 +269,7 @@ class Acelyzer:
         parser = argparse.ArgumentParser(prog="acelyzer", formatter_class=AcelyzerArgsFormatter)
         required_group = parser.add_mutually_exclusive_group(required=True)
         parser.add_argument("-C", "--counter", type=str, nargs='*', default=self.defaults["counter"],
-                            choices=["power_ts4", "power_ts3", "coll_bw", "bandwidth", "prep_queue", "rcu_util"],
+                            choices=["power_ts4", "power_ts3", "coll_bw", "bandwidth", "prep_queue", "rcu_util", "category"],
                             help="Space-separated list of counters to extract/display."
                             " Note: power_ts4 and power_ts3 are mutually exclusive.")
 
@@ -696,6 +696,8 @@ class Acelyzer:
         process.register_stage(callback=event_pipe.event_categorizer, context=categorizer_ctx)
         process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
         process.register_stage(callback=event_pipe.event_categorizer_update, context=categorizer_ctx)
+        if any(args.counter) and "category" in args.counter:
+            process.register_stage(callback=event_pipe.category_track, context=event_pipe.CategoryTrackContext())
         process.register_stage(callback=event_pipe.launch_flow_create_missing, context=launch_flows_ctx)
 
         if args.flow:

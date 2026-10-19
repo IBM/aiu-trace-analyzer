@@ -76,6 +76,8 @@ class TraceView(object):
             # "samples": self.samples,
         }
         dic.update(self.meta_data)
+        # passthrough metadata from the input must not override the configured time unit
+        dic["displayTimeUnit"] = self.display_time_unit
 
         if fp:
             json.dump(dic, fp, indent=4)
@@ -364,7 +366,7 @@ class MetaEvents(AbstractEventType):
         self.ph = ph
         self.ts = ts
         self.pid = pid
-        if tid:
+        if tid is not None:
             self.tid = tid
         self.args = args
 

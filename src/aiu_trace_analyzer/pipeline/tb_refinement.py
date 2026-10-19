@@ -5,6 +5,7 @@ import re
 from aiu_trace_analyzer.types import GlobalIngestData
 from aiu_trace_analyzer.dialect import InputDialectTORCH
 import aiu_trace_analyzer.logger as aiulog
+from aiu_trace_analyzer.pipeline.categorize import CATEGORY_PID
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.hashqueue import AbstractHashQueueContext
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
@@ -149,6 +150,8 @@ class RefinementContext(AbstractHashQueueContext):
         return event
 
     def update_event_data_heavy(self, event: TraceEvent) -> TraceEvent:
+        if event["pid"] == CATEGORY_PID:
+            return event
         if not PipelineContextTool.is_acc_event(event):
             return event
         cur_name = event["name"]
@@ -240,6 +243,8 @@ class RefinementContext(AbstractHashQueueContext):
         return event
 
     def update_event_data_light(self, event) -> TraceEvent:
+        if event["pid"] == CATEGORY_PID:
+            return event
 
         self.dialect = GlobalIngestData.get_dialect(event["args"]["jobhash"])
 
