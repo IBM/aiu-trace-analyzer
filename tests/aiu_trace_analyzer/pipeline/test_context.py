@@ -3,7 +3,7 @@
 import pytest
 import math
 
-from aiu_trace_analyzer.types import TraceWarning
+from aiu_trace_analyzer.types import TraceWarning, TRACE_ISSUE_EVENT_NAME
 from aiu_trace_analyzer.pipeline import AbstractContext
 from aiu_trace_analyzer.pipeline.context import AbstractVerificationContext
 
@@ -135,6 +135,45 @@ def test_issue_warning(abstract_context):
     assert abstract_context.warnings["pytest"].__str__() == "A Warning with 2 args: 2 and 5.0"
 
 
+def test_emit_issue_events_none_when_inactive(abstract_context):
+    abstract_context.warnings["pytest"].auto_log = False   # disable auto-output for tests
+    assert abstract_context.emit_issue_events() == []
+
+
+def test_emit_issue_events(abstract_context):
+    abstract_context.warnings["pytest"].auto_log = False   # disable auto-output for tests
+    abstract_context.issue_warning("pytest", {"count": 1, "max": 5.0})
+
+    events = abstract_context.emit_issue_events()
+
+    assert len(events) == 1
+    assert events[0]["ph"] == "M"
+    assert events[0]["name"] == TRACE_ISSUE_EVENT_NAME
+    assert events[0]["args"] == {"finding": "pytest",
+                                 "text": "A Warning with 2 args: 1 and 5.0",
+                                 "is_error": False}
+
+
+def test_emit_issue_events_of_error_warning():
+    error = TraceWarning(
+        name="pytest_err",
+        text="An Error with {d[count]} occurrence(s)",
+        data={"count": 0},
+        update_fn={"count": int.__add__},
+        auto_log=False,
+        is_error=True,
+    )
+    context = AbstractContext(warnings=[error])
+    context.issue_warning("pytest_err", {"count": 1})
+
+    events = context.emit_issue_events()
+
+    assert len(events) == 1
+    assert events[0]["args"] == {"finding": "pytest_err",
+                                 "text": "An Error with 1 occurrence(s)",
+                                 "is_error": True}
+
+
 def test_drain(abstract_context):
     assert abstract_context.drain() == []
 
@@ -248,8 +287,15 @@ def test_v1_drain_no_warnings_produces_pass(verif_context_no_warnings):
 def test_v2_drain_warn_level_warning_produces_warn(verif_context_warn):
     verif_context_warn.warnings["test_w"].update({"count": 1})
     events = verif_context_warn.drain()
+    issue_events = _find_events(events, TRACE_ISSUE_EVENT_NAME)
     test_result = _find_events(events, "verification_test_result")[0]
     assert test_result["args"]["result"] == "warn"
+    assert len(issue_events) == 1
+    assert issue_events[0]["args"] == {
+        "finding": "test_w",
+        "text": "Found 1 issues",
+        "is_error": False,
+    }
     data_events = _find_events(events, "verification_data")
     assert len(data_events) == 1
     assert data_events[0]["args"]["is_error"] is False
@@ -258,8 +304,15 @@ def test_v2_drain_warn_level_warning_produces_warn(verif_context_warn):
 def test_v3_drain_error_level_warning_produces_fail(verif_context_error):
     verif_context_error.warnings["test_err"].update({"count": 1})
     events = verif_context_error.drain()
+    issue_events = _find_events(events, TRACE_ISSUE_EVENT_NAME)
     test_result = _find_events(events, "verification_test_result")[0]
     assert test_result["args"]["result"] == "fail"
+    assert len(issue_events) == 1
+    assert issue_events[0]["args"] == {
+        "finding": "test_err",
+        "text": "Found 1 errors",
+        "is_error": True,
+    }
     data_events = _find_events(events, "verification_data")
     assert data_events[0]["args"]["is_error"] is True
 
