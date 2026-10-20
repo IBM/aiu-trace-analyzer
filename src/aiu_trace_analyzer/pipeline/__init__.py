@@ -29,7 +29,7 @@ from aiu_trace_analyzer.pipeline.be_pair import EventPairDetectionContext
 # import the separated contexts:
 from aiu_trace_analyzer.pipeline.overlap import OverlapDetectionContext, TSSequenceContext
 from aiu_trace_analyzer.pipeline.inverse_ts import InversedTSDetectionContext
-from aiu_trace_analyzer.pipeline.normalize import NormalizationContext, EventLimiter
+from aiu_trace_analyzer.pipeline.normalize import NormalizationContext, EventLimiter, RoundtripMergeContext
 from aiu_trace_analyzer.pipeline.sort import EventSortingContext
 from aiu_trace_analyzer.pipeline.make_slice import SliceCreationContext
 from aiu_trace_analyzer.pipeline.power import PowerExtractionContext
@@ -58,7 +58,7 @@ from aiu_trace_analyzer.pipeline.categorize import EventCategorizerContext, Even
 
 # import the separated processing functions
 from aiu_trace_analyzer.pipeline.mappings import map_complete_to_duration, remove_ids_from_name
-from aiu_trace_analyzer.pipeline.normalize import normalize_phase1, normalize_phase2
+from aiu_trace_analyzer.pipeline.normalize import normalize_phase1, normalize_phase2, merge_roundtrip_events
 from aiu_trace_analyzer.pipeline.correctness import event_sanity_checks
 from aiu_trace_analyzer.pipeline.overlap import (
     detect_partial_overlap_tids,

@@ -9,6 +9,7 @@ import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, TraceWarning
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.hashqueue import AbstractHashQueueContext
+from aiu_trace_analyzer.pipeline.tools import PipelineContextTool as pct
 from aiu_trace_analyzer.hw_data import (
     has_hw_ts, get_hw_ts, get_hw_ts_list, set_hw_ts_list, hw_ts_label, canonicalize_hw_data,
     HwPhase, hw_phase, hw_ts_span)
@@ -473,3 +474,72 @@ def normalize_phase2(event: TraceEvent, context: AbstractContext) -> list[TraceE
 
     assert isinstance(event, dict)
     return [event]
+
+
+class RoundtripMergeContext(AbstractHashQueueContext):
+    """
+    Merges overlapping roundtrip events (e.g. torch aiuRoundtrip) of a pid/tid stream into a single span.
+    The torch profiler emits those as complete events although they are async by nature.
+
+    Requires the events of each pid/tid stream sorted by ts. Per stream, the first roundtrip event opens a
+    span and every later roundtrip event that starts before the span's end extends it. All other events
+    that start within the span are held back, so that the merged span can be emitted ahead of them and the
+    input order is preserved. The span and the held events are released as soon as an event starts
+    at/after the end of the span (sorted input: no later roundtrip event can overlap the span anymore)
+    or on drain(). Memory is thus limited to the events within a single merged span.
+    """
+    def __init__(self) -> None:
+        super().__init__()
+        self.events_merged = 0
+        self.spans_emitted = 0
+
+    def _release(self, queue_id: int) -> list[TraceEvent]:
+        state = self.queues.pop(queue_id)
+        span = state["span"]
+        if state["count"] > 1:
+            span["dur"] = round(state["end"] - span["ts"], 4)
+            span.setdefault("args", {})["merged_events"] = state["count"]
+        self.events_merged += state["count"] - 1
+        self.spans_emitted += 1
+        return [span] + state["held"]
+
+    def merge(self, event: TraceEvent) -> list[TraceEvent]:
+        if "ts" not in event:
+            return [event]
+
+        queue_id = self.event_data_hash(event, ["pid", "tid"], ignore_missing=True)
+        is_roundtrip = event["ph"] == "X" and pct.is_category(event, "acc_aiu_roundtrip")
+        state = self.queues.get(queue_id)
+
+        if state is not None and event["ts"] < state["end"]:
+            if is_roundtrip:
+                state["end"] = max(state["end"], round(event["ts"] + event["dur"], 4))
+                state["count"] += 1
+            else:
+                state["held"].append(event)
+            return []
+
+        released = self._release(queue_id) if state is not None else []
+        if is_roundtrip:
+            self.queues[queue_id] = {
+                "span": event,
+                "end": round(event["ts"] + event["dur"], 4),
+                "count": 1,
+                "held": []}
+            return released
+        return released + [event]
+
+    def drain(self) -> list[TraceEvent]:
+        revents = []
+        for queue_id in list(self.queues.keys()):
+            revents += self._release(queue_id)
+        if self.spans_emitted > 0:
+            aiulog.log(aiulog.INFO, "RTM: condensed", self.events_merged + self.spans_emitted,
+                       "roundtrip events into", self.spans_emitted, "roundtrip event(s).")
+        return revents + super().drain()
+
+
+def merge_roundtrip_events(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
+    """Combine overlapping roundtrip events into a single span without changing the event order"""
+    assert isinstance(context, RoundtripMergeContext)
+    return context.merge(event)

@@ -596,6 +596,10 @@ class Acelyzer:
             sortkey=self._default_sort_ts_and_rev_dur)
         process.register_stage(callback=event_pipe.sort_events, context=ts_sorting_ctx)
 
+        # combine overlapping roundtrip events (torch) to a single span before they cause overlap conflicts
+        process.register_stage(callback=event_pipe.merge_roundtrip_events,
+                               context=event_pipe.RoundtripMergeContext())
+
         # check whether the inflow into overlap detection has monotonic increasing ts (per pid/tid stream)
         monotonic_ts_ctx_a = event_pipe.TSSequenceContext(ts3check=True)
         process.register_stage(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_a)

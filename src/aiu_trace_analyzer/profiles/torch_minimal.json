@@ -19,6 +19,7 @@
         {"drop_global_events": false},
         {"recombine_cpu_events": false},
         {"sort_events": true},
+        {"merge_roundtrip_events": true},
         {"assert_ts_sequence": false},
         {"detect_partial_overlap_tids": true},
         {"pipeline_barrier": true},

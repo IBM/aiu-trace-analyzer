@@ -6,8 +6,12 @@ from sys import float_info
 from aiu_trace_analyzer.pipeline.normalize import (
     _attr_to_args,
     EventLimiter,
-    NormalizationContext
+    NormalizationContext,
+    RoundtripMergeContext,
+    merge_roundtrip_events
 )
+from aiu_trace_analyzer.dialect import InputDialectTORCH
+from aiu_trace_analyzer.types import GlobalIngestData
 
 
 @pytest.mark.parametrize("event,result",
@@ -365,3 +369,74 @@ def test_frequency_stats_zero_duration(normalization_ctx):
     assert normalization_ctx.warnings["zero_dur_freq"].args_list["count"] == 2
     for stats in normalization_ctx.prev_event_data.values():
         assert all(s.count == 0 for s in stats.values())
+
+
+###########################################################
+# roundtrip merging
+
+@pytest.fixture
+def torch_jobhash():
+    return GlobalIngestData.add_job_info(source_uri="test_frame_torch.json", data_dialect=InputDialectTORCH())
+
+
+def _ev(name, ts, dur, jobhash, pid=1, tid=1, ph="X"):
+    return {"ph": ph, "name": name, "pid": pid, "tid": tid, "ts": ts, "dur": dur,
+            "args": {"jobhash": jobhash}}
+
+
+def _run(events, ctx=None):
+    ctx = ctx or RoundtripMergeContext()
+    out = []
+    for e in events:
+        out += merge_roundtrip_events(e, ctx)
+    return out + ctx.drain()
+
+
+def test_roundtrip_merge_overlap_chain(torch_jobhash):
+    rt = "aiuRoundtrip"
+    events = [
+        _ev(rt, 0.0, 10.0, torch_jobhash),
+        _ev("other", 2.0, 1.0, torch_jobhash),
+        _ev(rt, 5.0, 10.0, torch_jobhash),      # extends span to 15
+        _ev("other2", 14.0, 0.5, torch_jobhash),
+        _ev(rt, 20.0, 2.0, torch_jobhash),      # gap -> new span
+    ]
+    out = _run(events)
+    assert [(e["name"], e["ts"]) for e in out] == [
+        (rt, 0.0), ("other", 2.0), ("other2", 14.0), (rt, 20.0)]
+    assert out[0]["dur"] == 15.0
+    assert out[0]["args"]["merged_events"] == 2
+    assert "merged_events" not in out[3]["args"]
+
+
+def test_roundtrip_merge_ordering_preserved(torch_jobhash):
+    events = [
+        _ev("aiuRoundtrip", 0.0, 4.0, torch_jobhash),
+        _ev("a", 1.0, 1.0, torch_jobhash),
+        _ev("aiuRoundtrip", 3.0, 4.0, torch_jobhash),
+        _ev("b", 8.0, 1.0, torch_jobhash),
+    ]
+    ts = [e["ts"] for e in _run(events)]
+    assert ts == sorted(ts)
+
+
+def test_roundtrip_merge_touching_events_not_merged(torch_jobhash):
+    events = [_ev("aiuRoundtrip", 0.0, 5.0, torch_jobhash), _ev("aiuRoundtrip", 5.0, 5.0, torch_jobhash)]
+    out = _run(events)
+    assert [(e["ts"], e["dur"]) for e in out] == [(0.0, 5.0), (5.0, 5.0)]
+
+
+def test_roundtrip_merge_separate_streams(torch_jobhash):
+    events = [
+        _ev("aiuRoundtrip", 0.0, 10.0, torch_jobhash, pid=1),
+        _ev("aiuRoundtrip", 1.0, 10.0, torch_jobhash, pid=2),
+    ]
+    out = _run(events)
+    assert len(out) == 2
+    assert all("merged_events" not in e["args"] for e in out)
+
+
+def test_roundtrip_merge_passes_other_events(torch_jobhash):
+    meta = {"ph": "M", "name": "process_name", "pid": 1, "args": {"name": "x"}}
+    out = _run([meta, _ev("other", 1.0, 1.0, torch_jobhash), _ev("aiuRoundtrip", 3.0, 1.0, torch_jobhash, ph="b")])
+    assert len(out) == 3
