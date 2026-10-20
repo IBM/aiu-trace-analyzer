@@ -440,3 +440,21 @@ def test_roundtrip_merge_passes_other_events(torch_jobhash):
     meta = {"ph": "M", "name": "process_name", "pid": 1, "args": {"name": "x"}}
     out = _run([meta, _ev("other", 1.0, 1.0, torch_jobhash), _ev("aiuRoundtrip", 3.0, 1.0, torch_jobhash, ph="b")])
     assert len(out) == 3
+
+
+def test_roundtrip_merge_names_stay_separate(torch_jobhash):
+    events = [
+        _ev("aiuRoundtrip", 0.0, 10.0, torch_jobhash),
+        _ev("flexRoundTrip", 2.0, 4.0, torch_jobhash),
+        _ev("aiuRoundtrip", 5.0, 10.0, torch_jobhash),
+        _ev("flexRoundTrip", 7.0, 4.0, torch_jobhash),   # beyond first flex span, but state still open
+        _ev("other", 8.0, 1.0, torch_jobhash),
+        _ev("aiuRoundtrip", 30.0, 1.0, torch_jobhash),
+    ]
+    out = _run(events)
+    assert [(e["name"], e["ts"]) for e in out] == [
+        ("aiuRoundtrip", 0.0), ("flexRoundTrip", 2.0), ("flexRoundTrip", 7.0), ("other", 8.0),
+        ("aiuRoundtrip", 30.0)]
+    assert out[0]["dur"] == 15.0
+    assert out[1]["dur"] == 4.0 and "merged_events" not in out[1]["args"]
+    assert out[2]["dur"] == 4.0

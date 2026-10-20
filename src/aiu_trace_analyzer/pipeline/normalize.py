@@ -478,15 +478,17 @@ def normalize_phase2(event: TraceEvent, context: AbstractContext) -> list[TraceE
 
 class RoundtripMergeContext(AbstractHashQueueContext):
     """
-    Merges overlapping roundtrip events (e.g. torch aiuRoundtrip) of a pid/tid stream into a single span.
-    The torch profiler emits those as complete events although they are async by nature.
+    Merges overlapping roundtrip events (e.g. torch aiuRoundtrip, flexRoundTrip) of a pid/tid stream into
+    a single span per event name. The torch profiler emits those as complete events although they are
+    async by nature.
 
-    Requires the events of each pid/tid stream sorted by ts. Per stream, the first roundtrip event opens a
-    span and every later roundtrip event that starts before the span's end extends it. All other events
-    that start within the span are held back, so that the merged span can be emitted ahead of them and the
-    input order is preserved. The span and the held events are released as soon as an event starts
-    at/after the end of the span (sorted input: no later roundtrip event can overlap the span anymore)
-    or on drain(). Memory is thus limited to the events within a single merged span.
+    Requires the events of each pid/tid stream sorted by ts. Per stream, the first roundtrip event of any
+    name opens the state. Roundtrip events that start before the end of the state (the latest end of
+    all its spans) belong to it: they extend the open span of their own name or open a new span if there is
+    none (or if it has ended already). Names never share a span. All events of the state, including the
+    spans, are held back in their input order and are released as soon as an event starts at/after the
+    end of the state (sorted input: no later roundtrip event can overlap it anymore) or on drain().
+    Memory is thus limited to the events within a single state.
     """
     def __init__(self) -> None:
         super().__init__()
@@ -495,13 +497,14 @@ class RoundtripMergeContext(AbstractHashQueueContext):
 
     def _release(self, queue_id: int) -> list[TraceEvent]:
         state = self.queues.pop(queue_id)
-        span = state["span"]
-        if state["count"] > 1:
-            span["dur"] = round(state["end"] - span["ts"], 4)
-            span.setdefault("args", {})["merged_events"] = state["count"]
-        self.events_merged += state["count"] - 1
-        self.spans_emitted += 1
-        return [span] + state["held"]
+        for rec in state["records"]:
+            span = rec["span"]
+            if rec["count"] > 1:
+                span["dur"] = round(rec["end"] - span["ts"], 4)
+                span.setdefault("args", {})["merged_events"] = rec["count"]
+            self.events_merged += rec["count"] - 1
+            self.spans_emitted += 1
+        return state["held"]
 
     def merge(self, event: TraceEvent) -> list[TraceEvent]:
         if "ts" not in event:
@@ -511,23 +514,34 @@ class RoundtripMergeContext(AbstractHashQueueContext):
         is_roundtrip = event["ph"] == "X" and pct.is_category(event, "acc_aiu_roundtrip")
         state = self.queues.get(queue_id)
 
-        if state is not None and event["ts"] < state["end"]:
-            if is_roundtrip:
-                state["end"] = max(state["end"], round(event["ts"] + event["dur"], 4))
-                state["count"] += 1
-            else:
-                state["held"].append(event)
+        released = []
+        if state is not None and event["ts"] >= state["end"]:
+            released = self._release(queue_id)
+            state = None
+
+        if not is_roundtrip:
+            if state is None:
+                return released + [event]
+            state["held"].append(event)
             return []
 
-        released = self._release(queue_id) if state is not None else []
-        if is_roundtrip:
-            self.queues[queue_id] = {
-                "span": event,
-                "end": round(event["ts"] + event["dur"], 4),
-                "count": 1,
-                "held": []}
-            return released
-        return released + [event]
+        event_end = round(event["ts"] + event["dur"], 4)
+        if state is None:
+            state = self.queues[queue_id] = {"end": event_end, "records": [], "open": {}, "held": []}
+        state["end"] = max(state["end"], event_end)
+
+        rec = state["open"].get(event["name"])
+        if rec is not None and event["ts"] < rec["end"]:
+            rec["end"] = max(rec["end"], event_end)
+            rec["count"] += 1
+        else:
+            # first of its name or its previous span has ended: the event itself becomes the span,
+            # placed at its input position
+            rec = {"span": event, "end": event_end, "count": 1}
+            state["open"][event["name"]] = rec
+            state["records"].append(rec)
+            state["held"].append(event)
+        return released
 
     def drain(self) -> list[TraceEvent]:
         revents = []
