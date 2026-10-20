@@ -69,7 +69,7 @@ class Acelyzer:
         "stats": True,
 
         # to process different counter events
-        "counter": "power_ts4 coll_bw prep_queue rcu_util",
+        "counter": "power_ts4 coll_bw prep_queue rcu_util category",
 
         # whether to enable flow event extraction
         "flow": False,
