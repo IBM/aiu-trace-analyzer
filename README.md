@@ -300,6 +300,14 @@ Consequences when in use:
  * nothing negative other than the increased number of events
 
 
+### keep_roundtrip
+
+By default, overlapping roundtrip events (e.g. torch `aiuRoundtrip`, `Flex RoundTrip`) of a pid/tid stream are combined into a single span before overlap detection. This option skips that merging stage and leaves the roundtrip events untouched.
+
+Consequences when in use:
+ * overlapping roundtrip events may cause overlap conflicts later in the pipeline
+
+
 ### category
 
 The `category` counter (part of the default `-C` counters) adds a separate process named `Category` to the output. It has one thread per rank (thread id = rank, so multi-AIU runs stay apart) and shows the class that each event was assigned by the categorizer as one continuous timeline, e.g. `COMPUTE_EXEC`, `COLLECTIVE_EXEC`, `DATA_IN`, `DATA_OUT`, `MEM_ALLOC_FREE`, `CPU_OP`.

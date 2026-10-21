@@ -387,6 +387,8 @@ class Acelyzer:
 
         parser.add_argument("--keep_prep", dest="keep_prep", action="store_true", default=False,
                             help="Prep-events are counted and the dropped. Use this option to keep them.")
+        parser.add_argument("--keep_roundtrip", dest="keep_roundtrip", action="store_true", default=False,
+                            help="Skip the stage that merges overlapping roundtrip events into a single span.")
         parser.add_argument("--keep_names", dest="keep_names", action="store_true", default=False,
                             help="Keep original event names when using the --tb option."
                             " By default most numbers are removed from name for aggregation purposes.")
@@ -599,8 +601,9 @@ class Acelyzer:
         process.register_stage(callback=event_pipe.sort_events, context=ts_sorting_ctx)
 
         # combine overlapping roundtrip events (torch) to a single span before they cause overlap conflicts
-        process.register_stage(callback=event_pipe.merge_roundtrip_events,
-                               context=event_pipe.RoundtripMergeContext())
+        if not args.keep_roundtrip:
+            process.register_stage(callback=event_pipe.merge_roundtrip_events,
+                                   context=event_pipe.RoundtripMergeContext())
 
         # check whether the inflow into overlap detection has monotonic increasing ts (per pid/tid stream)
         monotonic_ts_ctx_a = event_pipe.TSSequenceContext(ts3check=True)
