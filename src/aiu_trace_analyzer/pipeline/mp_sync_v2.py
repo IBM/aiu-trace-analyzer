@@ -3,6 +3,7 @@
 import copy
 
 from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.hw_data import has_hw_ts, get_hw_ts
 from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionContext
 import aiu_trace_analyzer.logger as aiulog
 
@@ -60,7 +61,7 @@ class MpTsCalibV2Context(EventPairDetectionContext):
     def _get_ts5_in_us(self, event: TraceEvent):
         if "ts_dev" in event["args"]:
             return event["args"]["ts_dev"][4]
-        return int(event["args"]["TS5"]) / 560
+        return get_hw_ts(event, 5) / 560
 
     def mp_gather_events(self, event: TraceEvent) -> list[TraceEvent]:
 
@@ -122,7 +123,7 @@ class MpTsCalibV2Context(EventPairDetectionContext):
                     assert ("ts" in event)
 
                     # It has shown that TS5 from Firmware side is more reliable than the TS captured on the host side.
-                    if "TS5" in event["args"]:
+                    if has_hw_ts(event):
                         t5_event = self._get_ts5_in_us(event)
                         ts_end_host = event["ts"] + event["dur"]
                         timestamps.append((t5_event, ts_end_host))
@@ -216,7 +217,7 @@ class MpTsCalibV2Context(EventPairDetectionContext):
     def mp_alter_event_hts(self) -> None:
         for e in self.all_events:
             pid = e["pid"]
-            if "TS5" in e["args"]:
+            if has_hw_ts(e):
                 dev_t5 = self._get_calib_dts(self._get_ts5_in_us(e), pid)
                 e["ts"] = self._get_calib_hts_from_dts(dev_t5)
 

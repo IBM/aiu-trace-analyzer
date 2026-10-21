@@ -168,7 +168,8 @@ def test_global_ts_sequence_flags_lower_timestamp_across_tids(monkeypatch):
 
 def _cmpt_event(ts, ts3, ts4, pid=1) -> TraceEvent:
     event = _x_event(ts, 1.0, pid=pid, name="Cmpt Exec")
-    event["args"].update({"TS3": str(ts3), "TS4": str(ts4)})
+    # complete, ordered TS1..TS5 set: HW timestamps are only recognized with TS1 present
+    event["args"].update({"TS1": str(ts3), "TS2": str(ts3), "TS3": str(ts3), "TS4": str(ts4), "TS5": str(ts4)})
     return event
 
 

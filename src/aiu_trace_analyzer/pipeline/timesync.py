@@ -4,6 +4,7 @@ import numpy as np
 import copy
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.hw_data import has_hw_ts, get_hw_ts_list
 from aiu_trace_analyzer.pipeline import AbstractContext
 
 
@@ -45,10 +46,7 @@ def _assign_ts_dur(a: int, b: int, ts_list: list[float], overlap_tolerance=1.0/5
 
 
 def _conv_DTS_to_array_in_us(event: TraceEvent, freq: float) -> list[float]:
-    converted = [0] * 5
-    for i, ts in enumerate(["TS1", "TS2", "TS3", "TS4", "TS5"]):
-        dts_i = float(event["args"][ts]) / freq
-        converted[i] = dts_i
+    converted = [float(ts) / freq for ts in get_hw_ts_list(event)]
 
     event["args"]["ts_dev"] = copy.deepcopy(converted)
     return converted
@@ -151,7 +149,7 @@ def cycle_count_to_wallclock(event: TraceEvent, _: AbstractContext, config: dict
     assert ("soc_frequency" in config)
 
     # we can only do that conversion if the event has all necessary data
-    if event["ph"] == "X" and "args" in event and "TS1" in event["args"]:
+    if event["ph"] == "X" and has_hw_ts(event):
         event["args"]["ts_all"] = _convert_cycle_timestamps(event, config["soc_frequency"])
         assert event["ts"] >= get_cycle_ts_as_clock(1, event["args"]["ts_all"]), \
             f"TS1 is projected before the event timestamp. Please check the frequency setting. {event}"
@@ -193,7 +191,7 @@ def tighten_hts_by_instr_type(event: TraceEvent, _: AbstractContext, config: dic
     assert ("soc_frequency" in config)
 
     # we can only do that conversion if the event has all necessary data
-    if event["ph"] == "X" and "args" in event and "TS1" in event["args"]:
+    if event["ph"] == "X" and has_hw_ts(event):
         op_ids = _match_opIds_from_event(event)
 
         if len(op_ids) < 1:     # instruction type that we have not analyzed, align TS1 to HTS
@@ -214,7 +212,7 @@ def realign_dts_to_hts(event: TraceEvent, _: AbstractContext) -> list[TraceEvent
     stores the 5 converted values in event.args.ts_all for later use
     '''
     # we can only do that conversion if the event has all necessary data
-    if event["ph"] == "X" and "args" in event and "TS1" in event["args"]:
+    if event["ph"] == "X" and has_hw_ts(event):
         event["args"]["ts_all"] = _align_dts_to_hts(event)
     return [event]
 
