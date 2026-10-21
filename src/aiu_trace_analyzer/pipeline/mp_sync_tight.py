@@ -5,9 +5,8 @@ import sys
 import numpy as np
 
 from aiu_trace_analyzer.types import TraceEvent
-from aiu_trace_analyzer.hw_data import has_hw_ts
+from aiu_trace_analyzer.hw_data import has_hw_ts, hw_ts_span
 from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionContext
-from aiu_trace_analyzer.pipeline.timesync import get_opIds_from_event
 import aiu_trace_analyzer.logger as aiulog
 
 
@@ -267,8 +266,8 @@ class MpSyncTightContext(EventPairDetectionContext):
             if has_hw_ts(e):
                 # e["dur"] has been calibrated correctly in previous pass
                 self._calib_dev_ts(pid, e)
-                op_id = get_opIds_from_event(e)
-                e["ts"] = e["args"]["ts_all"][op_id]
+                # start of the event's phase, 0-based into the list
+                e["ts"] = e["args"]["ts_all"][hw_ts_span(e)[0] - 1]
 
     def drain(self) -> list[TraceEvent]:
         aiulog.log(aiulog.TRACE, "mp_gather_events drain: ")

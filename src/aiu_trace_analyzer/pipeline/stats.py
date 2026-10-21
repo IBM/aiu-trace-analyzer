@@ -6,7 +6,7 @@ import math
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent
-from aiu_trace_analyzer.hw_data import get_hw_ts_list
+from aiu_trace_analyzer.hw_data import get_hw_ts_list, HwPhase, hw_phase
 from aiu_trace_analyzer.pipeline import AbstractContext, EventPairDetectionContext
 
 from aiu_trace_analyzer.pipeline.rcu_utilization import RCU_pt_util_counter_name, RCU_pt_util_counter_unit
@@ -230,11 +230,11 @@ class StatsExtractionContext(EventPairDetectionContext, PipelineContextTool):
 
 def calculate_stats(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
     '''
-    parses X events that contains "Cmpt Exec" string in the name
+    parses X events of the Cmpt Exec phase
     '''
     assert isinstance(context, StatsExtractionContext)
 
-    if event["ph"] in ["X"] and "Cmpt Exec" in event['name']:
+    if event["ph"] in ["X"] and hw_phase(event) == HwPhase.CMPT_EXEC:
         # remove id from name:
         # "name": "addmm_2_MatMul Cmpt Exec",
         # becames "addmm_N_Matmult Cmpt Exec"

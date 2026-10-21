@@ -1,10 +1,9 @@
 # Copyright 2024-2025 IBM Corporation
 
-import numpy as np
 import copy
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent
-from aiu_trace_analyzer.hw_data import has_hw_ts, get_hw_ts_list
+from aiu_trace_analyzer.hw_data import has_hw_ts, get_hw_ts_list, hw_phase, hw_ts_span
 from aiu_trace_analyzer.pipeline import AbstractContext
 
 
@@ -73,13 +72,7 @@ def _convert_cycle_timestamps(event: TraceEvent, freq: float) -> list[float]:
 
     THIS FN HAS A NASTY SIDE EFFECT OF UPDATING event["ts"] and event["dur"] !!!
     '''
-    ref_idx = 4
-    if event["name"].endswith("Cmpt Prep"):
-        ref_idx = 2
-    if event["name"].endswith(" DmaI"):
-        ref_idx = 1
-    if event["name"].endswith("Cmpt Exec"):
-        ref_idx = 3
+    ref_idx = hw_ts_span(event)[1] - 1   # the last timestamp of the event's phase, 0-based into the list
 
     wall_clock_tref = event["ts"] + event["dur"]
     converted = _get_DTS_rela_to_TSRef_in_us(event, freq, ref_idx)
@@ -164,25 +157,6 @@ def cycle_count_to_wallclock(event: TraceEvent, _: AbstractContext, config: dict
     return [event]
 
 
-def _match_opIds_from_event(event: TraceEvent):
-    name = event["name"]
-    op_keywords = [" DmaI", " Cmpt Prep", " Cmpt Exec", " DmaO"]
-    op_id_map = [key in name for key in op_keywords]
-    np_op_ids = np.array(op_id_map)
-    op_ids = np.nonzero(np_op_ids)[0]
-    return op_ids
-
-
-def get_opIds_from_event(event: TraceEvent) -> int:
-
-    op_ids = _match_opIds_from_event(event)
-
-    if len(op_ids) >= 1:
-        return op_ids[0]
-    else:
-        return 0
-
-
 def tighten_hts_by_instr_type(event: TraceEvent, _: AbstractContext, config: dict) -> list[TraceEvent]:
     '''
     convert the cycle-based TS1-5 values into wallclock based on ts+dur for the given event
@@ -192,12 +166,12 @@ def tighten_hts_by_instr_type(event: TraceEvent, _: AbstractContext, config: dic
 
     # we can only do that conversion if the event has all necessary data
     if event["ph"] == "X" and has_hw_ts(event):
-        op_ids = _match_opIds_from_event(event)
+        phase = hw_phase(event)
 
-        if len(op_ids) < 1:     # instruction type that we have not analyzed, align TS1 to HTS
+        if phase is None:       # instruction type that we have not analyzed, align TS1 to HTS
             ret = _align_hts_to_beg(event, config["soc_frequency"])
         elif PRE_TIGHTENED:     # align TS[i+2] to HTS+DUR for opIds==i, and let DUR = TS[i+2]-TS[i+1]
-            ret = _align_hts_by_type(op_ids[0], event, config["soc_frequency"])
+            ret = _align_hts_by_type(int(phase) - 1, event, config["soc_frequency"])
         else:                   # earliest implementation, align TS5 to HTS+DUR, and adjust HTS
             ret = _convert_cycle_timestamps(event, config["soc_frequency"])
 

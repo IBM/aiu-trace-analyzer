@@ -11,6 +11,9 @@ The storage layout differs between input dialects and is defined by the dialect 
 Input values may be int, decimal str, or hex str in either dialect. Getters always return numbers.
 Timestamp indices are 1-based to match the TS1..TS5 naming: get_hw_ts(event, 3) is TS3.
 
+Events with HW data represent one device processing phase (HwPhase), detected with the dialect's classifiers.
+Phase n spans TS<n> -> TS<n+1>; events of no known phase span TS1 -> TS5.
+
 The layout is selected via the dialect of the event's job (args.jobhash). If the event has no jobhash or
 its job is not registered, the layout is detected from the keys present in the event.
 
@@ -18,6 +21,7 @@ HW data is only reported for dialects in HW_DATA_DIALECTS; events of other diale
 no HW data. This keeps stages FLEX-only until the TORCH HW-data path is complete.
 '''
 
+from enum import IntEnum
 from typing import Optional
 
 from aiu_trace_analyzer.types import TraceEvent
@@ -29,8 +33,28 @@ HW_TS_COUNT = 5
 HW_DATA_DIALECTS = {"FLEX"}
 
 
+class HwPhase(IntEnum):
+    '''
+    device processing phase of an event with HW data; phase n spans TS<n> -> TS<n+1>
+    '''
+    DMA_IN = 1
+    CMPT_PREP = 2
+    CMPT_EXEC = 3
+    DMA_OUT = 4
+
+
+# dialect category that identifies each phase, checked in this order
+_PHASE_CATEGORIES = [
+    (HwPhase.DMA_IN, "acc_datatransfer_HtoD"),
+    (HwPhase.CMPT_PREP, "acc_compute_prep"),
+    (HwPhase.CMPT_EXEC, "acc_kernel"),
+    (HwPhase.DMA_OUT, "acc_datatransfer_DtoH"),
+]
+
+
 class _HwLayout:
     def __init__(self, dialect: InputDialect) -> None:
+        self.dialect = dialect
         self.dialect_name = dialect.get("NAME")
         ts_keys = dialect.get("hw_ts_key").split(",")
         # a single key holds the list of all timestamps; otherwise one key per timestamp
@@ -54,6 +78,14 @@ class _HwLayout:
             return self.ts_list_key in args
         return self.ts_keys[0] in args
 
+    def uses_any_key(self, args: dict) -> bool:
+        # any key of this layout present, including incomplete timestamp sets
+        if self.power_key in args:
+            return True
+        if self.ts_list_key:
+            return self.ts_list_key in args
+        return any(k in args for k in self.ts_keys)
+
     def get_ts_raw(self, args: dict, n: int):
         if self.ts_list_key:
             return args[self.ts_list_key][n - 1]
@@ -75,6 +107,26 @@ class _HwLayout:
             for k, v in zip(self.ts_keys, values):
                 args[k] = self.to_native(v)
 
+    def canonical(self, value):
+        # str values (dec/hex) are parsed and written in the native type; other values and unparsable str stay unchanged
+        if not isinstance(value, str):
+            return value
+        try:
+            return self.to_native(int(value, 0))
+        except ValueError:
+            return value
+
+    def canonicalize(self, args: dict) -> None:
+        if self.ts_list_key:
+            if self.ts_list_key in args:
+                args[self.ts_list_key] = [self.canonical(v) for v in args[self.ts_list_key]]
+        else:
+            for k in self.ts_keys:
+                if k in args:
+                    args[k] = self.canonical(args[k])
+        if self.power_key in args:
+            args[self.power_key] = self.canonical(args[self.power_key])
+
 
 # layouts by dialect name; dialects are singletons with static entries
 _layouts: dict[str, _HwLayout] = {}
@@ -90,7 +142,7 @@ def _layout_of_dialect(dialect: InputDialect) -> _HwLayout:
 def _sniff_layout(args: dict) -> Optional[_HwLayout]:
     for dialect in (InputDialectTORCH(), InputDialectFLEX()):
         layout = _layout_of_dialect(dialect)
-        if layout.has_ts(args) or layout.power_key in args:
+        if layout.uses_any_key(args):
             return layout
     return None
 
@@ -165,6 +217,19 @@ def set_hw_ts_list(event: TraceEvent, values: list[int], args_key: str = "args")
     layout.set_ts_list(args, values)
 
 
+def canonicalize_hw_data(event: TraceEvent, args_key: str = "args") -> TraceEvent:
+    '''
+    rewrites the HW timestamps and power value that are present as str (dec/hex) in the native value type
+    of the event's dialect (e.g. FLEX "0x10" -> "16"); works on incomplete timestamp sets,
+    leaves non-str and unparsable values unchanged.
+    Updates the event in place and returns it.
+    '''
+    args, layout = _args_and_layout(event, args_key)
+    if layout is not None:
+        layout.canonicalize(args)
+    return event
+
+
 def has_hw_power(event: TraceEvent, args_key: str = "args") -> bool:
     args, layout = _args_and_layout(event, args_key)
     return layout is not None and layout.power_key in args
@@ -191,3 +256,28 @@ def set_hw_power(event: TraceEvent, value, args_key: str = "args") -> None:
     if layout is None:
         raise KeyError(f"cannot determine the HW data layout of event: {event.get('name')}")
     args[layout.power_key] = layout.to_native(value)
+
+
+def hw_phase(event: TraceEvent, args_key: str = "args") -> Optional[HwPhase]:
+    '''
+    processing phase of an event with HW timestamps; None for events without HW timestamps or of no known phase
+    '''
+    args, layout = _args_and_layout(event, args_key)
+    if layout is None or not layout.has_ts(args):
+        return None
+    for phase, category in _PHASE_CATEGORIES:
+        classifier = layout.dialect.classifier(category)
+        if classifier is not None and classifier.matches(event):
+            return phase
+    return None
+
+
+def hw_ts_span(event: TraceEvent, args_key: str = "args") -> tuple[int, int]:
+    '''
+    1-based indices (first, last) of the HW timestamps that bound the event's phase, e.g. (3, 4) for CMPT_EXEC;
+    (1, HW_TS_COUNT) for events of no known phase
+    '''
+    phase = hw_phase(event, args_key)
+    if phase is None:
+        return 1, HW_TS_COUNT
+    return int(phase), int(phase) + 1

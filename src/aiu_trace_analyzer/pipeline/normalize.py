@@ -9,7 +9,9 @@ import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent, GlobalIngestData, TraceWarning
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.hashqueue import AbstractHashQueueContext
-from aiu_trace_analyzer.pipeline.tools import FlexEventMapToTS
+from aiu_trace_analyzer.hw_data import (
+    has_hw_ts, get_hw_ts, get_hw_ts_list, set_hw_ts_list, hw_ts_label, canonicalize_hw_data,
+    HwPhase, hw_phase, hw_ts_span)
 
 
 class EventStats(object):
@@ -132,7 +134,6 @@ class NormalizationContext(AbstractHashQueueContext):
         self.OVERFLOW_TIME_TOLERANCE = self.OVERFLOW_TIME_SPAN_US * 0.05  # allow for some tolerance
         self.ignore_crit = ignore_crit
         self.prev_event_data: dict[int, dict[str, EventStats]] = {}
-        self.flex_name_ts_map = FlexEventMapToTS()
         self.event_filter = self.extract_eventfilters(filterstr)
         self.event_count = 0
         self.event_limit = event_limit
@@ -276,38 +277,26 @@ class NormalizationContext(AbstractHashQueueContext):
 
         return elapsed_epochs, drift, actual_freq
 
-    @staticmethod
-    def _get_ref_ts(ev_name: str) -> str:
-        if ev_name.endswith(" DmaI"):
-            return "TS1"
-        elif ev_name.endswith(" Cmpt Prep"):
-            return "TS2"
-        elif ev_name.endswith(" Cmpt Exec"):
-            return "TS3"
-        elif ev_name.endswith(" DmaO"):
-            return "TS4"
-        else:
-            return "TS1"
-
     def tsx_32bit_local_correction(self, event: TraceEvent) -> dict:
-        ref_ts = NormalizationContext._get_ref_ts(event["name"])
-        if ref_ts not in event["args"]:
+        if not has_hw_ts(event):
             return event["args"]
+        ref_ts = hw_ts_span(event)[0]   # the first timestamp of the event's phase is the reference
 
         args = event["args"]
+        values = get_hw_ts_list(event)
         prev = -(1 << 48)  # set something very small to cover for some negative overflow epochs to happen
-        for ts in ["TS1", "TS2", "TS3", "TS4", "TS5"]:
-            curr = int(args[ts], 0)
+        for i, curr in enumerate(values):
             if curr < prev:
                 if "TSxOF" not in event["args"]:
-                    event["args"]["TSxOF"] = ts
+                    event["args"]["TSxOF"] = hw_ts_label(i + 1)
                 aiulog.log(aiulog.TRACE, "OVC: intra-event TSx overflow:", event["args"])
                 # currently hard-coded 1 epoch
                 # event-duration-based epochs require analysis of circular dependency
                 # between cycle->time and time->cycle conversions
                 curr += 1 << 32
-            args[ts] = str(curr)
+            values[i] = curr
             prev = curr
+        set_hw_ts_list(event, values)
 
         if event["dur"] > self.OVERFLOW_TIME_SPAN_US:
             self.warnings["long_dur"].update()
@@ -317,9 +306,9 @@ class NormalizationContext(AbstractHashQueueContext):
             qid,
             str(event["args"]["jobhash"]),
             event["ts"],
-            int(event["args"][ref_ts]))
+            get_hw_ts(event, ref_ts))
 
-        if "Cmpt Exec" not in event["name"]:
+        if hw_phase(event) != HwPhase.CMPT_EXEC:
             return args
 
         self.frequency_stats(event)
@@ -333,20 +322,21 @@ class NormalizationContext(AbstractHashQueueContext):
                 self._DURATION_KEY: EventStats(),
                 self._INTERVAL_KEY: EventStats()}
 
-        ts_a, ts_b = self.flex_name_ts_map[event["name"]]
-        dur_cycles = int(event["args"][ts_b]) - int(event["args"][ts_a])
+        ts_a, ts_b = hw_ts_span(event)
+        cycle_a, cycle_b = get_hw_ts(event, ts_a), get_hw_ts(event, ts_b)
+        dur_cycles = cycle_b - cycle_a
         dur_freq = float(dur_cycles) / event["dur"]
         aiulog.log(aiulog.TRACE,
-                   f"{event['args'][ts_a]:10} {event['args'][ts_b]:10} {dur_cycles:10}"
+                   f"{cycle_a:10} {cycle_b:10} {dur_cycles:10}"
                    f" {event['dur']:15} {dur_freq:12.3f} |{event['name']}")
         self.prev_event_data[qid][self._DURATION_KEY].update(
-            (int(event["args"][ts_a]), int(event["args"][ts_b])),
+            (cycle_a, cycle_b),
             (event["ts"], event["dur"]),
             dur_freq)
 
         # compute anticipated frequency based on event interval to previous event
         if self.prev_event_data[qid][self._INTERVAL_KEY].count > 0:
-            gap_cycles = int(event["args"][ts_a]) - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_cycle()
+            gap_cycles = cycle_a - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_cycle()
             gap_time = event["ts"] - self.prev_event_data[qid][self._INTERVAL_KEY].get_start_ts()
             # Handle zero gap_time to avoid division by zero
             if gap_time > 0:
@@ -358,29 +348,30 @@ class NormalizationContext(AbstractHashQueueContext):
         else:
             gap_freq = dur_freq
         self.prev_event_data[qid][self._INTERVAL_KEY].update(
-            (int(event["args"][ts_a]), int(event["args"][ts_b])),
+            (cycle_a, cycle_b),
             (event["ts"], event["dur"]),
             gap_freq)
 
     def tsx_32bit_global_correction(self, qid, event: TraceEvent) -> dict:
-        if "TS1" in event["args"]:
+        if has_hw_ts(event):
             args = event["args"]
             ovc, drift, tofix = self.get_overflow_count(qid,
                                                         str(event["args"]["jobhash"]),
                                                         event["ts"],
-                                                        int(event["args"]["TS1"]))
+                                                        get_hw_ts(event, 1))
             aiulog.log(aiulog.TRACE, "OVC: DRIFT:", event["name"], ovc, drift, tofix, self.frequency_minmax)
 
+            values = get_hw_ts_list(event)
             prev = -(1 << 48)  # set something very small to cover for some negative overflow epochs to happen
-            for ts in ["TS1", "TS2", "TS3", "TS4", "TS5"]:
-                curr = int(args[ts], 0)
+            for i, curr in enumerate(values):
                 curr += (ovc * 1 << 32)
                 if curr < prev:
                     self.warnings["ts_seq_err"].update()
                     if not self.ignore_crit:
                         assert curr >= prev, "local_correction of TS-sequence incomplete."
-                args[ts] = str(curr)
+                values[i] = curr
                 prev = curr
+            set_hw_ts_list(event, values)
             args["OVC"] = ovc
             return args
         return event["args"]
@@ -403,20 +394,6 @@ def _attr_to_args(event: TraceEvent) -> TraceEvent:
         for k, v in event["attr"].items():
             event["args"][k] = copy.deepcopy(v)
         event.pop("attr")
-    return event
-
-
-def _hex_to_int_str(event: TraceEvent) -> TraceEvent:
-    if "args" in event:
-        if not isinstance(event["args"], dict):
-            return event
-
-        for k in ["TS1", "TS2", "TS3", "TS4", "TS5", "Power"]:
-            if k in event["args"] and isinstance(event["args"][k], str):
-                try:
-                    event["args"][k] = str(int(event["args"][k], 0))
-                except ValueError:
-                    pass  # do nothing and leave the value alone
     return event
 
 
@@ -456,7 +433,8 @@ def normalize_phase1(event: TraceEvent, context: AbstractContext) -> list[TraceE
         return [event]
 
     event = _attr_to_args(event)
-    event = _hex_to_int_str(event)
+    # HW timestamps and power given as str (dec/hex) -> dialect's native value type
+    event = canonicalize_hw_data(event)
     event["name"] = _name_unification(event["name"])
     event = _capitalized_args(event)
 
@@ -464,7 +442,7 @@ def normalize_phase1(event: TraceEvent, context: AbstractContext) -> list[TraceE
         return []
 
     event["args"]["jobname"] = _jobinfo.get_job(event["args"]["jobhash"])
-    if "args" in event and "TS1" in event["args"]:
+    if has_hw_ts(event):
         event["args"] = context.tsx_32bit_local_correction(event)
 
     assert isinstance(event, dict)
@@ -478,7 +456,7 @@ def normalize_phase2(event: TraceEvent, context: AbstractContext) -> list[TraceE
     if event["ph"] not in ["X"]:
         return [event]
 
-    if "args" in event and "TS1" in event["args"]:
+    if has_hw_ts(event):
         qid = context.queue_hash(event)
         event["args"] = context.tsx_32bit_global_correction(qid, event)
         aiulog.log(aiulog.TRACE, "NORM after:", id(event["args"]), event)
