@@ -269,7 +269,8 @@ class Acelyzer:
         parser = argparse.ArgumentParser(prog="acelyzer", formatter_class=AcelyzerArgsFormatter)
         required_group = parser.add_mutually_exclusive_group(required=True)
         parser.add_argument("-C", "--counter", type=str, nargs='*', default=self.defaults["counter"],
-                            choices=["power_ts4", "power_ts3", "coll_bw", "bandwidth", "prep_queue", "rcu_util", "category"],
+                            choices=["power_ts4", "power_ts3", "coll_bw", "bandwidth", "prep_queue", "rcu_util",
+                                     "category"],
                             help="Space-separated list of counters to extract/display."
                             " Note: power_ts4 and power_ts3 are mutually exclusive.")
 
@@ -324,7 +325,8 @@ class Acelyzer:
                             help="(oblolete by --freq)")
 
         required_group.add_argument("-i", "--input", type=str,
-                                    help="Comma-separated list of input files. Or file pattern (requires quotes)")
+                                    help="Comma-separated list of input files (json, optionally gzip-compressed). "
+                                         "Or file pattern (requires quotes)")
 
         parser.add_argument("-I", "--intermediate", dest='intermediate', action='store_true',
                             default=self.defaults["intermediate"],

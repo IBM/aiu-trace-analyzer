@@ -1,5 +1,6 @@
 # Copyright 2024-2025 IBM Corporation
 
+import gzip
 import json
 import re
 import pathlib  # for multifile patterns
@@ -17,6 +18,24 @@ from aiu_trace_analyzer.dialect import (
     InputDialect,
     InputDialectFLEX,
     InputDialectTORCH)
+
+
+def is_gzip_file(fname: str) -> bool:
+    # gzip streams start with the magic bytes 0x1f 0x8b, independent of the file extension
+    try:
+        with open(fname, 'rb') as f:
+            return f.read(2) == b'\x1f\x8b'
+    except OSError:
+        return False
+
+
+def open_text_maybe_gzip(fname: str):
+    '''
+    Open a file for text reading. Transparently decompresses gzip-ed files.
+    '''
+    if is_gzip_file(fname):
+        return gzip.open(fname, 'rt', encoding='utf-8')
+    return open(fname, 'r')
 
 
 class AbstractTraceIngest:
@@ -104,7 +123,8 @@ class AbstractTraceIngest:
         elif fname.startswith("api://"):
             return self.FTYPE_API
 
-        with open(fname, 'r') as f:
+        # unknown name: sniff the content (decompressing gzip-ed files on the fly)
+        with open_text_maybe_gzip(fname) as f:
             json_re = re.compile(r"[{}\[\]]")
             log_re = re.compile(r"[0-2]\d:0")
             for line in f:
@@ -441,8 +461,12 @@ class JsonFileEventTraceIngest(JsonEventTraceIngest):
             show_warnings: bool = True,
             verification_mode: bool = False):
 
-        with open(source_uri, 'r') as sourcefile:
-            data = json.load(sourcefile)
+        try:
+            with open_text_maybe_gzip(source_uri) as sourcefile:
+                data = json.load(sourcefile)
+        except (gzip.BadGzipFile, EOFError, UnicodeDecodeError) as e:
+            aiulog.log(aiulog.ERROR, "Unable to read (compressed) JSON input", source_uri, ":", e)
+            raise
 
         data_dialect = InputDialectTORCH() if self.is_torch_profile(data) else InputDialectFLEX()
         super().__init__(
