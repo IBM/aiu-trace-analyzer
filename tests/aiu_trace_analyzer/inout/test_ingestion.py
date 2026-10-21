@@ -1,5 +1,8 @@
 # Copyright 2024-2025 IBM Corporation
 
+import gzip
+import shutil
+
 import pytest
 
 from aiu_trace_analyzer.ingest.ingestion import JsonFileEventTraceIngest, MultifileIngest
@@ -38,6 +41,31 @@ def test_json_input(json_input, capsys):
     assert count == 23
     capsys.readouterr()
     del json_ingest
+
+
+def _count_events(ingest) -> int:
+    return sum(1 for _ in ingest.__iter__())
+
+
+@pytest.mark.parametrize("gz_name", ["trace.json.gz", "trace.gz"])
+def test_gzip_json_input(json_input, gz_name, tmp_path, capsys):
+    gz_file = tmp_path / gz_name
+    with open(json_input, 'rb') as src, gzip.open(gz_file, 'wb') as dst:
+        shutil.copyfileobj(src, dst)
+
+    assert MultifileIngest(str(gz_file)).detect_ftype(str(gz_file)) == JsonFileEventTraceIngest.FTYPE_JSON
+    assert _count_events(JsonFileEventTraceIngest(str(gz_file))) == _count_events(JsonFileEventTraceIngest(json_input))
+    capsys.readouterr()
+
+
+def test_gzip_truncated_input(json_input, tmp_path):
+    gz_file = tmp_path / "truncated.json.gz"
+    with open(json_input, 'rb') as src:
+        raw = gzip.compress(src.read())
+    gz_file.write_bytes(raw[:len(raw) // 2])
+
+    with pytest.raises(EOFError):
+        JsonFileEventTraceIngest(str(gz_file))
 
 
 def test_multifile_ingest_empty_device_properties(tmp_path):

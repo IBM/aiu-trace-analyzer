@@ -69,7 +69,7 @@ class Acelyzer:
         "stats": True,
 
         # to process different counter events
-        "counter": "power_ts4 coll_bw prep_queue rcu_util",
+        "counter": "power_ts4 coll_bw prep_queue rcu_util category",
 
         # whether to enable flow event extraction
         "flow": False,
@@ -269,7 +269,8 @@ class Acelyzer:
         parser = argparse.ArgumentParser(prog="acelyzer", formatter_class=AcelyzerArgsFormatter)
         required_group = parser.add_mutually_exclusive_group(required=True)
         parser.add_argument("-C", "--counter", type=str, nargs='*', default=self.defaults["counter"],
-                            choices=["power_ts4", "power_ts3", "coll_bw", "bandwidth", "prep_queue", "rcu_util"],
+                            choices=["power_ts4", "power_ts3", "coll_bw", "bandwidth", "prep_queue", "rcu_util",
+                                     "category"],
                             help="Space-separated list of counters to extract/display."
                             " Note: power_ts4 and power_ts3 are mutually exclusive.")
 
@@ -324,7 +325,8 @@ class Acelyzer:
                             help="(oblolete by --freq)")
 
         required_group.add_argument("-i", "--input", type=str,
-                                    help="Comma-separated list of input files. Or file pattern (requires quotes)")
+                                    help="Comma-separated list of input files (json, optionally gzip-compressed). "
+                                         "Or file pattern (requires quotes)")
 
         parser.add_argument("-I", "--intermediate", dest='intermediate', action='store_true',
                             default=self.defaults["intermediate"],
@@ -385,6 +387,8 @@ class Acelyzer:
 
         parser.add_argument("--keep_prep", dest="keep_prep", action="store_true", default=False,
                             help="Prep-events are counted and the dropped. Use this option to keep them.")
+        parser.add_argument("--keep_roundtrip", dest="keep_roundtrip", action="store_true", default=False,
+                            help="Skip the stage that merges overlapping roundtrip events into a single span.")
         parser.add_argument("--keep_names", dest="keep_names", action="store_true", default=False,
                             help="Keep original event names when using the --tb option."
                             " By default most numbers are removed from name for aggregation purposes.")
@@ -596,6 +600,11 @@ class Acelyzer:
             sortkey=self._default_sort_ts_and_rev_dur)
         process.register_stage(callback=event_pipe.sort_events, context=ts_sorting_ctx)
 
+        # combine overlapping roundtrip events (torch) to a single span before they cause overlap conflicts
+        if not args.keep_roundtrip:
+            process.register_stage(callback=event_pipe.merge_roundtrip_events,
+                                   context=event_pipe.RoundtripMergeContext())
+
         # check whether the inflow into overlap detection has monotonic increasing ts (per pid/tid stream)
         monotonic_ts_ctx_a = event_pipe.TSSequenceContext(ts3check=True)
         process.register_stage(callback=event_pipe.assert_ts_sequence, context=monotonic_ts_ctx_a)
@@ -696,6 +705,8 @@ class Acelyzer:
         process.register_stage(callback=event_pipe.event_categorizer, context=categorizer_ctx)
         process.register_stage(callback=event_pipe.pipeline_barrier, context=event_pipe._main_barrier_context)
         process.register_stage(callback=event_pipe.event_categorizer_update, context=categorizer_ctx)
+        if any(args.counter) and "category" in args.counter:
+            process.register_stage(callback=event_pipe.category_track, context=event_pipe.CategoryTrackContext())
         process.register_stage(callback=event_pipe.launch_flow_create_missing, context=launch_flows_ctx)
 
         if args.flow:

@@ -1,6 +1,7 @@
 # Copyright 2024-2025 IBM Corporation
 
 import copy
+import sys
 
 import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.pipeline import (
@@ -170,7 +171,8 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
             aiulog.log(
                 aiulog.ERROR,
                 f"POD: insufficient dynamic range for tid-based overlap resolution ({self.max_tid_streams})",
-                f"of job: {event['args']['jobname']}. Increase max_tid_space.")
+                f"of job: {event['args']['jobname']}. Increase --max_tid_streams.")
+            sys.exit(1)
         new_tid = self.tid_space[event["pid"]][event["tid"]]
         return new_tid
 

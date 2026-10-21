@@ -226,3 +226,13 @@ def test_ts_sequence_ignores_non_cmpt_exec_for_cycle_check():
 
     assert context.ts_total == 0
     assert context.ts_outsync == (0, 0)
+
+
+def test_tid_space_exhausted_exits_gracefully():
+    ctx = OverlapDetectionContext(overlap_resolve=OverlapDetectionContext.OVERLAP_RESOLVE_TID, max_tid_streams=1)
+    ctx.tid_space = {1: {1: 2}}   # tid 2 (assigned by an earlier overlap) has no further tid to move to
+    event = _x_event(0.0, 1.0, tid=2)
+    event["args"]["jobname"] = "testjob"
+    with pytest.raises(SystemExit) as exc:
+        ctx.find_next_tid(event)
+    assert exc.value.code == 1

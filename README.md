@@ -70,7 +70,7 @@ An evolving feature is the use of processing profiles (option `-P`) to allow con
 
 The tool is capable of ingesting these types of input files:
 
- * json traces: So far this is the primary and supported option. It can be a json file that contains a list of events or another trace file that's formatted after the Trace Event Format. The tool is also capable of processing torch profiler trace files. It attempts to detect the input 'dialect' and adjusts event treatment accordingly.
+ * json traces: So far this is the primary and supported option. It can be a json file that contains a list of events or another trace file that's formatted after the Trace Event Format. The tool is also capable of processing torch profiler trace files. It attempts to detect the input 'dialect' and adjusts event treatment accordingly. Gzip-compressed json files (e.g. `trace.json.gz`) are decompressed transparently.
  * perfetto protobuf files: so far it's able to extract trace events and their arguments from those files. It's not reading counters or other more sophisticated things yet (limited functionality).
 
 There's a basic autodetect function for the file type built in. If the filename extension doesn't indicate the type, it detects log files by their lines with time stamps, it detects json files by finding the initial open parenthesis, and for everything else, it assumes binary format of perfetto.
@@ -108,6 +108,7 @@ for vector computations that do not involve the PT-array.
 | Multi-AIU distributed view | Breakdown analysis of elapsed times of computation and communication of a multi-AIU workload | Available for autopilot-on mode via TensorBoard|
 | Kernel time breakdown by categories | Breakdown of execution times over a handful of categories of kernels, where different categories representing different types of computation operations on AIU | Available in text and csv format for autopilot-off profiling mode. Additional run to support autopilot-on mode. |
 | Kernel time breakdown | Function profile of execution time and occurrences of device-residing computation kernels | Available in text and csv format for autopilot-off/unfused profiling modes |
+| Event category track | One timeline per rank showing which class of activity (compute, collective, data transfer, buffer management, host) the device time is spent on, with overlaps resolved by priority | Enabled by default with the `category` counter, see [category](#category) |
 | Elapsed time per inference iteration | Averaged elapsed time of an inference iteration | Available in console output for autopilot-off profiling mode, only if autodetection succeeded |
 
 
@@ -298,6 +299,25 @@ Consequences when in use:
  * adds a (potentially) large amount of events to become visible that are also often overlapping
  * nothing negative other than the increased number of events
 
+
+### keep_roundtrip
+
+By default, overlapping roundtrip events (e.g. torch `aiuRoundtrip`, `Flex RoundTrip`) of a pid/tid stream are combined into a single span before overlap detection. This option skips that merging stage and leaves the roundtrip events untouched.
+
+Consequences when in use:
+ * overlapping roundtrip events may cause overlap conflicts later in the pipeline
+
+
+### category
+
+The `category` counter (part of the default `-C` counters) adds a separate process named `Category` to the output. It has one thread per rank (thread id = rank, so multi-AIU runs stay apart) and shows the class that each event was assigned by the categorizer as one continuous timeline, e.g. `COMPUTE_EXEC`, `COLLECTIVE_EXEC`, `DATA_IN`, `DATA_OUT`, `MEM_ALLOC_FREE`, `CPU_OP`.
+
+ * Each slice is named after the event class. Neighbouring slices of the same class are merged.
+ * Where events of a rank overlap, the slice shows the class with the highest priority: `COMPUTE_EXEC`, `COLLECTIVE_EXEC`, `DATA_IN`, `DATA_OUT`, `DATA_OTHER`, `MEM_ALLOC_FREE`, then the host side (`CPU_OP`, `SEN_DATA_CONVERT`) and unclassified events (`OTHER`). Host events therefore only fill the gaps between device events.
+ * Events that only mark a scope, such as a whole step (categories `user_annotation` and `Trace`), are not part of the track. Time that no other event covers stays empty.
+ * Timestamps of the slices are rounded to 3 digits (nanoseconds).
+
+Use `-C` with the list of counters you want, and omit `category` to disable the track. Note that `-C` replaces the default list, e.g. `-C power_ts4 coll_bw prep_queue rcu_util` runs without the category track.
 
 ## Understanding and Troubleshooting the Results
 
