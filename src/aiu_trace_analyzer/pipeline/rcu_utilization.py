@@ -1,6 +1,7 @@
 # Copyright 2024-2025 IBM Corporation
 
 import os
+import hashlib
 import re
 import copy
 import json
@@ -13,9 +14,74 @@ from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
 from aiu_trace_analyzer.pipeline.barrier import TwoPhaseWithBarrierContext
-from aiu_trace_analyzer.pipeline.tools import KernelDetailsDB, AutopilotDetail
 
 import pandas as pd
+
+
+class AutopilotDetail:
+    def __init__(self, kernelmap: dict[str, int] = None) -> None:
+        if kernelmap is not None:
+            self.kernelmap = copy.deepcopy(kernelmap)
+        else:
+            self.kernelmap = {}
+
+    def hash(self, input) -> int:
+        return hashlib.shake_256(input).digest()
+
+    def table_hash(self):
+        tableh = hashlib.sha256()
+        for kernel_id in sorted(self.kernelmap.keys()):
+            tableh.update(str(kernel_id).encode())
+
+        return tableh.hexdigest()
+
+
+class KernelDetailsDB:
+    """
+    The lists/database functionality receives a hash and maps it to:
+     * the reference to a measured mapping: kernel_name -> runtime_percentage
+    """
+
+    def __init__(self, db_url: str, autopilot: bool) -> None:
+        self.db_url = db_url
+        self.autopilot = autopilot
+        try:
+            with open(self.db_url, 'r') as db:
+                self.data = json.load(db)
+        except FileNotFoundError:
+            aiulog.log(aiulog.WARN, "APD: Unable to find an existing kernel db. Creating new at:", self.db_url)
+            self.data = {}
+        except IOError as e:
+            aiulog.log(aiulog.ERROR, "APD: IO-Error. Cannot continue")
+            raise e
+
+    def __del__(self):
+        self.persist_db()
+
+    def persist_db(self):
+        if self.autopilot:
+            return
+        try:
+            with open(self.db_url, 'w') as db:
+                aiulog.log(aiulog.DEBUG, "APD: Exporting kernel detail db into:", self.db_url)
+                json.dump(self.data, db)
+        except FileNotFoundError:
+            aiulog.log(aiulog.ERROR, "APD: Failed to export/refresh kernel datail db into:", self.db_url)
+        except IOError as e:
+            aiulog.log(aiulog.ERROR, "APD: IO-Error. Connot continue")
+            raise e
+
+    def insert(self, hash: str, mapping_table: AutopilotDetail):
+        self.data[hash] = mapping_table
+
+    def retrieve(self, hash: str) -> AutopilotDetail:
+        try:
+            return self.data[hash]
+        except KeyError:
+            aiulog.log(aiulog.WARN, "APD: Found no data from previous run with autopilot=0.")
+            return AutopilotDetail()
+
+
 pd.set_option('display.max_rows', None)
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', None)

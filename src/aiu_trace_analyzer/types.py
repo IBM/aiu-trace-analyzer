@@ -1,151 +1,31 @@
 # Copyright 2024-2025 IBM Corporation
 
+from __future__ import annotations
+
 from pathlib import Path
 import re
+from typing import Optional, TYPE_CHECKING
 
 import aiu_trace_analyzer.logger as aiulog
+
+if TYPE_CHECKING:
+    from aiu_trace_analyzer.dialect import InputDialect
+
+# the input dialects moved to aiu_trace_analyzer.dialect; resolved lazily to keep the old import path working
+# (a regular import would be circular: dialect.py imports TraceEvent and GlobalIngestData from here)
+_MOVED_TO_DIALECT = ("InputDialect", "InputDialectFLEX", "InputDialectTORCH")
+
+
+def __getattr__(name: str):
+    if name in _MOVED_TO_DIALECT:
+        import aiu_trace_analyzer.dialect as dialect
+        return getattr(dialect, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # define TraceEvent to be a dictionary for consistency
 class TraceEvent(dict):
     pass
-
-
-class InputDialect:
-    categories = set()
-    dialect_map = {}
-
-    @classmethod
-    def register(cls, category: str, entry: str) -> bool:
-        if category not in cls.categories:
-            raise KeyError(f"ERROR: Category {category} is not part of this dialect.")
-
-        if cls.__name__ not in cls.dialect_map:
-            cls.dialect_map[cls.__name__] = {}
-
-        if entry == "-":
-            entry = None
-        cls.dialect_map[cls.__name__][category] = entry
-        return True
-
-    @classmethod
-    def add_category(cls, category: str) -> bool:
-        if category in cls.categories:
-            return False
-        cls.categories.add(category)
-        return True
-
-    @classmethod
-    def get(cls, category: str) -> str:
-        return cls.dialect_map[cls.__name__][category]
-
-
-class InputDialectFLEX(InputDialect):
-    _FLEX_DIALECT = {
-        "NAME": "FLEX",
-        "acc_launch_cb": "-",
-        "acc_graph_init": "-",
-        "acc_graph_exec": "Execute Graph",
-        "acc_malloc": "FixupAllocations",
-        "acc_resize_tensor_alloc": "AllocateFrame of graph",
-        "acc_supernode_launch": "Flex RoundTrip",
-        "acc_supernode_exec": "Flex RoundTrip",
-        "acc_node_compute": "Compute of $NodeName",
-        "acc_data_convert": "is.name;Compute of (?!.*SenFusedDeviceNode).*$",
-        "acc_scheduler_init": "SchedulerConstruct",
-        "acc_virtaddr_create": "CreatePipoIovas",
-        "acc_launch_schedule_compute": "ScheduleCompute",
-        "acc_schedule_wait": "WaitForCompletionAndReturnStatus",
-        "acc_dma_prep": "PrepareDmas",
-        "acc_rdma_prep_sync": "PrepareAndSyncRdma",
-        "acc_cache_clear": "LaunchClearScratchpad",
-        "acc_cache_preload": "LaunchPreloadScratchpad",
-        "acc_launch_compute_stream": "LaunchComputeStream",
-        "acc_rdma_barrier1": "Barrier1",
-        "acc_rdma_post_keys": "PostKeys",
-        "acc_rdma_barrier2": "Barrier2",
-        "acc_rdma_fetch_keys": "FetchKeys",
-        "acc_rdma_update_cb": "Update CBs",
-        "acc_rdma_barrier3": "Barrier3",
-        "acc_rdma_check_deadlock": "Deadlock Check",
-        "acc_barrier": "is.name;[Bb]arrier:",
-        "acc_filetransfer_DtoF": "is.name; DtoF",
-        "acc_filetransfer_MtoF": "-",
-        "acc_filetransfer_FtoD": "-",
-        "acc_filetransfer_FtoM": "-",
-        "acc_datatransfer_DtoH": "is.name; DmaO",
-        "acc_datatransfer_HtoD": "is.name; DmaI",
-        "acc_clock_calibration": "-",
-        "acc_compile_graph": "-",
-        "acc_category_kernel": "kernel",
-        "acc_category_runtime": "cuda_runtime",
-        "acc_compute_prep": "is.name;Cmpt Prep$",
-        "acc_kernel": "is.name;Cmpt Exec$",
-        "acc_event_cat": "has.args.TS1",
-        "acc_collective": "has.args.CollGroup",
-    }
-
-    def __new__(cls):
-        if not hasattr(cls, '_flex_dialect_instance'):
-            cls._flex_dialect_instance = super(InputDialectFLEX, cls).__new__(cls)
-            for c, e in cls._FLEX_DIALECT.items():
-                cls._flex_dialect_instance.add_category(c)
-                cls._flex_dialect_instance.register(c, e)
-        return cls._flex_dialect_instance
-
-
-class InputDialectTORCH(InputDialect):
-    _TORCH_DIALECT = {
-        "NAME": "TORCH",
-        "acc_launch_cb": "aiuLaunchControlBlocks",
-        "acc_graph_init": "aiuInitGraph",
-        "acc_graph_exec": "aiuGraphExecution",
-        "acc_malloc": "aiuMalloc",
-        "acc_resize_tensor_alloc": "aiuResizeTensorAllocation",
-        "acc_supernode_launch": "aiuLaunchSuperNode",
-        "acc_supernode_exec": "aiuSuperNodeExecution",
-        "acc_node_compute": "aiuNodeCompute",
-        "acc_data_convert": "aiuDataConvert",
-        "acc_scheduler_init": "aiuInitScheduler",
-        "acc_virtaddr_create": "aiuCreateVirtualAddresses",
-        "acc_launch_schedule_compute": "aiuLaunchScheduleCompute",
-        "acc_schedule_wait": "aiuScheduleWait",
-        "acc_dma_prep": "aiuPrepareDMAs",
-        "acc_rdma_prep_sync": "aiuPrepareAndSyncRdma",
-        "acc_cache_clear": "aiuClearCache",
-        "acc_cache_preload": "aiuPreloadCache",
-        "acc_launch_compute_stream": "aiuLaunchComputeStream",
-        "acc_rdma_barrier1": "aiuRdmaBarrier1",
-        "acc_rdma_post_keys": "aiuPostRdmaKeys",
-        "acc_rdma_barrier2": "aiuRdmaBarrier2",
-        "acc_rdma_fetch_keys": "aiuFetchRdmaKeys",
-        "acc_rdma_update_cb": "aiuUpdateRdmaCBs",
-        "acc_rdma_barrier3": "aiuRdmaBarrier3",
-        "acc_rdma_check_deadlock": "aiuCheckRdmaDeadlock",
-        "acc_barrier": "is.name;[Bb]arrier:",
-        "acc_filetransfer_DtoF": "aiuFileTransferDtoF",
-        "acc_filetransfer_MtoF": "aiuFileTransferMtoF",
-        "acc_filetransfer_FtoD": "aiuFileTransferFtoD",
-        "acc_filetransfer_FtoM": "aiuFileTransferFtoM",
-        "acc_datatransfer_DtoH": "is.name;[Mm]emcpy \\(DtoH\\)",
-        "acc_datatransfer_HtoD": "is.name;[Mm]emcpy \\(HtoD\\)",
-        "acc_clock_calibration": "aiuClockCalibration",
-        "acc_compile_graph": "aiuCompileGraph",
-        "acc_category_kernel": "kernel",
-        "acc_category_runtime": "cuda_runtime",
-        "acc_compute_prep": "is.name;Cmpt Prep$",
-        "acc_kernel": "is.cat;kernel",
-        "acc_event_cat": "is.cat;gpu|kernel",
-        "acc_collective": "is.name;HCOLL",
-    }
-
-    def __new__(cls):
-        if not hasattr(cls, '_torch_dialect_instance'):
-            cls._torch_dialect_instance = super(InputDialectTORCH, cls).__new__(cls)
-            for c, e in cls._TORCH_DIALECT.items():
-                cls._torch_dialect_instance.add_category(c)
-                cls._torch_dialect_instance.register(c, e)
-        return cls._torch_dialect_instance
 
 
 class GlobalIngestData(object):
@@ -179,6 +59,15 @@ class GlobalIngestData(object):
         except KeyError:
             print(f"no jobmap entry for {jobhash}.")
             raise
+
+    @classmethod
+    def find_dialect(cls, jobhash: int) -> Optional[InputDialect]:
+        '''
+        like get_dialect(), but returns None for unknown jobs instead of raising
+        '''
+        if not cls._jobmap or jobhash not in cls._jobmap:
+            return None
+        return cls._jobmap[jobhash][1]
 
 
 class TraceWarning:
