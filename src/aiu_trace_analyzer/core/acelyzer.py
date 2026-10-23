@@ -778,10 +778,14 @@ class Acelyzer:
 
         # strict: accelerator events have no call/return relationship, so even a fully embedded
         # event is a data problem and not a legitimate nesting
+        duration_timestamp_ctx = verify_pipe.DurationTimestampVerificationContext()
         overlap_verification_ctx = verify_pipe.OverlapVerificationContext(strict=True)
         kernel_parent_ctx = verify_pipe.KernelParentVerificationContext()
 
         # register anything that verifies the raw/unsorted order of the input before this sort-stage
+        process.register_stage(
+            callback=verify_pipe.verify_duration_timestamp,
+            context=duration_timestamp_ctx)
         process.register_stage(callback=event_pipe.sort_events, context=event_pipe.EventSortingContext(
             event_types=None, sortkey=self._default_sort_ts_and_rev_dur, global_sort=True))
 

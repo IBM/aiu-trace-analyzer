@@ -181,6 +181,28 @@ warnings_to_test = [
 ]
 
 
+def test_verification_mode_preserves_negative_duration_event(json_input):
+    ingest = JsonFileEventTraceIngest(
+        source_uri=json_input,
+        verification_mode=True,
+    )
+    event = {
+        "name": "kernel",
+        "cat": "kernel",
+        "ph": "X",
+        "pid": 1,
+        "tid": 1,
+        "ts": 10.0,
+        "dur": -1.0,
+        "args": {},
+    }
+
+    result = ingest.sane_event(event)
+
+    assert result is event
+    assert ingest.warnings["negative_duration"].args_list["count"] == 0
+
+
 @pytest.mark.parametrize("warning_class, expected_text, count, ingester_class", warnings_to_test)
 def test_summary_warnings(warning_class, expected_text, count, ingester_class, json_input, capsys):
     # create obj for this test because we're testing __del__

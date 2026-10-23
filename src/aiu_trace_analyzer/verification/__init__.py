@@ -17,6 +17,7 @@ functions. For a minimal example of both, see verify.py.
 from aiu_trace_analyzer.verification.verify import VerificationContext
 from aiu_trace_analyzer.verification.kernel_parent_verify import KernelParentVerificationContext
 from aiu_trace_analyzer.verification.overlap_verify import OverlapVerificationContext
+from aiu_trace_analyzer.verification.duration_timestamp_verify import DurationTimestampVerificationContext
 
 # import the verification stage callbacks:
 from aiu_trace_analyzer.verification.verify import verify, verify_cleanup
@@ -25,4 +26,5 @@ from aiu_trace_analyzer.verification.kernel_parent_verify import (
     kernel_parent_verify
 )
 from aiu_trace_analyzer.verification.overlap_verify import verify_kernel_overlap
+from aiu_trace_analyzer.verification.duration_timestamp_verify import verify_duration_timestamp
 from aiu_trace_analyzer.verification.report import verification_result_filter
