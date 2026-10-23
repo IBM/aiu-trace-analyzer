@@ -1,5 +1,6 @@
 {
     "stages": [
+        {"verify_duration_timestamp": true},
         {"sort_events": true},
         {"verify_kernel_overlap": true},
         {"kernel_parent_collect": true},

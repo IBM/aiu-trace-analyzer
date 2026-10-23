@@ -364,6 +364,8 @@ class JsonEventTraceIngest(AbstractTraceIngest):
             return event
 
         if event["dur"] < 0.0:
+            if self.verification_mode:
+                return event
             self.issue_warning('negative_duration')
             return None
 
