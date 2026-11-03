@@ -5,36 +5,37 @@ import pytest
 
 from aiu_trace_analyzer.trace_view import MetaEvents, CompleteEvents
 from aiu_trace_analyzer.export.exporter import VerificationReportExporter
-from aiu_trace_analyzer.verification.report import (
-    VERIFICATION_RESULT_NAME,
+from aiu_trace_analyzer.types import (
+    TRACE_FINDING_EVENT_NAME,
     VERIFICATION_TEST_RESULT_NAME,
 )
 
 _NO_FILE = {"save_to_file": False}
+_TEST_NAME = "Unit Test Check"
+
+
+def _finding(finding, is_error=False, count=1, test=_TEST_NAME):
+    '''
+    a finding as AbstractContext emits it. `test` carries the provenance: findings of a verification
+    context name the test they belong to, findings of a regular processing stage do not.
+    '''
+    args = {"finding": finding, "is_error": is_error, "count": count,
+            "instances": [], "text": f"{finding}: {count}"}
+    if test is not None:
+        args["test"] = test
+    return MetaEvents(name=TRACE_FINDING_EVENT_NAME, args=args, ph="M", ts=0, pid=0)
 
 
 def _error_finding(finding="bad_thing", count=1):
-    return MetaEvents(
-        name=VERIFICATION_RESULT_NAME,
-        args={"finding": finding, "is_error": True, "count": count, "instances": []},
-        ph="M", ts=0, pid=0,
-    )
+    return _finding(finding, is_error=True, count=count)
 
 
 def _warning_finding(finding="odd_thing", count=1):
-    return MetaEvents(
-        name=VERIFICATION_RESULT_NAME,
-        args={"finding": finding, "is_error": False, "count": count, "instances": []},
-        ph="M", ts=0, pid=0,
-    )
+    return _finding(finding, is_error=False, count=count)
 
 
 def _passed_finding(finding="clean_check"):
-    return MetaEvents(
-        name=VERIFICATION_RESULT_NAME,
-        args={"finding": finding, "is_error": False, "count": 0, "instances": []},
-        ph="M", ts=0, pid=0,
-    )
+    return _finding(finding, is_error=False, count=0)
 
 
 def _test_result_event(test="My Check", result="pass"):
@@ -86,8 +87,48 @@ def test_e4_zero_count_finding_goes_to_passed(exporter):
     assert data["passed"][0]["finding"] == "clean_check"
 
 
+def test_e4b_advisory_finding_without_a_test_is_not_reported_as_passed(exporter):
+    '''
+    every context emits findings now, not only the verification ones. A quiet advisory warning of a
+    regular processing stage is not a check that passed, so it must not show up under 'passed'.
+    '''
+    exporter.export([_finding("epoch_start", count=0, test=None), _passed_finding()])
+
+    passed = exporter.get_data()["passed"]
+    assert [f["finding"] for f in passed] == ["clean_check"]
+
+
+def test_e4c_advisory_finding_that_fired_is_still_reported(exporter):
+    '''... but an advisory warning that did fire is worth reporting, provenance or not'''
+    exporter.export([_finding("zero_gap_time", count=4, test=None)])
+
+    data = exporter.get_data()
+    assert [f["finding"] for f in data["warnings"]] == ["zero_gap_time"]
+
+
+def test_e4d_repeated_finding_keeps_the_last_report(exporter):
+    '''a context attached to several stages reports the same finding once per stage'''
+    exporter.export([_warning_finding("odd_thing", count=2),
+                     _warning_finding("odd_thing", count=7)])
+
+    warnings = exporter.get_data()["warnings"]
+    assert len(warnings) == 1
+    assert warnings[0]["count"] == 7
+
+
 def test_e5_result_is_fail_when_has_errors(exporter):
     exporter.export([_error_finding(count=2)])
+    assert exporter.get_data()["result"] == "FAIL"
+
+
+def test_e5b_error_level_advisory_finding_also_fails_the_run(exporter):
+    '''
+    the fail policy is deliberately provenance-agnostic: an error-level finding that fired fails the
+    run even when it comes from a regular processing stage rather than from a verification check.
+    '''
+    exporter.export([_finding("ts_seq_err", is_error=True, count=1, test=None)])
+
+    assert exporter.has_errors is True
     assert exporter.get_data()["result"] == "FAIL"
 
 

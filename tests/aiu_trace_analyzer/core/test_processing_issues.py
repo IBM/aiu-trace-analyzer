@@ -6,7 +6,7 @@ import pytest
 
 from aiu_trace_analyzer.core.processing import EventProcessor
 from aiu_trace_analyzer.pipeline.context import AbstractContext
-from aiu_trace_analyzer.types import TraceWarning, TRACE_ISSUE_EVENT_NAME
+from aiu_trace_analyzer.types import TraceWarning, TRACE_FINDING_EVENT_NAME
 from aiu_trace_analyzer.export.exporter import JsonFileTraceExporter
 
 
@@ -36,17 +36,23 @@ def test_drain_emits_active_warning_as_meta_event(warned_context):
 
     drained = _processor_with(warned_context).drain()
 
-    issue_events = [e for e in drained if e.name == TRACE_ISSUE_EVENT_NAME]
+    issue_events = [e for e in drained if e.name == TRACE_FINDING_EVENT_NAME]
     assert len(issue_events) == 1
     assert issue_events[0].args == {"finding": "long_dur",
                                     "text": "OVC: Detected 3 long event(s).",
-                                    "is_error": False}
+                                    "is_error": False,
+                                    "count": 3,
+                                    "instances": []}
 
 
-def test_drain_emits_nothing_when_no_warning(warned_context):
+def test_drain_emits_the_finding_even_when_it_did_not_fire(warned_context):
+    # the finding is still reported, with a count of 0: that is what lets the verification report
+    # list a check as passed. The trace exporter is what drops it (see test_exporter.py).
     drained = _processor_with(warned_context).drain()
 
-    assert [e for e in drained if e.name == TRACE_ISSUE_EVENT_NAME] == []
+    issue_events = [e for e in drained if e.name == TRACE_FINDING_EVENT_NAME]
+    assert len(issue_events) == 1
+    assert issue_events[0].args["count"] == 0
 
 
 def test_warning_reaches_exporter_other_data(warned_context):
@@ -60,6 +66,7 @@ def test_warning_reaches_exporter_other_data(warned_context):
     assert output["otherData"]["warnings"] == [{
         "finding": "long_dur",
         "text": "OVC: Detected 3 long event(s).",
+        "count": 3,
     }]
     assert output["traceEvents"] == []
 
@@ -75,4 +82,4 @@ def test_drain_warning_bypasses_remaining_pipeline_stages(warned_context):
 
     drained = proc.drain()
 
-    assert [e for e in drained if e.name == TRACE_ISSUE_EVENT_NAME]
+    assert [e for e in drained if e.name == TRACE_FINDING_EVENT_NAME]
