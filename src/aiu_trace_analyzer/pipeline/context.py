@@ -1,7 +1,12 @@
 # Copyright 2024-2025 IBM Corporation
 
 import aiu_trace_analyzer.logger as aiulog
-from aiu_trace_analyzer.types import TraceEvent, TraceWarning
+from aiu_trace_analyzer.types import (
+    DiagnosticEvent,
+    TraceEvent,
+    TraceWarning,
+    TRACE_FINDING_EVENT_NAME,
+    VERIFICATION_TEST_RESULT_NAME)
 
 
 class AbstractContext:
@@ -52,6 +57,30 @@ class AbstractContext:
             if w.has_warning():
                 aiulog.log(aiulog.WARN, w)
 
+    def _emit_findings(self) -> list[TraceEvent]:
+        '''
+        Emit every warning of this context as a finding meta-event, so an exporter can turn it into
+        whatever its output format requires.
+
+        All warnings are emitted, including the ones that never fired: a finding with count == 0 is
+        what tells the verification report that a check ran and passed. Filtering is up to the
+        consumer - the trace exporter only keeps the ones that actually fired.
+        '''
+        return [
+            DiagnosticEvent({"ph": "M", "ts": 0, "pid": 0,
+                             "name": TRACE_FINDING_EVENT_NAME,
+                             "args": {**w.to_finding_args(), **self._finding_extra_args()}})
+            for w in self.warnings.values()
+        ]
+
+    def _finding_extra_args(self) -> dict:
+        '''
+        additional args to attach to every finding of this context. The base context has no extra
+        provenance to add; AbstractVerificationContext uses this to mark its findings as belonging
+        to a named test.
+        '''
+        return {}
+
     def add_warning(self, warning: TraceWarning):
         self.warnings[warning.get_name()] = warning
 
@@ -71,19 +100,49 @@ class AbstractContext:
         drain() needs to do any necessary processing of the buffered events and return anything of value as
         a list of events.
         Events are drained following the sequence of registered processing functions.
-        '''
-        return []
 
-    def _emit_verification_events(self) -> list[TraceEvent]:
-        return [
-            TraceEvent({"ph": "M", "ts": 0, "pid": 0,
-                        "name": "verification_data",
-                        "args": w.to_verification_event_args()})
-            for w in self.warnings.values()
-        ]
+        CONTRACT: this base implementation emits the accumulated warnings of the context.
+        Any override MUST chain to super().drain() (e.g. `return revents + super().drain()`),
+        otherwise the warnings of that context are silently dropped instead of being exported.
+        '''
+        if not self.is_enabled():
+            # a stage that was disabled by the profile has no findings to report: claiming its
+            # checks passed would be wrong, and its counters were never maintained either.
+            return []
+        return self._emit_findings()
+
+
+class AbstractVerificationContext(AbstractContext):
+    '''
+    Context of a verification stage.
+
+    Adds test identity on top of the plain warning accumulation: its findings are marked with the
+    name of the test they belong to, which is what distinguishes an actual check from an advisory
+    warning of a regular processing stage. On top of the findings it emits one test result event
+    per drain, the only event that reports whether the check ran at all.
+
+    Derived classes MUST set test_name: without it the report cannot attribute the findings, and a
+    check that reported nothing is indistinguishable from an advisory warning that stayed quiet.
+    '''
+    test_name: str = ""
+
+    def drain(self) -> list[TraceEvent]:
+        if not self.test_name:
+            aiulog.log(aiulog.ERROR,
+                       f"{type(self).__name__} is a verification context without a test_name."
+                       " Its findings cannot be attributed to a test and will not be reported"
+                       " as verified. Set the test_name class attribute.")
+        events = super().drain()
+        events.append(self._emit_test_result_event(self.test_name))
+        return events
+
+    def _finding_extra_args(self) -> dict:
+        # only a named test can claim its findings: an empty name would make them look verified
+        # while leaving the report unable to say by what
+        return {"test": self.test_name} if self.test_name else {}
 
     def _get_test_result_status(self) -> str:
-        if any(w.warn_level == aiulog.ERROR and w.has_warning()
+        if any(w.is_error and w.has_warning()
                for w in self.warnings.values()):
             return "fail"
         if any(w.has_warning() for w in self.warnings.values()):
@@ -91,17 +150,7 @@ class AbstractContext:
         return "pass"
 
     def _emit_test_result_event(self, test_name: str) -> TraceEvent:
-        return TraceEvent({"ph": "M", "ts": 0, "pid": 0,
-                           "name": "verification_test_result",
-                           "args": {"test": test_name,
-                                    "result": self._get_test_result_status()}})
-
-
-class AbstractVerificationContext(AbstractContext):
-    test_name: str = ""
-
-    def drain(self) -> list[TraceEvent]:
-        events = super().drain()
-        events += self._emit_verification_events()
-        events.append(self._emit_test_result_event(self.test_name))
-        return events
+        return DiagnosticEvent({"ph": "M", "ts": 0, "pid": 0,
+                                "name": VERIFICATION_TEST_RESULT_NAME,
+                                "args": {"test": test_name,
+                                         "result": self._get_test_result_status()}})

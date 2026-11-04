@@ -5,7 +5,7 @@ import aiu_trace_analyzer.logger as aiulog
 import aiu_trace_analyzer.trace_view as aiuev
 import aiu_trace_analyzer.pipeline.context as procCTX
 
-from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.types import DiagnosticEvent, TraceEvent
 from aiu_trace_analyzer.core.duplicate_hold import IntermediateDuplicateAndHoldContext, duplicate_and_hold
 from aiu_trace_analyzer.export.exporter import JsonFileTraceExporter
 from aiu_trace_analyzer.core.stage_profile import StageProfile, StageProfileChecker
@@ -81,6 +81,11 @@ class EventProcessor:
         # turn into a list, pre/post have do be able to expand single events into lists
         aiulog.log(aiulog.DEBUG, "Processing event:", event)
 
+        if isinstance(event, DiagnosticEvent):
+            output_event_list = self.convert_events([event])
+            self.event_count += len(output_event_list)
+            return output_event_list
+
         event_list = self.pre_process(event)
 
         output_event_list = self.convert_events(event_list)
@@ -143,4 +148,5 @@ class EventProcessor:
             # then process the events that came back using the remaining pre-processing hooks + pipeline
             for event in pending:
                 next_event_list += self.process(event)
+
         return next_event_list

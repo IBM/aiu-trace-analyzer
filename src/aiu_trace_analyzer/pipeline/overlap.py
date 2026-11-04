@@ -308,7 +308,7 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
             if self.phase == self._COLLECTION_PHASE:
                 self._collect_and_build_tid_space()
             # chain to the parent drain in both phases: it advances the two-phase state and
-            # propagates accumulated warnings as trace_issue events
+            # propagates accumulated warnings as trace_finding events
             return super().drain()
         else:
             revents = []
@@ -321,7 +321,7 @@ class OverlapDetectionContext(TwoPhaseWithBarrierContext):
                 revents += aq
             # these modes don't use the two-phase mechanism and are drained only once, so switch
             # to the application phase before chaining up to make the parent emit the accumulated
-            # warnings as trace_issue events (rather than deferring to a second drain that never comes)
+            # warnings as trace_finding events (rather than deferring to a second drain that never comes)
             self.phase = self._APPLICATION_PHASE
             return revents + super().drain()
 
