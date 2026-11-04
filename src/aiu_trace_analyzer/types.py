@@ -103,6 +103,9 @@ class GlobalIngestData(object):
         return cls._jobmap[jobhash][1]
 
 
+DEFAULT_MAX_WARNING_INSTANCES = 100
+
+
 class TraceWarning:
     """
     Keep track of warnings to allow accumulated warning at the end of a run
@@ -122,7 +125,8 @@ class TraceWarning:
         data:      dictionary with entries that match the text variables
         update_fn: functions to run when the update function is called with data
         autolog:   automatically print the warning at destruction time (default)
-        is_error:  print the summary warning as ERROR level and not as WARN (default)
+        is_error:      print the summary warning as ERROR level and not as WARN (default)
+        max_instances: maximum number of finding instances to retain
 
         Whenever a warning should be added:
 
@@ -145,7 +149,7 @@ class TraceWarning:
             update_fn: dict[str, callable] = {},
             auto_log: bool = True,
             is_error: bool = False,
-            max_instances: int = 100):
+            max_instances: int = DEFAULT_MAX_WARNING_INSTANCES):
         self.occurred = False
         self.name = name
         # format-string with {d[key]} placeholders

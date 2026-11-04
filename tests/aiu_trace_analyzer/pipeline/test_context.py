@@ -4,6 +4,7 @@ import pytest
 import math
 
 from aiu_trace_analyzer.types import (
+    DEFAULT_MAX_WARNING_INSTANCES,
     TraceWarning,
     TRACE_FINDING_EVENT_NAME,
     VERIFICATION_TEST_RESULT_NAME)
@@ -291,37 +292,34 @@ def test_w4_error_level_is_error_true(error_warning):
     assert args["is_error"] is True
 
 
-def test_w5_default_instance_limit_is_100(count_warning):
-    for i in range(101):
-        count_warning.add_instance({"index": i})
-
-    args = count_warning.to_finding_args()
-
-    assert len(args["instances"]) == 100
-    assert args["instances"][0] == {"index": 0}
-    assert args["instances"][-1] == {"index": 99}
-
-
-def test_w6_custom_instance_limit():
+@pytest.mark.parametrize(
+    "max_instances, total_instances",
+    [
+        (DEFAULT_MAX_WARNING_INSTANCES, DEFAULT_MAX_WARNING_INSTANCES + 1),
+        (2, 3),
+    ],
+)
+def test_w5_instance_limit(max_instances, total_instances):
     warning = TraceWarning(
         name="limited",
         text="Found {d[count]} issues",
         data={"count": 0},
         auto_log=False,
-        max_instances=2,
+        max_instances=max_instances,
     )
 
-    warning.add_instance({"index": 0})
-    warning.add_instance({"index": 1})
-    warning.add_instance({"index": 2})
+    for i in range(total_instances):
+        warning.add_instance({"index": i})
 
-    assert warning.to_finding_args()["instances"] == [
-        {"index": 0},
-        {"index": 1},
+    args = warning.to_finding_args()
+
+    assert len(args["instances"]) == max_instances
+    assert args["instances"] == [
+        {"index": i} for i in range(max_instances)
     ]
 
 
-def test_w7_record_updates_count_and_stores_instance(count_warning):
+def test_w6_record_updates_count_and_stores_instance(count_warning):
     count_warning.record({"index": 1})
 
     args = count_warning.to_finding_args()
@@ -330,43 +328,33 @@ def test_w7_record_updates_count_and_stores_instance(count_warning):
     assert args["instances"] == [{"index": 1}]
 
 
-def test_w8_record_keeps_counting_after_instance_limit():
+@pytest.mark.parametrize(
+    "max_instances, total_records",
+    [
+        (2, 3),
+        (0, 1),
+    ],
+)
+def test_w7_record_keeps_counting_after_instance_limit(
+        max_instances,
+        total_records):
     warning = TraceWarning(
         name="limited",
         text="Found {d[count]} issues",
         data={"count": 0},
         auto_log=False,
-        max_instances=2,
+        max_instances=max_instances,
     )
 
-    warning.record({"index": 0})
-    warning.record({"index": 1})
-    warning.record({"index": 2})
+    for i in range(total_records):
+        warning.record({"index": i})
 
     args = warning.to_finding_args()
 
-    assert args["count"] == 3
+    assert args["count"] == total_records
     assert args["instances"] == [
-        {"index": 0},
-        {"index": 1},
+        {"index": i} for i in range(min(max_instances, total_records))
     ]
-
-
-def test_w9_zero_instance_limit_still_counts():
-    warning = TraceWarning(
-        name="count_only",
-        text="Found {d[count]} issues",
-        data={"count": 0},
-        auto_log=False,
-        max_instances=0,
-    )
-
-    warning.record({"index": 0})
-
-    args = warning.to_finding_args()
-
-    assert args["count"] == 1
-    assert args["instances"] == []
 
 
 ###########################################################
