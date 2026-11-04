@@ -1,5 +1,6 @@
 # Copyright 2024-2025 IBM Corporation
 
+import math
 from enum import Enum, auto
 from typing import Optional
 
@@ -670,6 +671,19 @@ class CategoryTrackContext(AbstractHashQueueContext):
                 events.append(self._slice_event(rank, (start, end, name)))
         return events
 
+    @staticmethod
+    def _safe_dur(start: float, end: float) -> float:
+        """Duration rounded down, such that start + dur never exceeds end in float arithmetic.
+
+        Viewers compute ts + dur in doubles. At large ts the spacing of doubles is coarser than the
+        rounding digits, so a rounded dur can reach past the start of the next back-to-back slice.
+        """
+        dur = math.floor((end - start) * 10**_TS_DIGITS) / 10**_TS_DIGITS
+        # step by the spacing of doubles around end: a step of dur's own ulp would not change the sum
+        while dur > 0.0 and start + dur > end:
+            dur -= math.ulp(end)
+        return max(dur, 0.0)
+
     def _slice_event(self, rank: int, piece: _Slice) -> TraceEvent:
         start, end, name = piece
         # jobhash is kept so later stages can still resolve the dialect of these events
@@ -681,7 +695,7 @@ class CategoryTrackContext(AbstractHashQueueContext):
             "name": name,
             "cat": "category",
             "ts": start,
-            "dur": round(end - start, _TS_DIGITS),
+            "dur": self._safe_dur(start, end),
             "pid": CATEGORY_PID,
             "tid": rank,
             "args": args,

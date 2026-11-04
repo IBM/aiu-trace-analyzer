@@ -1,5 +1,7 @@
 # Copyright 2026 IBM Corporation
 
+import random
+
 import pytest
 
 from aiu_trace_analyzer.dialect import InputDialectFLEX, InputDialectTORCH
@@ -264,6 +266,23 @@ def test_category_track_rounds_boundaries_without_overlap():
         assert e["ts"] == round(e["ts"], 3) and e["dur"] == round(e["dur"], 3)
     # at ~1e12 us a double resolves only ~0.2 ns: compare the way a viewer sees it, rounded to ns
     assert round(slices[0]["ts"] + slices[0]["dur"], 3) <= slices[1]["ts"]
+
+
+@pytest.mark.parametrize("scale", [1e3, 1e6, 1e9, 1e12, 1.7e15])
+def test_slice_dur_never_reaches_past_end(scale):
+    # exact double arithmetic, as a viewer computes ts + dur: no slice may reach into its successor
+    rng = random.Random(int(scale))
+    for _ in range(5000):
+        start = round(rng.uniform(scale, 2 * scale), 3)
+        end = round(start + rng.uniform(0.001, 50.0), 3)
+        dur = CategoryTrackContext._safe_dur(start, end)
+        assert 0.0 <= dur <= end - start + 1e-3
+        assert start + dur <= end
+
+
+def test_slice_dur_is_rounded_down():
+    assert CategoryTrackContext._safe_dur(0.0, 1.0006) == 1.0
+    assert CategoryTrackContext._safe_dur(10.0, 10.0) == 0.0
 
 
 def test_category_track_drops_slices_vanishing_by_rounding():
