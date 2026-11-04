@@ -144,7 +144,8 @@ class TraceWarning:
             data: dict[str, any],
             update_fn: dict[str, callable] = {},
             auto_log: bool = True,
-            is_error: bool = False):
+            is_error: bool = False,
+            max_instances: int = 100):
         self.occurred = False
         self.name = name
         # format-string with {d[key]} placeholders
@@ -153,6 +154,7 @@ class TraceWarning:
         self.update_fn: dict[str, callable] = dict(update_fn.items())
         self.auto_log = auto_log
         self.is_error: bool = is_error
+        self.max_instances = max_instances
         self._instances: list = []
 
         text_keys = re.findall(r"{d\[([.\w]+)\]}", self.text)
@@ -219,7 +221,12 @@ class TraceWarning:
         return self.occurred
 
     def add_instance(self, data: dict) -> None:
-        self._instances.append(data)
+        if len(self._instances) < self.max_instances:
+            self._instances.append(data)
+
+    def record(self, data: dict) -> None:
+        self.update()
+        self.add_instance(data)
 
     def to_finding_args(self) -> dict:
         '''
