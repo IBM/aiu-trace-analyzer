@@ -103,6 +103,9 @@ class GlobalIngestData(object):
         return cls._jobmap[jobhash][1]
 
 
+DEFAULT_MAX_WARNING_INSTANCES = 100
+
+
 class TraceWarning:
     """
     Keep track of warnings to allow accumulated warning at the end of a run
@@ -122,7 +125,8 @@ class TraceWarning:
         data:      dictionary with entries that match the text variables
         update_fn: functions to run when the update function is called with data
         autolog:   automatically print the warning at destruction time (default)
-        is_error:  print the summary warning as ERROR level and not as WARN (default)
+        is_error:      print the summary warning as ERROR level and not as WARN (default)
+        max_instances: maximum number of finding instances to retain
 
         Whenever a warning should be added:
 
@@ -144,7 +148,8 @@ class TraceWarning:
             data: dict[str, any],
             update_fn: dict[str, callable] = {},
             auto_log: bool = True,
-            is_error: bool = False):
+            is_error: bool = False,
+            max_instances: int = DEFAULT_MAX_WARNING_INSTANCES):
         self.occurred = False
         self.name = name
         # format-string with {d[key]} placeholders
@@ -153,6 +158,7 @@ class TraceWarning:
         self.update_fn: dict[str, callable] = dict(update_fn.items())
         self.auto_log = auto_log
         self.is_error: bool = is_error
+        self.max_instances = max_instances
         self._instances: list = []
 
         text_keys = re.findall(r"{d\[([.\w]+)\]}", self.text)
@@ -219,7 +225,12 @@ class TraceWarning:
         return self.occurred
 
     def add_instance(self, data: dict) -> None:
-        self._instances.append(data)
+        if len(self._instances) < self.max_instances:
+            self._instances.append(data)
+
+    def record(self, data: dict) -> None:
+        self.update()
+        self.add_instance(data)
 
     def to_finding_args(self) -> dict:
         '''
