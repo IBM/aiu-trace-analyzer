@@ -552,6 +552,10 @@ class Acelyzer:
         if self._overlap_option_from_arg(args.overlap) == event_pipe.OverlapDetectionContext.OVERLAP_RESOLVE_ASYNC:
             process.register_stage(callback=event_pipe.remove_ids_from_name)
 
+        if os.path.isdir(args.compiler_info):
+            sdsc_bundle_ctx = event_pipe.SDSCBundleMatchContext(compiler_info=args.compiler_info)
+            process.register_stage(callback=event_pipe.sdsc_bundle_match, context=sdsc_bundle_ctx)
+
         # register pre-processing: mapping TID to human eye-friendly
         cid_mapping_ctx = event_pipe.TIDMappingContext(
             self.defaults["remap_size"],

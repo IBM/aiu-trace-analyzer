@@ -9,6 +9,7 @@
         {"normalize_phase2": true},
         {"event_sanity_checks": true},
         {"remove_ids_from_name": true},
+        {"sdsc_bundle_match": true},
         {"map_tid_to_range": true},
         {"cycle_count_to_wallclock": true},
         {"tighten_hts_by_instr_type": true},

@@ -14,6 +14,7 @@ from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 from aiu_trace_analyzer.pipeline.context import AbstractContext
 from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
 from aiu_trace_analyzer.pipeline.barrier import TwoPhaseWithBarrierContext
+from aiu_trace_analyzer.pipeline.sdsc_bundle import SDSCBundles, SDSCBundleMatchContext
 
 import pandas as pd
 
@@ -46,10 +47,14 @@ class KernelDetailsDB:
         self.db_url = db_url
         self.autopilot = autopilot
         try:
-            with open(self.db_url, 'r') as db:
+            with open(self.db_url, "r") as db:
                 self.data = json.load(db)
         except FileNotFoundError:
-            aiulog.log(aiulog.WARN, "APD: Unable to find an existing kernel db. Creating new at:", self.db_url)
+            aiulog.log(
+                aiulog.WARN,
+                "APD: Unable to find an existing kernel db. Creating new at:",
+                self.db_url,
+            )
             self.data = {}
         except IOError as e:
             aiulog.log(aiulog.ERROR, "APD: IO-Error. Cannot continue")
@@ -62,11 +67,17 @@ class KernelDetailsDB:
         if self.autopilot:
             return
         try:
-            with open(self.db_url, 'w') as db:
-                aiulog.log(aiulog.DEBUG, "APD: Exporting kernel detail db into:", self.db_url)
+            with open(self.db_url, "w") as db:
+                aiulog.log(
+                    aiulog.DEBUG, "APD: Exporting kernel detail db into:", self.db_url
+                )
                 json.dump(self.data, db)
         except FileNotFoundError:
-            aiulog.log(aiulog.ERROR, "APD: Failed to export/refresh kernel datail db into:", self.db_url)
+            aiulog.log(
+                aiulog.ERROR,
+                "APD: Failed to export/refresh kernel datail db into:",
+                self.db_url,
+            )
         except IOError as e:
             aiulog.log(aiulog.ERROR, "APD: IO-Error. Connot continue")
             raise e
@@ -78,19 +89,21 @@ class KernelDetailsDB:
         try:
             return self.data[hash]
         except KeyError:
-            aiulog.log(aiulog.WARN, "APD: Found no data from previous run with autopilot=0.")
+            aiulog.log(
+                aiulog.WARN, "APD: Found no data from previous run with autopilot=0."
+            )
             return AutopilotDetail()
 
 
-pd.set_option('display.max_rows', None)
-pd.set_option('display.max_columns', None)
-pd.set_option('display.width', None)
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", None)
 
 RCU_pt_util_counter_name = "PT Active"
 RCU_pt_util_counter_unit = "Percent"
 
 # for table fingerprint: include only event names that match this regex
-_fprint_event_filter = r'^.*'
+_fprint_event_filter = r"^.*"
 
 # default number of events for fingerprint of observed event stream
 _default_fprint_len = 30
@@ -105,22 +118,18 @@ _kernel_db_feature_implemented = False
 _kernel_event_name_postfix = " Cmpt Exec"
 
 
-class RCUTableFingerprint():
-    _separator = '_'
+class RCUTableFingerprint:
+    _separator = "_"
 
     def __init__(
-            self,
-            datalimit: int = -1,
-            event_filter: str = r'',
-            table_mode: str = "UNKN") -> None:
-        self.datalimit = datalimit if datalimit > 0 else 1 << 31   # yes, it's not really unlimited...
+        self, datalimit: int = -1, event_filter: str = r"", table_mode: str = "UNKN"
+    ) -> None:
+        self.datalimit = (
+            datalimit if datalimit > 0 else 1 << 31
+        )  # yes, it's not really unlimited...
         self.event_filter = re.compile(event_filter)
         self.table_mode = table_mode
-        self.sim_weights = {
-            "sequence": 0.5,
-            "tab_len": 0.5,
-            "total_time": 0.5
-            }
+        self.sim_weights = {"sequence": 0.5, "tab_len": 0.5, "total_time": 0.5}
         self.reset()
 
     def get(self) -> int:
@@ -130,7 +139,10 @@ class RCUTableFingerprint():
         return self.table_mode
 
     def add(self, data: str, time: float) -> None:
-        if self.dataitems < self.datalimit and self.event_filter.search(data) is not None:
+        if (
+            self.dataitems < self.datalimit
+            and self.event_filter.search(data) is not None
+        ):
             aiulog.log(aiulog.DEBUG, f"adding to FP: {data}, Hash: {hash(data)}")
             converted = self._data_conversion(data)
             self.fprint_data += f"{converted}{self._separator}"
@@ -168,43 +180,74 @@ class RCUTableFingerprint():
         """
         aiulog.log(aiulog.DEBUG, "FPRINT SIMILARITY: -----------------")
         # kernel sequence similarity
-        sim_val = self.sim_weights["sequence"] * (1.0 if other.fprint_data.find(self.fprint_data) != -1 else 0.5)
-        matched = "sub-sequence not found" if sim_val < self.sim_weights["sequence"] else "sub-sequence found"
+        sim_val = self.sim_weights["sequence"] * (
+            1.0 if other.fprint_data.find(self.fprint_data) != -1 else 0.5
+        )
+        matched = (
+            "sub-sequence not found"
+            if sim_val < self.sim_weights["sequence"]
+            else "sub-sequence found"
+        )
         aiulog.log(
-            aiulog.DEBUG, "   SIMVAL(sequence):",
-            f"{sim_val}  <- ({matched}, {other.fprint_data.find(self.fprint_data)})")
+            aiulog.DEBUG,
+            "   SIMVAL(sequence):",
+            f"{sim_val}  <- ({matched}, {other.fprint_data.find(self.fprint_data)})",
+        )
 
         # table-length similarity
         if self.dataitems > other.dataitems:
             aiulog.log(
-                aiulog.DEBUG, "   SIMVAL(tablelen):",
-                f"{0.0}  <- (events={self.dataitems} > table={other.dataitems})")
+                aiulog.DEBUG,
+                "   SIMVAL(tablelen):",
+                f"{0.0}  <- (events={self.dataitems} > table={other.dataitems})",
+            )
             return 0.0
 
         sim_val += self.sim_weights["tab_len"] * (self.dataitems / other.dataitems)
         aiulog.log(
-            aiulog.DEBUG, "   SIMVAL(tablelen):",
-            f"{sim_val}  <- ({self.dataitems} / {other.dataitems} = {self.dataitems / other.dataitems})")
+            aiulog.DEBUG,
+            "   SIMVAL(tablelen):",
+            f"{sim_val}  <- ({self.dataitems} / {other.dataitems} = {self.dataitems / other.dataitems})",
+        )
 
         # exclude table canditate if
         if other.totaltime > self.totaltime:
             aiulog.log(
-                aiulog.DEBUG, "   SIMVAL(totaltim):",
-                f"0.0  <- ({other.totaltime} / {self.totaltime} = {other.totaltime / self.totaltime})")
+                aiulog.DEBUG,
+                "   SIMVAL(totaltim):",
+                f"0.0  <- (table time {other.totaltime} > event time {self.totaltime})",
+            )
+            return 0.0
+
+        if other.dataitems == 0:
+            # empty table (e.g. no ideal-cycle entries found) cannot match anything
+            aiulog.log(
+                aiulog.DEBUG,
+                "   SIMVAL(tablelen):",
+                f"{0.0}  <- (table is empty, events={self.dataitems})",
+            )
             return 0.0
 
         # total-time similarity
         if isclose(self.totaltime, 0.0, abs_tol=1e-9):
             zero_match_factor = int(isclose(other.totaltime, 0.0, abs_tol=1e-9)) * 1.0
             sim_val += self.sim_weights["total_time"] * zero_match_factor
-        sim_val += self.sim_weights["total_time"] * (other.totaltime / self.totaltime)
-        aiulog.log(
-            aiulog.DEBUG, "   SIMVAL(totaltim):",
-            f"{sim_val}  <- ({other.totaltime} / {self.totaltime} = {other.totaltime / self.totaltime})")
+            aiulog.log(
+                aiulog.DEBUG, "   SIMVAL(totaltim):", f"{sim_val}  <- (zero event time)"
+            )
+        else:
+            sim_val += self.sim_weights["total_time"] * (
+                other.totaltime / self.totaltime
+            )
+            aiulog.log(
+                aiulog.DEBUG,
+                "   SIMVAL(totaltim):",
+                f"{sim_val}  <- ({other.totaltime} / {self.totaltime} = {other.totaltime / self.totaltime})",
+            )
         return sim_val
 
 
-class RCUKernelCategoryMap():
+class RCUKernelCategoryMap:
     def __init__(self) -> None:
         self.kernel_cat_map: dict[str, str] = {"other": "other"}
 
@@ -221,18 +264,22 @@ class RCUKernelCategoryMap():
             aiulog.log(
                 aiulog.WARN,
                 "UTL: Kernel->Category map already has an entry with different category:",
-                key, value, self.kernel_cat_map[key])
+                key,
+                value,
+                self.kernel_cat_map[key],
+            )
         return self.kernel_cat_map[key]
 
     def values(self):
         return self.kernel_cat_map.values()
 
 
-class RCUAutopilotCounter():
-    '''
+class RCUAutopilotCounter:
+    """
     This tracks the accumulated time for kernels that belong to the same job.
     With autopilot=on, there still can be multiple kernels if this is a multi-aiu trace.
-    '''
+    """
+
     def __init__(self, event: TraceEvent, ideal_dur: float) -> None:
         self.start = event["ts"]
         self.end = event["ts"] + event["dur"]
@@ -245,13 +292,22 @@ class RCUAutopilotCounter():
         self.accumulate_event_time = True
 
     def update(self, event: TraceEvent, ideal_dur: float) -> tuple[float, float]:
-        assert event["ts"] >= self.start, f"UTL: Event processing out-of-order: {self.start} <= {event}"
-        assert event["pid"] == self.pid, f"UTL: Event PID mismatch. Expected {self.pid}, event: {event}"
-        assert ideal_dur == self.ideal, f"UTL: Ideal duration mismatch. Expected {self.ideal}, got: {ideal_dur}"
+        assert event["ts"] >= self.start, (
+            f"UTL: Event processing out-of-order: {self.start} <= {event}"
+        )
+        assert event["pid"] == self.pid, (
+            f"UTL: Event PID mismatch. Expected {self.pid}, event: {event}"
+        )
+        assert ideal_dur == self.ideal, (
+            f"UTL: Ideal duration mismatch. Expected {self.ideal}, got: {ideal_dur}"
+        )
         if event["ts"] < self.end:
             # warning: overlapping kernel events?
-            aiulog.log(aiulog.WARN, "UTL: Overlapping kernel events detected. Overlap time[us]:",
-                       self.end - event["ts"])
+            aiulog.log(
+                aiulog.WARN,
+                "UTL: Overlapping kernel events detected. Overlap time[us]:",
+                self.end - event["ts"],
+            )
 
         self.start = min(self.start, event["ts"])
         self.end = max(self.end, event["ts"] + event["dur"])
@@ -271,31 +327,39 @@ class RCUAutopilotCounter():
             return 0.0
         return self.ideal / self.accum_time * 100.0
 
-    def create_counter_event(self, name: str, unit: str) -> tuple[TraceEvent, TraceEvent]:
+    def create_counter_event(
+        self, name: str, unit: str
+    ) -> tuple[TraceEvent, TraceEvent]:
         return (
-            TraceEvent({
-                "ph": "C",
-                "ts": self.start,
-                "pid": self.pid,
-                "name": name,
-                "args": {unit: self.compute_utilization()},
-            }),
-            TraceEvent({
-                "ph": "C",
-                "ts": self.end,
-                "pid": self.pid,
-                "name": name,
-                "args": {unit: 0.0}
-            })
+            TraceEvent(
+                {
+                    "ph": "C",
+                    "ts": self.start,
+                    "pid": self.pid,
+                    "name": name,
+                    "args": {unit: self.compute_utilization()},
+                }
+            ),
+            TraceEvent(
+                {
+                    "ph": "C",
+                    "ts": self.end,
+                    "pid": self.pid,
+                    "name": name,
+                    "args": {unit: 0.0},
+                }
+            ),
         )
 
 
-class RCUAutopilotRankJobTracker():
+class RCUAutopilotRankJobTracker:
     def __init__(self) -> None:
         self.counters: dict[int, RCUAutopilotCounter] = {}
         self.hash_tracker: dict[int, tuple[int, int]] = {}
 
-    def update(self, event: TraceEvent, ideal_dur: float, jobhash: int, rank: int) -> None:
+    def update(
+        self, event: TraceEvent, ideal_dur: float, jobhash: int, rank: int
+    ) -> None:
         if jobhash not in self.counters:
             self.counters[jobhash] = RCUAutopilotCounter(event, ideal_dur)
         else:
@@ -303,21 +367,26 @@ class RCUAutopilotRankJobTracker():
         self.job_tracking(jobhash, rank)
 
     def job_tracking(self, jobhash: int, rank: int) -> bool:
-        '''
+        """
         check/update the job tracking per rank
         Keep the previous tracked job as is
         Update the current pending job (if different from previous)
         Fails if previous and current are already different - needs the old job to be 'emitted'
-        '''
+        """
         if rank not in self.hash_tracker:
             self.hash_tracker[rank] = (jobhash, jobhash)
-        new_job = (jobhash != self.hash_tracker[rank][1])
-        assert not new_job or not self.new_job_pending(rank), f"UTL: new jobhash already in progress. {rank}:{jobhash}"
+        new_job = jobhash != self.hash_tracker[rank][1]
+        assert not new_job or not self.new_job_pending(rank), (
+            f"UTL: new jobhash already in progress. {rank}:{jobhash}"
+        )
         self.hash_tracker[rank] = (self.hash_tracker[rank][0], jobhash)
         return new_job
 
     def new_job_pending(self, rank: int) -> bool:
-        return rank in self.hash_tracker and self.hash_tracker[rank][0] != self.hash_tracker[rank][1]
+        return (
+            rank in self.hash_tracker
+            and self.hash_tracker[rank][0] != self.hash_tracker[rank][1]
+        )
 
     def get_completed(self) -> list[RCUAutopilotCounter]:
         rlist: list[RCUAutopilotCounter] = []
@@ -365,39 +434,41 @@ class RCUTableParseMode(Flag):
 
 
 class RCUUtilizationContext(AbstractContext, PipelineContextTool):
-
-    _start_pattern = re.compile(r' Ideal/Total Cycles ')
-    _end_pattern = re.compile(r'====== Perf Summary End ======')
-    _clock_scaling = re.compile(r'Ideal Clock Scaling:')
-    _data_pattern = re.compile(r'^[_\-a-zA-Z\d]+ +\d+ *$')
-    _ignore_pattern = re.compile(r'(Precompute|-LxPreload)')
-    _category_splitter = re.compile(r'(\-opCat|\-NA$)')
-    _autopilot_pattern = re.compile(r'DSM-AutoPilot BEGIN')
-    _iteration_mode_pattern = re.compile(r'^\s+(DECODING|PREFILL)\s+$')
+    _start_pattern = re.compile(r" Ideal/Total Cycles ")
+    _end_pattern = re.compile(r"====== Perf Summary End ======")
+    _clock_scaling = re.compile(r"Ideal Clock Scaling:")
+    _data_pattern = re.compile(r"^[_\-a-zA-Z\d]+ +\d+ *$")
+    _ignore_pattern = re.compile(r"(Precompute|-LxPreload)")
+    _category_splitter = re.compile(r"(\-opCat|\-NA$)")
+    _autopilot_pattern = re.compile(r"DSM-AutoPilot BEGIN")
+    _iteration_mode_pattern = re.compile(r"^\s+(DECODING|PREFILL)\s+$")
     _non_kernel_names = [""]
 
     _print_to_log = False
 
     def __init__(
-            self,
-            csv_fname: str,
-            soc_freq: float,
-            core_freq: float,
-            compiler_info: str = None,
-            kernel_db_url: str = "ai_kernel.db") -> None:
+        self,
+        csv_fname: str,
+        soc_freq: float,
+        core_freq: float,
+        compiler_info: str = None,
+        kernel_db_url: str = "ai_kernel.db",
+    ) -> None:
 
-        super().__init__(warnings=[
-            TraceWarning(
-                name="util_100",
-                text="UTL: Encountered {d[count]} Events with >100% utilization",
-                data={"count": 0}
-            ),
-            TraceWarning(
-                name="kernel_other",
-                text="UTL: Found {d[count]} Events without a matching kernel category and accounted for 'other'",
-                data={"count": 0}
-            )
-        ])
+        super().__init__(
+            warnings=[
+                TraceWarning(
+                    name="util_100",
+                    text="UTL: Encountered {d[count]} Events with >100% utilization",
+                    data={"count": 0},
+                ),
+                TraceWarning(
+                    name="kernel_other",
+                    text="UTL: Found {d[count]} Events without a matching kernel category and accounted for 'other'",
+                    data={"count": 0},
+                ),
+            ]
+        )
 
         self.autopilot = False
         self.csv_fname = self.generate_filename(csv_fname, "categories")
@@ -407,10 +478,14 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         self.multi_table = -1  # assume no multitable case
 
         # if scale factor is unknown, set to -1.0 to later identify cycles that need subsequent rescaling
-        self.scale_factor = soc_freq/core_freq
-        self.cycle_to_clock_factor = 1.0/core_freq
+        self.scale_factor = soc_freq / core_freq
+        self.cycle_to_clock_factor = 1.0 / core_freq
         self.unscaled = False
-        aiulog.log(aiulog.DEBUG, "UTL: Input Ideal Cycle To Clock factor", self.cycle_to_clock_factor)
+        aiulog.log(
+            aiulog.DEBUG,
+            "UTL: Input Ideal Cycle To Clock factor",
+            self.cycle_to_clock_factor,
+        )
         self.zero_counter_tracking = 0.0
 
         self.initialize_tables()
@@ -418,7 +493,10 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         try:
             if os.path.isfile(compiler_info):
                 # Workload is running on current stack
-                subdir, fpat = '/'.join(compiler_info.split('/')[:-1]), compiler_info.split('/')[-1]
+                subdir, fpat = (
+                    "/".join(compiler_info.split("/")[:-1]),
+                    compiler_info.split("/")[-1],
+                )
                 matches = list(pathlib.Path(subdir).rglob(fpat))
                 if not matches:
                     raise FileNotFoundError(f"No files matching pattern: {fpat}")
@@ -427,9 +505,13 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 # Workload is running on the Torch Spyre stack
                 self.extract_tables_from_inductor_dir(compiler_info)
             else:
-                raise ValueError(f"{compiler_info} Unrecognized compiler info file type. Expecting file or directory.")
+                raise ValueError(
+                    f"{compiler_info} Unrecognized compiler info file type. Expecting file or directory."
+                )
         except (FileNotFoundError, PermissionError, IndexError, TypeError) as e:
-            aiulog.log(aiulog.ERROR, "UTL: Unable to open/parse log file.", compiler_info, e)
+            aiulog.log(
+                aiulog.ERROR, "UTL: Unable to open/parse log file.", compiler_info, e
+            )
         except ValueError as e:
             aiulog.log(aiulog.ERROR, e)
 
@@ -442,20 +524,29 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             return
 
         if self.multi_table > 0:  # used as index, so 'n-1'
-            aiulog.log(aiulog.WARN, f"UTL: {len(self.fingerprints)}/{self.multi_table+1} unique",
-                       "tables with ideal cycles have been detected."
-                       " Utilization results should be inspected carefully!!!!")
+            aiulog.log(
+                aiulog.WARN,
+                f"UTL: {len(self.fingerprints)}/{self.multi_table + 1} unique",
+                "tables with ideal cycles have been detected."
+                " Utilization results should be inspected carefully!!!!",
+            )
         if self.unscaled:
-            aiulog.log(aiulog.WARN, "UTL: No ideal/real frequency unscaled (factor 1.0). "
-                       "Utilization might be based on undefined data.")
+            aiulog.log(
+                aiulog.WARN,
+                "UTL: No ideal/real frequency unscaled (factor 1.0). "
+                "Utilization might be based on undefined data.",
+            )
 
         # dealing with the kernel_db only makes sense if we detected any table at all
         if _kernel_db_feature_implemented and len(self.kernel_cycles):
             self.kernel_db = KernelDetailsDB(self.kernel_db_url, self.autopilot)
 
             if self.autopilot:
-                aiulog.log(aiulog.WARN, "UTL: Detected autopilot=1. "
-                           "PT-activity/categories data will be attempted to get from previous runs with AP=0")
+                aiulog.log(
+                    aiulog.WARN,
+                    "UTL: Detected autopilot=1. "
+                    "PT-activity/categories data will be attempted to get from previous runs with AP=0",
+                )
                 self.categories = {}  # not implemented or self.kernel_db.retrieve(self.table_hash)
             else:
                 self.kernel_db.insert(self.table_hash, self.categories)
@@ -464,7 +555,9 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             self.print_table_as_pd(self.categories)
 
     def initialize_tables(self) -> None:
-        self.kernel_cycles: dict[int, dict[str, int]] = {}  # tables indexed by fingerprint
+        self.kernel_cycles: dict[
+            int, dict[str, int]
+        ] = {}  # tables indexed by fingerprint
         self.categories = {}
         self.kernel_cat_map: dict[int, RCUKernelCategoryMap] = {}
         self.fingerprints: dict[int, RCUTableFingerprint] = {}
@@ -476,21 +569,28 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         fprint = RCUTableFingerprint(
             datalimit=_table_data_limit,
             event_filter=_fprint_event_filter,
-            table_mode=table_mode)  # use the first N (filtered) kernels as a fingerprint
-        self.kernel_cat_map[0] = RCUKernelCategoryMap()  # new kernel-cat-map at temporary fprint key
+            table_mode=table_mode,
+        )  # use the first N (filtered) kernels as a fingerprint
+        self.kernel_cat_map[0] = (
+            RCUKernelCategoryMap()
+        )  # new kernel-cat-map at temporary fprint key
         return current_table, fprint
 
-    def _finish_add_table(self, fprint: RCUTableFingerprint, table: dict[str, int]) -> None:
+    def _finish_add_table(
+        self, fprint: RCUTableFingerprint, table: dict[str, int]
+    ) -> None:
         fprint_key = fprint.get()
         if fprint_key in self.kernel_cycles:
             aiulog.log(
                 aiulog.WARN,
                 "UTL: Fingerprint of current table already exists for previous table. "
-                "Duplicated tables? Keeping the previous table only")
+                "Duplicated tables? Keeping the previous table only",
+            )
         else:
             aiulog.log(
                 aiulog.INFO,
-                f"UTL: Adding ideal cycles table ({fprint.get_table_mode()}) with fingerprint: {fprint_key}")
+                f"UTL: Adding ideal cycles table ({fprint.get_table_mode()}) with fingerprint: {fprint_key}",
+            )
             aiulog.log(aiulog.DEBUG, f"UTL:    TablefprintStr: {fprint.fprint_data}")
         self.fingerprints[fprint_key] = fprint
         self.kernel_cycles[fprint_key] = copy.deepcopy(table)
@@ -507,11 +607,13 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         else:
             return "Total"
 
-    def _add_kernel(self,
-                    kernel_and_cat: list[str],
-                    cycles: int,
-                    current_table: dict[str, int],
-                    fprint: RCUTableFingerprint) -> RCUTableFingerprint:
+    def _add_kernel(
+        self,
+        kernel_and_cat: list[str],
+        cycles: int,
+        current_table: dict[str, int],
+        fprint: RCUTableFingerprint,
+    ) -> RCUTableFingerprint:
         category = self._handle_category(kernel_and_cat)
         kernel = kernel_and_cat[0] + _kernel_event_name_postfix
         fprint.add(kernel, cycles * self.cycle_to_clock_factor)
@@ -521,67 +623,82 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             if cycles != 0:
                 current_table[kernel] = cycles
         elif cycles != current_table[kernel]:
-            aiulog.log(aiulog.WARN,
-                       "UTL: Kernel already has an entry with different cycle count:",
-                       kernel, cycles, current_table[kernel])
+            aiulog.log(
+                aiulog.WARN,
+                "UTL: Kernel already has an entry with different cycle count:",
+                kernel,
+                cycles,
+                current_table[kernel],
+            )
 
         if kernel not in self.kernel_cat_map[0]:
             self.kernel_cat_map[0].add(kernel, category)
         elif category != self.kernel_cat_map[0][kernel]:
-            aiulog.log(aiulog.WARN,
-                       "UTL: Kernel->Category map already has an entry with different category:",
-                       kernel, category, self.kernel_cat_map[0][kernel])
+            aiulog.log(
+                aiulog.WARN,
+                "UTL: Kernel->Category map already has an entry with different category:",
+                kernel,
+                category,
+                self.kernel_cat_map[0][kernel],
+            )
         return fprint
 
     def _detect_autopilot_line(self, line: str) -> bool:
         if self._autopilot_pattern.search(line):
             if not self.autopilot:
                 aiulog.log(
-                    aiulog.WARN, "UTL: Detected autopilot=on. Event categorization, cycles table matching"
-                    " and other utilization-related data might be unreliable.")
+                    aiulog.WARN,
+                    "UTL: Detected autopilot=on. Event categorization, cycles table matching"
+                    " and other utilization-related data might be unreliable.",
+                )
             self.autopilot = True
             return True
         return False
 
     def _check_obsolete_items(self, line: str) -> bool:
         if self._clock_scaling.search(line):
-            aiulog.log(aiulog.WARN,
-                       "UTL: Found obsolete 'Ideal Cycle Scaling' setting in logfile."
-                       " This setting is ignored. Use '--freq=<soc>:<core>'.")
+            aiulog.log(
+                aiulog.WARN,
+                "UTL: Found obsolete 'Ideal Cycle Scaling' setting in logfile."
+                " This setting is ignored. Use '--freq=<soc>:<core>'.",
+            )
             return True
         return False
 
     def _handle_iteration_mode(
-            self,
-            iter_mode: re.Match,
-            parse_mode: RCUTableParseMode) -> RCUTableParseMode:
+        self, iter_mode: re.Match, parse_mode: RCUTableParseMode
+    ) -> RCUTableParseMode:
         iteration_phase = iter_mode.group(1)
         parse_mode = parse_mode.update(iteration_phase)
-        aiulog.log(aiulog.DEBUG, "DETECTED:", iteration_phase, "table to be next. Parsemode:", parse_mode)
+        aiulog.log(
+            aiulog.DEBUG,
+            "DETECTED:",
+            iteration_phase,
+            "table to be next. Parsemode:",
+            parse_mode,
+        )
         return parse_mode
 
     def _handle_start_table(
-            self,
-            parse_mode: RCUTableParseMode) -> tuple[
-                RCUTableParseMode,
-                dict[str, int],
-                RCUTableFingerprint]:
+        self, parse_mode: RCUTableParseMode
+    ) -> tuple[RCUTableParseMode, dict[str, int], RCUTableFingerprint]:
         parse_mode |= RCUTableParseMode.ACTIVE_TABLE
         current_table, fprint = self._start_init_table(parse_mode.get_phase())
-        aiulog.log(aiulog.DEBUG,
-                   "UTL: Start of Ideal Cycle Count section detected. Parse mode:",
-                   parse_mode, self.multi_table)
+        aiulog.log(
+            aiulog.DEBUG,
+            "UTL: Start of Ideal Cycle Count section detected. Parse mode:",
+            parse_mode,
+            self.multi_table,
+        )
         return parse_mode, current_table, fprint
 
-    def _process_table_line(self,
-                            line: str,
-                            fprint: RCUTableFingerprint,
-                            parse_mode: RCUTableParseMode,
-                            current_table: dict[str, int]) -> tuple[
-                                bool,
-                                bool,
-                                dict[str, int],
-                                RCUTableFingerprint]:
+    def _process_table_line(
+        self,
+        line: str,
+        fprint: RCUTableFingerprint,
+        parse_mode: RCUTableParseMode,
+        current_table: dict[str, int],
+    ) -> tuple[bool, bool, dict[str, int], RCUTableFingerprint]:
 
         # detect autopilot on/off
         if self._detect_autopilot_line(line):
@@ -604,7 +721,10 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             return True, parse_mode, current_table, fprint
 
         if self._end_pattern.search(line):
-            aiulog.log(aiulog.DEBUG, "UTL: End of Ideal Cycle Count section detected. Stopping parse mode.")
+            aiulog.log(
+                aiulog.DEBUG,
+                "UTL: End of Ideal Cycle Count section detected. Stopping parse mode.",
+            )
             parse_mode &= ~RCUTableParseMode.ACTIVE_TABLE  # reset to scanning/no table
             self._finish_add_table(fprint, current_table)
             return True, parse_mode, current_table, fprint
@@ -614,11 +734,14 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             return True, parse_mode, current_table, fprint
 
         ldata = re.split(" +", line)
-        if len(ldata) < 2 or len(ldata) > 3:  # strange format includes newline as a 3rd column
+        if (
+            len(ldata) < 2 or len(ldata) > 3
+        ):  # strange format includes newline as a 3rd column
             aiulog.log(
                 aiulog.WARN,
                 "UTL: found data pattern line with more than 2 columns. Check patterns.",
-                ldata)
+                ldata,
+            )
             return True, parse_mode, current_table, fprint
 
         cycles = int(ldata[1])
@@ -637,45 +760,45 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         self.multi_table = -1  # track if there might be multiple tables in the log
         current_table = {}
         fprint = None  # fingerprints created when a new table is detected
-        with open(compiler_log, 'r') as cl:
-
+        with open(compiler_log, "r") as cl:
             for line in cl:
-                (
-                    keep_parsing,
-                    parse_mode,
-                    current_table,
-                    fprint
-                ) = self._process_table_line(line, fprint, parse_mode, current_table)
+                (keep_parsing, parse_mode, current_table, fprint) = (
+                    self._process_table_line(line, fprint, parse_mode, current_table)
+                )
                 if not keep_parsing:
                     break
 
     def extract_tables_from_inductor_dir(self, inductor_spyre_dir: str):
-        base = pathlib.Path(inductor_spyre_dir) / "inductor-spyre"
         current_table, fprint = self._start_init_table("UNKN")
-        for kernel_dir in sorted(base.iterdir()):
-            if not kernel_dir.is_dir():
-                continue
-            json_path = kernel_dir / "perf" / "ideal_cycles.json"
-            if not json_path.exists():
-                continue
-            kernel_name = kernel_dir.name + _kernel_event_name_postfix
-            with open(json_path) as f:
-                entries = json.load(f)
-            for entry in entries:
-                cycles = entry["ideal_cycles"]
-                category = entry["op_category"]
+
+        def process_sdsc_bundles(sdsc_bundle_dir_names: List, with_cache: bool):
+            for sdsc_bundle_dir_name in sdsc_bundle_dir_names:
+                cycles, category = SDSCBundleMatchContext.read_ideal_cycles(
+                    sdsc_bundle_dir_name, with_cache
+                )
+                kernel_name = sdsc_bundle_dir_name + _kernel_event_name_postfix
                 fprint.add(kernel_name, cycles * self.cycle_to_clock_factor)
                 if kernel_name not in current_table:
                     if cycles != 0:
                         current_table[kernel_name] = cycles
                 if kernel_name not in self.kernel_cat_map[0]:
                     self.kernel_cat_map[0].add(kernel_name, category)
+
+        process_sdsc_bundles(SDSCBundles.get_sdsc_bundle_dir_names(), with_cache=False)
+        process_sdsc_bundles(
+            SDSCBundles.get_cache_sdsc_bundle_dir_names(), with_cache=True
+        )
+
         self._finish_add_table(fprint, current_table)
 
     @staticmethod
     def _compute_row_stats(dur, total, ideal, ideal_total):
         dur_frac = 0 if isclose(total, 0.0, abs_tol=1e-9) else round(dur / total, 4)
-        ideal_frac = 0 if isclose(ideal_total, 0.0, abs_tol=1e-9) else round(ideal / ideal_total, 4)
+        ideal_frac = (
+            0
+            if isclose(ideal_total, 0.0, abs_tol=1e-9)
+            else round(ideal / ideal_total, 4)
+        )
         pt_util = 0 if isclose(dur, 0.0, abs_tol=1e-9) else round(ideal / dur, 4)
         return dur_frac, ideal_frac, pt_util
 
@@ -697,8 +820,18 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                     the accumulated observed-time of kernels in the same category.
         """
 
-        title_row = ["Pid", "Phase", "Category", "Kernel_Time", "Frac_Time", "Calls",
-                     "Ideal_Time", "Ideal_Cyc", "Frac_Ideal", "PT_Util"]
+        title_row = [
+            "Pid",
+            "Phase",
+            "Category",
+            "Kernel_Time",
+            "Frac_Time",
+            "Calls",
+            "Ideal_Time",
+            "Ideal_Cyc",
+            "Frac_Ideal",
+            "PT_Util",
+        ]
         aiulog.log(aiulog.DEBUG, "UTL: category title_row: ", title_row)
 
         list_of_list = []
@@ -710,7 +843,9 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             try:
                 phase = self.fingerprints[fp_key].get_table_mode()
             except KeyError:
-                aiulog.log(aiulog.WARN, "UTL: Unexpected entry in category tables", fp_key)
+                aiulog.log(
+                    aiulog.WARN, "UTL: Unexpected entry in category tables", fp_key
+                )
                 phase = "UNKN"
             total = data["Total"][0]
             ideal_total = data["Total"][1]
@@ -719,34 +854,62 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
                 ideal_cyc = int(ideal / abs(self.cycle_to_clock_factor))
 
                 # prevent div-by-zero exception
-                dur_frac, ideal_frac, pt_util = RCUUtilizationContext._compute_row_stats(dur, total, ideal, ideal_total)
+                dur_frac, ideal_frac, pt_util = (
+                    RCUUtilizationContext._compute_row_stats(
+                        dur, total, ideal, ideal_total
+                    )
+                )
 
                 # note: to sync the columns of value_row with title_row
-                value_row = [pid, phase, k, dur, dur_frac, calls, round(ideal, 4), ideal_cyc, ideal_frac, pt_util]
+                value_row = [
+                    pid,
+                    phase,
+                    k,
+                    dur,
+                    dur_frac,
+                    calls,
+                    round(ideal, 4),
+                    ideal_cyc,
+                    ideal_frac,
+                    pt_util,
+                ]
                 list_of_list.append(value_row)
 
                 aiulog.log(aiulog.DEBUG, "UTL: category value_row: ", value_row)
 
         # the sorting places the "Total" row to the last of each section (section per pid) of the table.
         df = pd.DataFrame(list_of_list, columns=title_row)
-        sorted_df = df.sort_values([title_row[0], title_row[1], title_row[3]],
-                                   kind='stable', inplace=False, ignore_index=True)
+        sorted_df = df.sort_values(
+            [title_row[0], title_row[1], title_row[3]],
+            kind="stable",
+            inplace=False,
+            ignore_index=True,
+        )
 
-        sorted_df.to_csv(self.csv_fname, index=False, header=True)                   # dump to CSV file
-        print(sorted_df.to_string(index=False), file=open(self.tab_fname, 'w'))    # dump to TXT file
+        sorted_df.to_csv(self.csv_fname, index=False, header=True)  # dump to CSV file
+        print(
+            sorted_df.to_string(index=False), file=open(self.tab_fname, "w")
+        )  # dump to TXT file
 
-        aiulog.log(aiulog.INFO, "UTL: category table(s) created as CSV:", self.csv_fname)
-        aiulog.log(aiulog.INFO, "UTL: category table(s) created as TXT:", self.tab_fname)
+        aiulog.log(
+            aiulog.INFO, "UTL: category table(s) created as CSV:", self.csv_fname
+        )
+        aiulog.log(
+            aiulog.INFO, "UTL: category table(s) created as TXT:", self.tab_fname
+        )
 
     # if there's no category table for the pid, create a new one from the known category keys
     def set_categories_for_pid(self, pid, fprint) -> None:
-        cat_hash = hash(fprint+pid)
+        cat_hash = hash(fprint + pid)
         if cat_hash in self.categories:
             return
         else:
             aiulog.log(aiulog.DEBUG, "UTL: Creating new categories table for", cat_hash)
             # always have the StcdpHbm category
-            self.categories[cat_hash] = {"Total": (0.0, 0.0, 0), "StcdpHbm": (0.0, 0.0, 0)}
+            self.categories[cat_hash] = {
+                "Total": (0.0, 0.0, 0),
+                "StcdpHbm": (0.0, 0.0, 0),
+            }
             self.hash_to_pid[cat_hash] = (pid, fprint)
 
         for cat in self.kernel_cat_map[fprint].values():
@@ -760,9 +923,16 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             return 0
 
     def accumulate_categories(self, pid, kernel, ideal_dur, duration, fprint):
-        if kernel not in self.kernel_cat_map[fprint]:
-            self.issue_warning("kernel_other")
-            kernel = "other"
+        try:
+            if kernel not in self.kernel_cat_map[fprint]:
+                self.issue_warning("kernel_other")
+                kernel = "other"
+        except KeyError:
+            aiulog.log(
+                aiulog.DEBUG,
+                f"UTL: No kernel category matching the fingerprint {fprint}:",
+            )
+            return
 
         # ideal duration cannot be longer than actual duration
         # removing this item from accumulating in category
@@ -770,36 +940,48 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
         if ideal_dur > duration:
             ideal_dur = 0.0
 
-        cat_hash = hash(fprint+pid)
+        cat_hash = hash(fprint + pid)
         cat = self.kernel_cat_map[fprint][kernel]
         self.set_categories_for_pid(pid, fprint)
-        aiulog.log(aiulog.TRACE, "UTL: ", kernel, cat, duration, ideal_dur, self.categories[cat_hash][cat])
+        aiulog.log(
+            aiulog.TRACE,
+            "UTL: ",
+            kernel,
+            cat,
+            duration,
+            ideal_dur,
+            self.categories[cat_hash][cat],
+        )
 
         dur, i_dur, cnt = self.categories[cat_hash][cat]
-        self.categories[cat_hash][cat] = (dur+duration, i_dur+ideal_dur, cnt+1)
+        self.categories[cat_hash][cat] = (dur + duration, i_dur + ideal_dur, cnt + 1)
 
         dur, i_dur, cnt = self.categories[cat_hash]["Total"]
-        self.categories[cat_hash]["Total"] = (dur+duration, i_dur+ideal_dur, cnt+1)
+        self.categories[cat_hash]["Total"] = (
+            dur + duration,
+            i_dur + ideal_dur,
+            cnt + 1,
+        )
         return cat
 
-    def _add_final_zero_event(self, pending_zero: TraceEvent, final: bool = False) -> list[TraceEvent]:
+    def _add_final_zero_event(
+        self, pending_zero: TraceEvent, final: bool = False
+    ) -> list[TraceEvent]:
         return [pending_zero] if final else []
 
     def handle_counter_overlap(
-            self,
-            counter: TraceEvent,
-            trailing_zero: TraceEvent,
-            final: bool = False) -> list[TraceEvent]:
-        '''
+        self, counter: TraceEvent, trailing_zero: TraceEvent, final: bool = False
+    ) -> list[TraceEvent]:
+        """
         Expects a counter with utilization value and a corresponding zero-event to close the span.
         Returns a list of events based on previously tracked zero events.
          * regular: updates the zero_counter_tracking and returns an updated trailing zero-event for
            the previous counter plus the current counter.
          * if there's any overlap, the zero event (or both) are discarded and the tracking is updated as needed
          * if final is True, another trailing zero-event is created at the new self.zero_counter_tracking
-        '''
+        """
         new_end = trailing_zero["ts"]
-        has_pending_zero = (self.zero_counter_tracking > 0.0)
+        has_pending_zero = self.zero_counter_tracking > 0.0
 
         # check for unexpected overlap
         if counter["ts"] <= self.zero_counter_tracking:
@@ -807,12 +989,16 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
             if new_end < new_start:
                 # current counter is embedded in previously tracked event
                 aiulog.log(
-                    aiulog.WARN, "UTL: Counter embedding detected. Dropping embedded event."
-                    "This is not technically possible and indicates a problem with the trace file.")
+                    aiulog.WARN,
+                    "UTL: Counter embedding detected. Dropping embedded event."
+                    "This is not technically possible and indicates a problem with the trace file.",
+                )
                 return []  # dropping embedded counter
 
             self.zero_counter_tracking = new_end
-            counter["ts"] = new_start  # push start of counter to end of previously tracked event
+            counter["ts"] = (
+                new_start  # push start of counter to end of previously tracked event
+            )
             return [counter] + self._add_final_zero_event(trailing_zero, final)
 
         # kind of the else branch as long as ^^^ returns
@@ -826,7 +1012,9 @@ class RCUUtilizationContext(AbstractContext, PipelineContextTool):
 
         if final:
             # if there was a pending zero, we need to create a copy for the final event
-            final_zero = copy.deepcopy(trailing_zero) if has_pending_zero else trailing_zero
+            final_zero = (
+                copy.deepcopy(trailing_zero) if has_pending_zero else trailing_zero
+            )
             final_zero["ts"] = new_end
             revents.append(final_zero)
 
@@ -845,55 +1033,93 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
     _similarity_tolerance = 0.2
 
     def __init__(
-            self,
-            csv_fname: str,
-            soc_freq: float,
-            core_freq: float,
-            compiler_info: str = None) -> None:
+        self,
+        csv_fname: str,
+        soc_freq: float,
+        core_freq: float,
+        compiler_info: str = None,
+    ) -> None:
 
-        super().__init__(warnings=[
-            # count the number of events with >100% utilization (indication of table mismatch)
-            TraceWarning(
-                name="util_100",
-                text="UTL: Encountered {d[count]} Events with >100% utilization",
-                data={"count": 0}
-            ),
-            # count the number of events where no corresponding table/fingerprint was found
-            TraceWarning(
-                name="kernel_nomatch",
-                text="UTL: No matching Ideal Cycles table found for {d[count]} "
-                     "Events. This might indicate a wrong frequency setting.",
-                data={"count": 0}
-            ),
-            # count jobs with uncertain table match
-            TraceWarning(
-                name="uncertain_match",
-                text="UTL: Detected uncertain Ideal Cycles table match for {d[count]} "
-                     "jobs: {d[joblist]}",
-                data={"count": 0, "joblist": set()},
-                update_fn={"count": int.__add__, "joblist": set.union}
-            ),
-            # count similarity computation problems
-            TraceWarning(
-                name="similarity_error",
-                text="UTL: Found {d[count]} errors while computing similarity (divide by zero)."
-                     " This indicates a data problem.",
-                data={"count": 0},
-                is_error=True
-            )
-        ])
+        super().__init__(
+            warnings=[
+                # count the number of events with >100% utilization (indication of table mismatch)
+                TraceWarning(
+                    name="util_100",
+                    text="UTL: Encountered {d[count]} Events with >100% utilization",
+                    data={"count": 0},
+                ),
+                # count the number of events where no corresponding table/fingerprint was found
+                TraceWarning(
+                    name="kernel_nomatch",
+                    text="UTL: No matching Ideal Cycles table found for {d[count]} "
+                    "Events. This might indicate a wrong frequency setting.",
+                    data={"count": 0},
+                ),
+                # count jobs with uncertain table match
+                TraceWarning(
+                    name="uncertain_match",
+                    text="UTL: Detected uncertain Ideal Cycles table match for {d[count]} "
+                    "jobs: {d[joblist]}",
+                    data={"count": 0, "joblist": set()},
+                    update_fn={"count": int.__add__, "joblist": set.union},
+                ),
+                # count similarity computation problems
+                TraceWarning(
+                    name="similarity_error",
+                    text="UTL: Found {d[count]} errors while computing similarity (divide by zero)."
+                    " This indicates a data problem.",
+                    data={"count": 0},
+                    is_error=True,
+                ),
+            ]
+        )
 
+        self.rcuctx: dict[int, RCUUtilizationContext] = {}
+        self.fingerprints: dict[
+            int, RCUTableFingerprint
+        ] = {}  # fingerprints per job/file
+
+        # Check if the compiler_info is a directory or file(s)
+        if compiler_info and os.path.isdir(compiler_info):
+            # If it is a directory and run it for the torch-spyre stack
+            self._parse_torch_spyre_stack(compiler_info, csv_fname, soc_freq, core_freq)
+
+        else:
+            # Otherwise, assume it is a file or a comma-separated list of files and run it for the old stack
+            self._parse_current_stack(compiler_info, csv_fname, soc_freq, core_freq)
+
+    def _parse_torch_spyre_stack(
+        self, compiler_info: str, csv_fname: str, soc_freq: float, core_freq: float
+    ) -> None:
+        self.stack = "torch-spyre"
+        self.rank_factor = 0
+        self.rank = 0
+        csv_basename = csv_fname
+
+        self.rcuctx[self.rank] = RCUUtilizationContext(
+            csv_fname=csv_basename,
+            soc_freq=soc_freq,
+            core_freq=core_freq,
+            compiler_info=compiler_info,
+        )
+
+        self.counters = RCUAutopilotRankJobTracker()
+
+    def _parse_current_stack(
+        self, compiler_info: str, csv_fname: str, soc_freq: float, core_freq: float
+    ) -> None:
+        self.stack = "sendnn"
         log_list = compiler_info.split(",")
-        self.multi_log = (len(log_list) > 1)
-        self.fingerprints: dict[int, RCUTableFingerprint] = {}   # fingerprints per job/file
+        self.multi_log = len(log_list) > 1
         if self.multi_log:
-            aiulog.log(aiulog.INFO, "UTL: Multi-AIU logs provided. Entries:", len(log_list))
+            aiulog.log(
+                aiulog.INFO, "UTL: Multi-AIU logs provided. Entries:", len(log_list)
+            )
 
         # event rank will be multiplied by this factor to make the key for the correct rcuctx
         # in single-log case: will turn everything into zero, otherwise use event rank
         self.rank_factor = 1 if self.multi_log else 0
 
-        self.rcuctx: dict[int, RCUUtilizationContext] = {}
         for rank, log in enumerate(log_list):
             aiulog.log(aiulog.DEBUG, "UTL: Building kernel table for", rank)
             if self.multi_log:
@@ -904,7 +1130,8 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
                 csv_fname=csv_basename,
                 soc_freq=soc_freq,
                 core_freq=core_freq,
-                compiler_info=log)
+                compiler_info=log,
+            )
 
         self.counters = RCUAutopilotRankJobTracker()
 
@@ -918,12 +1145,20 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         rname = event["name"]
         rank = event["pid"] * self.rank_factor
 
-        if self.rcuctx[rank].autopilot:
-            rname = self._total_cycles_kernel_name
+        if self.stack == "sendnn":
+            if self.rcuctx[rank].autopilot:
+                rname = self._total_cycles_kernel_name
 
-        # if a fn_idx was removed from the event name, we have to bring it back in to match the ideal cycles table entry
-        if "[N]" in rname and "args" in event and "fn_idx" in event["args"]:
-            rname = self._name_converter.sub(str(event["args"]["fn_idx"]), event["name"], count=1)
+            # if a fn_idx was removed from the event name, we have to bring it back in to match the ideal cycles table entry
+            if "[N]" in rname and "args" in event and "fn_idx" in event["args"]:
+                rname = self._name_converter.sub(
+                    str(event["args"]["fn_idx"]), event["name"], count=1
+                )
+
+        elif self.stack == "torch-spyre":
+            rname = SDSCBundles.get_sdsc_bundle_event_match_dir(
+                event["args"]["orig_name"]
+            )
 
         if not rname.endswith(_kernel_event_name_postfix):
             rname += _kernel_event_name_postfix
@@ -932,15 +1167,22 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
 
     def get_ideal_dur(self, kernel: str, pid: int, fingerprint: int) -> float:
         rank = pid * self.rank_factor
-        return self.rcuctx[rank].get_cycles(kernel, fingerprint) * self.rcuctx[rank].cycle_to_clock_factor
+        return (
+            self.rcuctx[rank].get_cycles(kernel, fingerprint)
+            * self.rcuctx[rank].cycle_to_clock_factor
+        )
 
     def accumulate_categories(self, pid, kernel, ideal_dur, duration, fprint):
         rank = pid * self.rank_factor
-        return self.rcuctx[rank].accumulate_categories(pid, kernel, ideal_dur, duration, fprint)
+        return self.rcuctx[rank].accumulate_categories(
+            pid, kernel, ideal_dur, duration, fprint
+        )
 
     def fingerprint_add(self, job: int, kernel: str, time: float) -> None:
         if job not in self.fingerprints:
-            self.fingerprints[job] = RCUTableFingerprint(_default_fprint_len, event_filter=_fprint_event_filter)
+            self.fingerprints[job] = RCUTableFingerprint(
+                _default_fprint_len, event_filter=_fprint_event_filter
+            )
 
         self.fingerprints[job].add(kernel, time)
 
@@ -949,7 +1191,9 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
 
     # build a counter and a zero event
     # ignores input utilization if autopilot is enabled (separate computation, delayed counter creation)
-    def make_utilization_event(self, event: TraceEvent, utilization: float, jobhash: int) -> list[TraceEvent]:
+    def make_utilization_event(
+        self, event: TraceEvent, utilization: float, jobhash: int
+    ) -> list[TraceEvent]:
         revents: list[TraceEvent] = []
         log_str_100 = ""
         rank = event["pid"] * self.rank_factor
@@ -958,47 +1202,71 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             ideal = self.get_ideal_dur(
                 self._total_cycles_kernel_name + _kernel_event_name_postfix,
                 event["pid"],
-                self.fingerprint_get(jobhash))
+                self.fingerprint_get(jobhash),
+            )
             self.counters.update(event, ideal, jobhash, rank)
             counters = self.counters.get_completed()
             for counter in counters:
                 new_event, pending_zero = counter.create_counter_event(
-                    RCU_pt_util_counter_name, RCU_pt_util_counter_unit)
-                revents += self.rcuctx[rank].handle_counter_overlap(new_event, pending_zero)
+                    RCU_pt_util_counter_name, RCU_pt_util_counter_unit
+                )
+                revents += self.rcuctx[rank].handle_counter_overlap(
+                    new_event, pending_zero
+                )
 
         else:
             # TODO: this should be refactored to maybe use RCUAutopilotCounter, too
-            revents = [TraceEvent({
-                    "ph": "C",
-                    "ts": event["ts"],
-                    "pid": event["pid"],
-                    "name": RCU_pt_util_counter_name,
-                    "args": {RCU_pt_util_counter_unit: utilization},
-                    "dur": event["dur"]  # temporary duration in cycles- remove before viz
-                })]
-            if utilization > 0.0:   # add a reset-to-zero event only if util is non-zero
-                revents.append(TraceEvent({
-                    "ph": "C",
-                    "ts": event["ts"]+event["dur"],
-                    "pid": event["pid"],
-                    "name": RCU_pt_util_counter_name,
-                    "args": {RCU_pt_util_counter_unit: 0.0}
-                }))
-            log_str_100 = f"(pid, utilization, event) {event['pid']}, {utilization}, {event}"
+            revents = [
+                TraceEvent(
+                    {
+                        "ph": "C",
+                        "ts": event["ts"],
+                        "pid": event["pid"],
+                        "name": RCU_pt_util_counter_name,
+                        "args": {RCU_pt_util_counter_unit: utilization},
+                        "dur": event[
+                            "dur"
+                        ],  # temporary duration in cycles- remove before viz
+                    }
+                )
+            ]
+            if utilization > 0.0:  # add a reset-to-zero event only if util is non-zero
+                revents.append(
+                    TraceEvent(
+                        {
+                            "ph": "C",
+                            "ts": event["ts"] + event["dur"],
+                            "pid": event["pid"],
+                            "name": RCU_pt_util_counter_name,
+                            "args": {RCU_pt_util_counter_unit: 0.0},
+                        }
+                    )
+                )
+            log_str_100 = (
+                f"(pid, utilization, event) {event['pid']}, {utilization}, {event}"
+            )
 
         revents = self._check_counter_sanity(revents, log_str_100)
 
         return revents
 
-    def _check_counter_sanity(self, counters: list[TraceEvent], log_str: str) -> list[TraceEvent]:
+    def _check_counter_sanity(
+        self, counters: list[TraceEvent], log_str: str
+    ) -> list[TraceEvent]:
         # check sanity of generated counter events
         for idx, counter in enumerate(counters):
             if counter["args"][RCU_pt_util_counter_unit] > 100.0:
-                aiulog.log(aiulog.WARN, "UTL: Event with +100% utilization. "
-                           "This could indicate a problem with table fingerprinting: ",
-                           log_str, counter)
+                aiulog.log(
+                    aiulog.WARN,
+                    "UTL: Event with +100% utilization. "
+                    "This could indicate a problem with table fingerprinting: ",
+                    log_str,
+                    counter,
+                )
                 self.issue_warning("util_100")
-                counters[idx]["args"][RCU_pt_util_counter_unit] = self._utilization_fallback_value
+                counters[idx]["args"][RCU_pt_util_counter_unit] = (
+                    self._utilization_fallback_value
+                )
         return counters
 
     def update_fprint_matches(self):
@@ -1007,7 +1275,9 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             for table in self.rcuctx.values():
                 for fprint in table.fingerprints.values():
                     try:
-                        matching_fprints.append((fprint, event_fprint.similarity(fprint)))
+                        matching_fprints.append(
+                            (fprint, event_fprint.similarity(fprint))
+                        )
                     except ZeroDivisionError:
                         self.issue_warning("similarity_error")
 
@@ -1018,14 +1288,24 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
             job_fprint, similar = matching_fprints[0]
             if similar < 0.8:
                 # warn about low similarity value
-                self.warnings["uncertain_match"].update({"count": 1, "joblist": [f"{job}:{similar:.2}"]})
-            elif len(matching_fprints) > 1 and isclose(similar,
-                                                       matching_fprints[1][1],
-                                                       abs_tol=self._similarity_tolerance):
+                self.warnings["uncertain_match"].update(
+                    {"count": 1, "joblist": [f"{job}:{similar:.2}"]}
+                )
+            elif len(matching_fprints) > 1 and isclose(
+                similar, matching_fprints[1][1], abs_tol=self._similarity_tolerance
+            ):
                 # at least 2 tables with the same best similarity value (spit a warning)
-                self.warnings["uncertain_match"].update({"count": 1, "joblist": [f"{job}:mm={len(matching_fprints)}"]})
+                self.warnings["uncertain_match"].update(
+                    {"count": 1, "joblist": [f"{job}:mm={len(matching_fprints)}"]}
+                )
 
-            aiulog.log(aiulog.DEBUG, "UTL: (New) table-fprint for job", job, "to", job_fprint.get())
+            aiulog.log(
+                aiulog.DEBUG,
+                "UTL: (New) table-fprint for job",
+                job,
+                "to",
+                job_fprint.get(),
+            )
             self.fingerprints[job] = job_fprint
 
     def drain(self) -> list[TraceEvent]:
@@ -1034,9 +1314,13 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
 
         revents = []
         for counter in self.counters.get_all():
-            new_event, pending_zero = counter.create_counter_event(RCU_pt_util_counter_name, RCU_pt_util_counter_unit)
+            new_event, pending_zero = counter.create_counter_event(
+                RCU_pt_util_counter_name, RCU_pt_util_counter_unit
+            )
             rank = new_event["pid"] * self.rank_factor
-            revents += self.rcuctx[rank].handle_counter_overlap(new_event, pending_zero, final=True)
+            revents += self.rcuctx[rank].handle_counter_overlap(
+                new_event, pending_zero, final=True
+            )
             revents = self._check_counter_sanity(revents, "")
 
         return revents + super().drain()
@@ -1048,26 +1332,36 @@ class MultiRCUUtilizationContext(TwoPhaseWithBarrierContext, PipelineContextTool
         return jobhash
 
 
-def compute_utilization_fingerprints(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
+def compute_utilization_fingerprints(
+    event: TraceEvent, context: AbstractContext
+) -> list[TraceEvent]:
     if event["ph"] != "X":
         return [event]
 
     assert isinstance(context, MultiRCUUtilizationContext)
 
-    if PipelineContextTool.is_acc_event(event) and PipelineContextTool.is_acc_kernel(event):
+    if PipelineContextTool.is_acc_event(event) and PipelineContextTool.is_acc_kernel(
+        event
+    ):
         kernel_name = context.extract_kernel_from_event_name(event)
 
-        context.fingerprint_add(context.generate_fprint_jobhash(event), kernel_name, event["dur"])
+        context.fingerprint_add(
+            context.generate_fprint_jobhash(event), kernel_name, event["dur"]
+        )
     return [event]
 
 
-def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
+def compute_utilization(
+    event: TraceEvent, context: AbstractContext
+) -> list[TraceEvent]:
     if event["ph"] != "X":
         return [event]
 
     assert isinstance(context, MultiRCUUtilizationContext)
 
-    if not PipelineContextTool.is_acc_event(event) or not PipelineContextTool.is_acc_kernel(event):
+    if not PipelineContextTool.is_acc_event(
+        event
+    ) or not PipelineContextTool.is_acc_kernel(event):
         return [event]
 
     pid = event["pid"]
@@ -1077,27 +1371,32 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
         jobhash = context.generate_fprint_jobhash(event)
         job_fingerprint = context.fingerprint_get(jobhash)
     except KeyError:
-        aiulog.log(aiulog.WARN, f"UTL: No matching fingerprint for job {event['args']['jobname']}."
-                   " Unable to find a matching Ideal-cycles table.")
+        aiulog.log(
+            aiulog.WARN,
+            f"UTL: No matching fingerprint for job {event['args']['jobname']}."
+            " Unable to find a matching Ideal-cycles table.",
+        )
         return [event]
 
     try:
         ideal_dur = float(context.get_ideal_dur(kernel_name, pid, job_fingerprint))
     except KeyError:
-        aiulog.log(aiulog.DEBUG, f"UTL: No kernel table matching fingerprint {job_fingerprint}:"
-                   f" {context.fingerprints.keys()}/{context.fingerprints[jobhash].fprint_data} ")
+        aiulog.log(
+            aiulog.DEBUG,
+            f"UTL: No kernel table matching fingerprint {job_fingerprint}:"
+            f" {context.fingerprints.keys()}/{context.fingerprints[jobhash].fprint_data} ",
+        )
         context.issue_warning("kernel_nomatch")
         ideal_dur = 0.0
 
     cmpt_dur = float(event["dur"])
-    utilization = abs(ideal_dur/cmpt_dur) if not isclose(cmpt_dur, 0.0, abs_tol=1e-9) else 0.0
+    utilization = (
+        abs(ideal_dur / cmpt_dur) if not isclose(cmpt_dur, 0.0, abs_tol=1e-9) else 0.0
+    )
 
     detected_category = context.accumulate_categories(
-            pid,
-            kernel_name,
-            ideal_dur,
-            cmpt_dur,
-            job_fingerprint)
+        pid, kernel_name, ideal_dur, cmpt_dur, job_fingerprint
+    )
 
     # prevent overwriting "cat" field in case events already have one
     if "cat" in event:
@@ -1105,7 +1404,7 @@ def compute_utilization(event: TraceEvent, context: AbstractContext) -> list[Tra
     else:
         event["cat"] = detected_category
 
-    util_counter = context.make_utilization_event(event, utilization*100.0, jobhash)
+    util_counter = context.make_utilization_event(event, utilization * 100.0, jobhash)
 
     if utilization > 0.0:
         # note: with autopilot on, the utilization is computed asynchronously.
