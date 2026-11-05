@@ -1,5 +1,6 @@
 {
     "stages": [
+        {"sanity_check": true},
         {"drop_timestamp_reversed_events": true},
         {"create_slice_from_BE": true},
         {"normalize_phase1": true},

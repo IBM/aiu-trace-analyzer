@@ -1,0 +1,39 @@
+# Copyright 2024-2026 IBM Corporation
+
+import aiu_trace_analyzer.logger as aiulog
+
+from aiu_trace_analyzer.pipeline.context import AbstractContext
+from aiu_trace_analyzer.types import TraceEvent, TraceWarning
+
+
+_REQUIRED_KEYS = ["ph", "ts", "pid", "name"]
+
+
+class SanityCheckContext(AbstractContext):
+    def __init__(self) -> None:
+        super().__init__(warnings=[
+            TraceWarning(
+                name="missing_required_key",
+                text="SAN: Detected {d[count]} event(s) missing a required key.",
+                data={"count": 0},
+                is_error=True,
+            )
+        ])
+
+
+def sanity_check(event: TraceEvent, context: SanityCheckContext) -> list[TraceEvent]:
+    for key in _REQUIRED_KEYS:
+        if key not in event:
+            aiulog.log(
+                aiulog.ERROR,
+                "Event failed sanityCheck: ",
+                key,
+                "is not in",
+                event,
+            )
+            context.warnings["missing_required_key"].record({
+                "missing_key": key,
+            })
+            return []
+
+    return [event]

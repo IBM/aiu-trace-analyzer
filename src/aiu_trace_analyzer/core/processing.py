@@ -10,8 +10,6 @@ from aiu_trace_analyzer.core.duplicate_hold import IntermediateDuplicateAndHoldC
 from aiu_trace_analyzer.export.exporter import JsonFileTraceExporter
 from aiu_trace_analyzer.core.stage_profile import StageProfile, StageProfileChecker
 
-_MINREQKEYS = ["ph", "ts", "pid", "name"]
-
 
 class EventProcessor:
 
@@ -24,7 +22,6 @@ class EventProcessor:
     '''
     def __init__(self, profile: StageProfile = None, intermediate: str = None) -> None:
         self.stages = []
-        self.stages.append((EventProcessor.sanity_check, None, {}))
         self.profile = profile
         self.event_count = 0
         self.intermediate = intermediate
@@ -63,19 +60,6 @@ class EventProcessor:
                        next_intermediate.exporter.target_uri)
             self.stages.append((duplicate_and_hold, next_intermediate, None))
             self.stage_count += 1
-
-    '''
-    Basic sanity check of events to make sure they contain the minimum required keys to be valid
-    Further checking to be added.
-    Returns empty list if input is invalid (which drops the event and ends processing of this event)
-    '''
-    @staticmethod
-    def sanity_check(event: TraceEvent, _: procCTX.AbstractContext) -> list[TraceEvent]:
-        for check in _MINREQKEYS:
-            if check not in event:
-                aiulog.log(aiulog.ERROR, "Event failed sanityCheck: ", check, "is not in", event)
-                return []
-        return [event]
 
     def process(self, event: TraceEvent) -> list[aiuev.AbstractEventType]:
         # turn into a list, pre/post have do be able to expand single events into lists
