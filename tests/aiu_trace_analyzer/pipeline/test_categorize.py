@@ -97,6 +97,11 @@ def test_two_rank_stage_run_keeps_classes_per_rank():
     assert set(ctx.first_ts_per_rank) == {0, 1}
 
 
+def _all_slices(ctx: CategoryTrackContext, emitted: list) -> list:
+    """Slices emitted while streaming plus those left for the drain."""
+    return [e for e in emitted + ctx.drain() if e["ph"] == "X" and e["cat"] == "category"]
+
+
 def _classified(rank: int, cat: str = "kernel", cls: str = "COMPUTE_EXEC",
                 ts: float = 1.0, dur: float = 1.0) -> TraceEvent:
     ev = _event(cat, "spyre_kernel_v1_fused_mm", rank=rank)
@@ -268,21 +273,56 @@ def test_category_track_rounds_boundaries_without_overlap():
     assert round(slices[0]["ts"] + slices[0]["dur"], 3) <= slices[1]["ts"]
 
 
-@pytest.mark.parametrize("scale", [1e3, 1e6, 1e9, 1e12, 1.7e15])
-def test_slice_dur_never_reaches_past_end(scale):
-    # exact double arithmetic, as a viewer computes ts + dur: no slice may reach into its successor
-    rng = random.Random(int(scale))
-    for _ in range(5000):
-        start = round(rng.uniform(scale, 2 * scale), 3)
-        end = round(start + rng.uniform(0.001, 50.0), 3)
-        dur = CategoryTrackContext._safe_dur(start, end)
-        assert 0.0 <= dur <= end - start + 1e-3
-        assert start + dur <= end
+@pytest.mark.parametrize("base", [1e3, 1e9, 1e12, 4e12])
+def test_category_track_back_to_back_has_no_overlap_or_zero_dur(base):
+    # events on a ns grid, as a producer writes them; the trace ends of one event are the start of the next
+    rng = random.Random(int(base))
+    ctx = CategoryTrackContext()
+    emitted = []
+    ns = int(base * 1000)
+    for i in range(2000):
+        start = ns
+        ns += rng.choice([1, 2, 5, 400, 25000])
+        event = _classified(0, cls=("DATA_IN", "DATA_OUT")[i % 2], ts=start / 1000, dur=(ns - start) / 1000)
+        emitted += category_track(event, ctx)
+
+    slices = _all_slices(ctx, emitted)
+    assert slices
+    for e in slices:
+        assert e["dur"] > 0.0 and e["dur"] == round(e["dur"], 3) and e["ts"] == round(e["ts"], 3)
+    for prev, nxt in zip(slices, slices[1:]):
+        assert round((prev["ts"] + prev["dur"]) * 1000) <= round(nxt["ts"] * 1000)
 
 
-def test_slice_dur_is_rounded_down():
-    assert CategoryTrackContext._safe_dur(0.0, 1.0006) == 1.0
-    assert CategoryTrackContext._safe_dur(10.0, 10.0) == 0.0
+def test_category_track_one_ns_event_at_large_ts_is_kept_with_clean_dur():
+    ctx = CategoryTrackContext()
+    category_track(_classified(0, cls="DATA_IN", ts=1e12, dur=0.001), ctx)
+
+    slices = [e for e in ctx.drain() if e["ph"] == "X"]
+    assert [(e["ts"], e["dur"]) for e in slices] == [(1e12, 0.001)]
+
+
+def test_category_track_drops_events_below_ns_resolution():
+    ctx = CategoryTrackContext()
+    category_track(_classified(0, cls="DATA_IN", ts=1e12 + 0.0001, dur=0.0002), ctx)
+
+    assert [e for e in ctx.drain() if e["ph"] == "X"] == []
+
+
+def test_category_track_slice_durations_sum_to_covered_span():
+    rng = random.Random(7)
+    ctx = CategoryTrackContext()
+    emitted = []
+    start0 = ns = 1_216_487_644_535_000
+    for i in range(3000):
+        start = ns
+        ns += rng.randint(1, 3000)
+        event = _classified(0, cls=("DATA_IN", "DATA_OUT")[i % 2], ts=start / 1000, dur=(ns - start) / 1000)
+        emitted += category_track(event, ctx)
+
+    slices = _all_slices(ctx, emitted)
+    total_ns = sum(round(e["dur"] * 1000) for e in slices)
+    assert total_ns == ns - start0
 
 
 def test_category_track_drops_slices_vanishing_by_rounding():
