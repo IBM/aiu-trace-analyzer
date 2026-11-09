@@ -302,6 +302,103 @@ def test_category_track_one_ns_event_at_large_ts_is_kept_with_clean_dur():
     assert [(e["ts"], e["dur"]) for e in slices] == [(1e12, 0.001)]
 
 
+# Back-to-back slice pairs (ts, dur of A and ts of B in us) of a real trace, and what viewers compute for them.
+# track: (ts_a, dur_a, ts_b); the first two pass all checks, the others overlap in at least one viewer model
+_ORIGIN_NS = 1_218_465_478_878_384
+_PROBE_PAIRS = {
+    1: (1218465544239.541, 5.187, 1218465544244.728),
+    3: (1218465544329.712, 451.669, 1218465544781.381),
+    2: (1218465544247.594, 82.118, 1218465544329.712),
+    4: (1218465771963.212, 12.52, 1218465771975.732),
+    5: (1218465772018.156, 66.807, 1218465772084.963),
+    6: (1218465772744.655, 434.587, 1218465773179.242),
+    7: (1218465732181.373, 8.568, 1218465732189.941),
+    8: (1218465733010.892, 0.018, 1218465733010.91),
+    9: (1218465733082.737, 1.622, 1218465733084.359),
+}
+
+
+def _ns(us: float) -> int:
+    return round(us * 1000)
+
+
+def test_fit_dur_keeps_dur_when_no_overlap_is_predicted():
+    assert CategoryTrackContext._fit_dur(1_000, 5_000, None) == 4_000
+    assert CategoryTrackContext._fit_dur(1_000, 5_000, 6_000) == 4_000
+    # a gap to the next slice leaves room for any viewer computation
+    assert CategoryTrackContext._fit_dur(1_000, 5_000, 9_000) == 4_000
+
+
+@pytest.mark.parametrize("track", sorted(_PROBE_PAIRS))
+def test_fit_dur_prevents_overlap_in_all_viewer_computations(track):
+    ts_a, _, ts_b = _PROBE_PAIRS[track]
+    start, end = _ns(ts_a), _ns(ts_b)
+    fitted = CategoryTrackContext._fit_dur(start, end, end, _ORIGIN_NS)
+    assert end - start - 1 <= fitted <= end - start   # at most 1 ns lost for these pairs
+    # the values as written to the trace
+    assert not CategoryTrackContext._overlaps(
+        start / 1000, fitted / 1000, end / 1000, _ORIGIN_NS / 1000)
+
+
+def test_fit_dur_shortens_where_viewers_overlap():
+    # viewers that subtract the trace start first (and the ones converting to ms) overlap for this pair at full length
+    ts_a, dur_a, ts_b = _PROBE_PAIRS[2]
+    start, end = _ns(ts_a), _ns(ts_b)
+    assert CategoryTrackContext._overlaps(start / 1000, (end - start) / 1000, end / 1000, _ORIGIN_NS / 1000)
+    assert CategoryTrackContext._fit_dur(start, end, end, _ORIGIN_NS) == end - start - 1
+
+
+def test_fit_dur_reduces_by_ns_until_double_sum_does_not_reach_next_start():
+    # at ~1e12 us the double sum of this pair overshoots the next start by one ULP
+    start, dur = 1_216_487_644_675_891, 18_652
+    end = start + dur
+    assert start / 1000 + dur / 1000 > end / 1000
+    fitted = CategoryTrackContext._fit_dur(start, end, end)
+    assert fitted == dur - 1
+    assert start / 1000 + fitted / 1000 <= end / 1000
+
+
+def test_category_track_back_to_back_slices_do_not_overlap_as_doubles():
+    rng = random.Random(3)
+    ctx = CategoryTrackContext()
+    emitted = []
+    ns = 1_216_487_644_535_000
+    for i in range(5000):
+        start = ns
+        ns += rng.choice([2, 3, 400, 25000])
+        event = _classified(0, cls=("DATA_IN", "DATA_OUT")[i % 2], ts=start / 1000, dur=(ns - start) / 1000)
+        emitted += category_track(event, ctx)
+
+    slices = _all_slices(ctx, emitted)
+    assert len(slices) == 5000
+    for e in slices:
+        assert e["dur"] > 0.0 and e["dur"] == round(e["dur"], 3)
+    # exactly what a viewer does: sum in doubles, no rounding
+    assert all(p["ts"] + p["dur"] <= q["ts"] for p, q in zip(slices, slices[1:]))
+
+
+def test_category_track_drops_one_ns_slice_shortened_to_zero_with_warning():
+    # a long DATA_OUT event is cut to 1 ns by a DATA_IN event that starts 1 ns later (higher priority)
+    start = next(s for s in range(1_218_465_700_000_000, 1_218_465_700_020_000)
+                 if CategoryTrackContext._fit_dur(s, s + 1, s + 1, _ORIGIN_NS) == 0)
+    ctx = CategoryTrackContext()
+    ctx.origin = _ORIGIN_NS
+    emitted = []
+    for cls, ts, dur in [("DATA_OUT", start / 1000, 0.173), ("DATA_IN", (start + 1) / 1000, 5.0)]:
+        emitted += category_track(_classified(0, cls=cls, ts=ts, dur=dur), ctx)
+
+    slices = _all_slices(ctx, emitted)
+    assert [e["name"] for e in slices] == ["DATA_IN"]
+    assert ctx.warnings["category_slice_dropped"].args_list["count"] == 1
+
+
+def test_category_track_drain_is_idempotent():
+    ctx = CategoryTrackContext()
+    category_track(_classified(0), ctx)
+    assert ctx.drain() != []
+    assert ctx.drain() == []
+
+
 def test_category_track_drops_events_below_ns_resolution():
     ctx = CategoryTrackContext()
     category_track(_classified(0, cls="DATA_IN", ts=1e12 + 0.0001, dur=0.0002), ctx)
@@ -309,7 +406,7 @@ def test_category_track_drops_events_below_ns_resolution():
     assert [e for e in ctx.drain() if e["ph"] == "X"] == []
 
 
-def test_category_track_slice_durations_sum_to_covered_span():
+def test_category_track_slice_durations_sum_to_covered_span_within_shortening():
     rng = random.Random(7)
     ctx = CategoryTrackContext()
     emitted = []
@@ -322,7 +419,8 @@ def test_category_track_slice_durations_sum_to_covered_span():
 
     slices = _all_slices(ctx, emitted)
     total_ns = sum(round(e["dur"] * 1000) for e in slices)
-    assert total_ns == ns - start0
+    # shortening slices against float overlaps loses at most a few ns per slice
+    assert 0 <= (ns - start0) - total_ns <= 2 * len(slices)
 
 
 def test_category_track_drops_slices_vanishing_by_rounding():
