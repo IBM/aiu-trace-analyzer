@@ -12,7 +12,7 @@ from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 _REQUIRED_KEYS = ["ph", "ts", "pid", "name"]
 
 
-class SanityCheckBase:
+class _SanityWarnings:
     def __init__(self) -> None:
         super().__init__(warnings=[
             TraceWarning(
@@ -24,18 +24,18 @@ class SanityCheckBase:
         ])
 
 
-class PipelineSanityCheckContext(SanityCheckBase, AbstractContext):
+class PipelineSanityCheckContext(_SanityWarnings, AbstractContext):
     pass
 
 
 class VerificationSanityCheckContext(
-        SanityCheckBase,
+        _SanityWarnings,
         AbstractVerificationContext,
 ):
     test_name = "Event Sanity Check"
 
 
-def sanity_check(event: TraceEvent, context: SanityCheckBase) -> list[TraceEvent]:
+def sanity_check(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
     for key in _REQUIRED_KEYS:
         if key not in event:
             aiulog.log(
