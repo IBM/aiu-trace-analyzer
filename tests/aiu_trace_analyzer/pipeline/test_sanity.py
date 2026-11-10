@@ -2,7 +2,11 @@
 
 import pytest
 
-from aiu_trace_analyzer.pipeline.sanity import SanityCheckContext, sanity_check
+from aiu_trace_analyzer.pipeline.sanity import (
+    PipelineSanityCheckContext,
+    VerificationSanityCheckContext,
+    sanity_check,
+)
 from aiu_trace_analyzer.types import TraceEvent
 
 
@@ -16,7 +20,7 @@ def _valid_event() -> TraceEvent:
 
 
 def test_valid_event_passes_unchanged():
-    ctx = SanityCheckContext()
+    ctx = PipelineSanityCheckContext()
     event = _valid_event()
 
     result = sanity_check(event, ctx)
@@ -27,7 +31,7 @@ def test_valid_event_passes_unchanged():
 
 @pytest.mark.parametrize("missing_key", ["ph", "ts", "pid", "name"])
 def test_missing_required_key_drops_event_and_records_finding(missing_key):
-    ctx = SanityCheckContext()
+    ctx = PipelineSanityCheckContext()
     event = _valid_event()
     del event[missing_key]
 
@@ -42,7 +46,7 @@ def test_missing_required_key_drops_event_and_records_finding(missing_key):
 
 
 def test_each_malformed_event_counts_once():
-    ctx = SanityCheckContext()
+    ctx = PipelineSanityCheckContext()
 
     first = _valid_event()
     del first["ts"]
@@ -63,7 +67,7 @@ def test_each_malformed_event_counts_once():
 
 
 def test_event_with_multiple_missing_keys_counts_once():
-    ctx = SanityCheckContext()
+    ctx = PipelineSanityCheckContext()
     event = _valid_event()
     del event["ph"]
     del event["ts"]
@@ -85,7 +89,7 @@ def test_event_processor_has_no_implicit_sanity_stage():
     assert processor.stages == []
 
 
-def _processor_with_sanity_stage():
+def _processor_with_sanity_stage(context=None):
     from aiu_trace_analyzer.core.processing import EventProcessor
     from aiu_trace_analyzer.core.stage_profile import StageProfile
 
@@ -96,7 +100,7 @@ def _processor_with_sanity_stage():
     processor = EventProcessor(profile=profile)
     processor.register_stage(
         callback=sanity_check,
-        context=SanityCheckContext(),
+        context=context if context is not None else PipelineSanityCheckContext(),
     )
     return processor
 
@@ -126,7 +130,7 @@ def test_missing_required_key_finding_is_emitted_on_drain():
 def test_missing_required_key_fails_verification_report():
     from aiu_trace_analyzer.export.exporter import VerificationReportExporter
 
-    processor = _processor_with_sanity_stage()
+    processor = _processor_with_sanity_stage(VerificationSanityCheckContext())
     event = _valid_event()
     del event["pid"]
 
@@ -145,3 +149,39 @@ def test_missing_required_key_fails_verification_report():
     assert [finding["finding"] for finding in report["errors"]] == [
         "missing_required_key",
     ]
+    assert {
+        "test": "Event Sanity Check",
+        "result": "fail",
+    } in report["test_results"]
+
+
+def test_pipeline_sanity_does_not_emit_verification_result():
+    from aiu_trace_analyzer.types import VERIFICATION_TEST_RESULT_NAME
+
+    processor = _processor_with_sanity_stage(PipelineSanityCheckContext())
+
+    drained = processor.drain()
+
+    assert all(
+        event.name != VERIFICATION_TEST_RESULT_NAME
+        for event in drained
+    )
+
+
+def test_verification_sanity_reports_pass_when_no_findings():
+    from aiu_trace_analyzer.export.exporter import VerificationReportExporter
+
+    processor = _processor_with_sanity_stage(VerificationSanityCheckContext())
+
+    exporter = VerificationReportExporter(
+        "unused.json",
+        settings={"save_to_file": False},
+    )
+    exporter.export(processor.drain())
+
+    report = exporter.get_data()
+
+    assert {
+        "test": "Event Sanity Check",
+        "result": "pass",
+    } in report["test_results"]

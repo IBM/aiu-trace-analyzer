@@ -209,6 +209,7 @@ def test_regular_pipeline_registers_sanity_check_first(default_acelyzer):
     )
 
     assert processor.stages[0][0].__name__ == "sanity_check"
+    assert type(processor.stages[0][1]).__name__ == "PipelineSanityCheckContext"
 
 
 def test_verification_pipeline_registers_sanity_check_first(default_acelyzer):
@@ -228,3 +229,4 @@ def test_verification_pipeline_registers_sanity_check_first(default_acelyzer):
     )
 
     assert processor.stages[0][0].__name__ == "sanity_check"
+    assert type(processor.stages[0][1]).__name__ == "VerificationSanityCheckContext"

@@ -517,7 +517,7 @@ class Acelyzer:
 
         process.register_stage(
             callback=event_pipe.sanity_check,
-            context=event_pipe.SanityCheckContext())
+            context=event_pipe.PipelineSanityCheckContext())
 
         ##############################################################
         # Event preparation, cleanup, and sanitization
@@ -782,7 +782,7 @@ class Acelyzer:
 
         process.register_stage(
             callback=event_pipe.sanity_check,
-            context=event_pipe.SanityCheckContext())
+            context=event_pipe.VerificationSanityCheckContext())
 
         # strict: accelerator events have no call/return relationship, so even a fully embedded
         # event is a data problem and not a legitimate nesting

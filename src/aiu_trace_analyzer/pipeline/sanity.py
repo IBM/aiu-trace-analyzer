@@ -2,14 +2,17 @@
 
 import aiu_trace_analyzer.logger as aiulog
 
-from aiu_trace_analyzer.pipeline.context import AbstractContext
+from aiu_trace_analyzer.pipeline.context import (
+    AbstractContext,
+    AbstractVerificationContext,
+)
 from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 
 
 _REQUIRED_KEYS = ["ph", "ts", "pid", "name"]
 
 
-class SanityCheckContext(AbstractContext):
+class SanityCheckBase:
     def __init__(self) -> None:
         super().__init__(warnings=[
             TraceWarning(
@@ -21,7 +24,18 @@ class SanityCheckContext(AbstractContext):
         ])
 
 
-def sanity_check(event: TraceEvent, context: SanityCheckContext) -> list[TraceEvent]:
+class PipelineSanityCheckContext(SanityCheckBase, AbstractContext):
+    pass
+
+
+class VerificationSanityCheckContext(
+        SanityCheckBase,
+        AbstractVerificationContext,
+):
+    test_name = "Event Sanity Check"
+
+
+def sanity_check(event: TraceEvent, context: SanityCheckBase) -> list[TraceEvent]:
     for key in _REQUIRED_KEYS:
         if key not in event:
             aiulog.log(

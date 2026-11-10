@@ -20,7 +20,10 @@ from aiu_trace_analyzer.types import TraceWarning
 
 # Make available the abstract top-level context class
 from aiu_trace_analyzer.pipeline.context import AbstractContext
-from aiu_trace_analyzer.pipeline.sanity import SanityCheckContext
+from aiu_trace_analyzer.pipeline.sanity import (
+    PipelineSanityCheckContext,
+    VerificationSanityCheckContext,
+)
 from aiu_trace_analyzer.pipeline.hashqueue import AbstractHashQueueContext
 from aiu_trace_analyzer.pipeline.barrier import TwoPhaseWithBarrierContext
 
