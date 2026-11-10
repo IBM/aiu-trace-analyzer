@@ -8,7 +8,6 @@
         {"pipeline_barrier": false},
         {"frequency_align_apply": false},
         {"normalize_phase2": true},
-        {"event_sanity_checks": true},
         {"remove_ids_from_name": false},
         {"map_tid_to_range": false},
         {"cycle_count_to_wallclock": false},
