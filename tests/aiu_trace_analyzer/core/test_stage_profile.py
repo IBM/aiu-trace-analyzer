@@ -43,7 +43,7 @@ def test_default_is_everything(default_profile_config, everything_profile):
 
 
 def test_fwd_find(default_stage_checker):
-    test_stages = [('create_slice_from_BE', True, 2), ('do_not_move_index', False, 2), ('pipeline_barrier', True, 5)]
+    test_stages = [('create_slice_from_BE', True, 3), ('do_not_move_index', False, 3), ('pipeline_barrier', True, 6)]
 
     assert isinstance(default_stage_checker, StageProfileChecker)
 
@@ -98,3 +98,24 @@ def test_sparse_profile_ordinal_targets_single_occurrence(tmp_path):
     assert len(enabled_at) == 1
     # confirm it is the second occurrence, not the first
     assert sum(1 for name, _ in profile.profile[:enabled_at[0] + 1] if name == "pipeline_barrier") == 2
+
+
+def test_everything_profile_starts_with_sanity_check(everything_profile):
+    profile = StageProfile.from_json(everything_profile)
+
+    assert profile.profile[0] == ("sanity_check", True)
+
+
+def test_torch_minimal_profile_starts_with_sanity_check(torch_minimal_profile):
+    profile = StageProfile.from_json(torch_minimal_profile)
+
+    assert profile.profile[0] == ("sanity_check", True)
+
+
+def test_verification_profile_starts_with_sanity_check():
+    profile = StageProfile.from_json(
+        StageProfile._verification_profile,
+        verification_mode=True,
+    )
+
+    assert profile.profile[0] == ("sanity_check", True)

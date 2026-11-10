@@ -193,3 +193,40 @@ def test_c4_format_text_accepted_in_verification_mode():
 def test_c5_format_text_accepted_outside_verification_mode():
     ace = Acelyzer(["-i", _BASE_INPUT, "-f", "text"])
     assert ace.args.format == "text"
+
+
+def test_regular_pipeline_registers_sanity_check_first(default_acelyzer):
+    from aiu_trace_analyzer.core.processing import EventProcessor
+    from aiu_trace_analyzer.core.stage_profile import StageProfile
+
+    profile = StageProfile.from_json(default_acelyzer.args.profile)
+    processor = EventProcessor(profile=profile)
+
+    default_acelyzer.register_processing_functions(
+        processor,
+        default_acelyzer.args,
+        None,
+    )
+
+    assert processor.stages[0][0].__name__ == "sanity_check"
+    assert type(processor.stages[0][1]).__name__ == "PipelineSanityCheckContext"
+
+
+def test_verification_pipeline_registers_sanity_check_first(default_acelyzer):
+    from aiu_trace_analyzer.core.processing import EventProcessor
+    from aiu_trace_analyzer.core.stage_profile import StageProfile
+
+    profile = StageProfile.from_json(
+        StageProfile._verification_profile,
+        verification_mode=True,
+    )
+    processor = EventProcessor(profile=profile)
+
+    default_acelyzer.register_verification_functions(
+        processor,
+        default_acelyzer.args,
+        None,
+    )
+
+    assert processor.stages[0][0].__name__ == "sanity_check"
+    assert type(processor.stages[0][1]).__name__ == "VerificationSanityCheckContext"
