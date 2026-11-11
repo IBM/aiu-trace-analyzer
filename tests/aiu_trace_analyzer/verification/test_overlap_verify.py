@@ -11,13 +11,13 @@ from aiu_trace_analyzer.verification.overlap_verify import (
 )
 
 
-def _event(name, cat, ts, dur, stream=None) -> TraceEvent:
+def _event(name, cat, ts, dur, stream=None, rank=1) -> TraceEvent:
     jobhash = GlobalIngestData.add_job_info(
         source_uri="overlap_verify.json",
         data_dialect=InputDialectTORCH(),
     )
 
-    args = {"jobhash": jobhash}
+    args = {"jobhash": jobhash, "rank": rank}
     if stream is not None:
         args["stream"] = stream
 
@@ -26,7 +26,7 @@ def _event(name, cat, ts, dur, stream=None) -> TraceEvent:
             "name": name,
             "cat": cat,
             "ph": "X",
-            "pid": 1,
+            "pid": rank,
             "tid": 1,
             "ts": ts,
             "dur": dur,
@@ -123,3 +123,30 @@ def test_default_stream_is_removed_after_verification():
     verify_kernel_overlap(event, context)
 
     assert "stream" not in event["args"]
+
+
+def test_same_stream_overlap_across_ranks_is_allowed():
+    events = [
+        _event("kernel_1", "kernel", 0.0, 10.0, stream=1, rank=0),
+        _event("kernel_2", "kernel", 5.0, 10.0, stream=1, rank=1),
+    ]
+
+    assert _detect(events) == 0
+
+
+def test_overlap_instance_contains_rank_and_source():
+    context = OverlapVerificationContext(strict=True)
+
+    verify_kernel_overlap(
+        _event("kernel_1", "kernel", 0.0, 10.0, stream=1, rank=2),
+        context,
+    )
+    verify_kernel_overlap(
+        _event("kernel_2", "kernel", 5.0, 10.0, stream=1, rank=2),
+        context,
+    )
+
+    instance = context.warnings["overlaps"].to_finding_args()["instances"][0]
+
+    assert instance["rank"] == 2
+    assert instance["source"] == "overlap_verify.json"
