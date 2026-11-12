@@ -25,6 +25,10 @@ from is emitted at drain time by the context, as two kinds of metadata event:
 
 Without a context, the report will not contain info about this stage.
 
+Verification ingestion annotates events with their rank before they reach verification
+stages. Implementations can therefore use the event rank when grouping events or
+recording finding instances.
+
 Two consequences worth knowing when writing a stage:
   * a drain() override MUST chain to super().drain() (see the example below), or none of
     those events are emitted and the stage silently disappears from the report.

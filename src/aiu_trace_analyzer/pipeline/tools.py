@@ -2,9 +2,30 @@
 
 from typing import Optional
 
-from aiu_trace_analyzer.types import TraceEvent
+from aiu_trace_analyzer.types import GlobalIngestData, TraceEvent
 import aiu_trace_analyzer.dialect as dialect
 from aiu_trace_analyzer.dialect import InputDialect
+
+
+def event_location(event: TraceEvent) -> dict:
+    """Return common location details for a trace finding instance."""
+    the_args = "attr" if "attr" in event else "args"
+    args = event.get(the_args, {})
+
+    location = {
+        "rank": args.get("rank"),
+        "pid": event.get("pid"),
+        "tid": event.get("tid"),
+        "stream": args.get("stream"),
+        "name": event.get("name"),
+        "ts": event.get("ts"),
+        "dur": event.get("dur"),
+    }
+
+    if "jobhash" in args:
+        location["source"] = GlobalIngestData.get_job(args["jobhash"])
+
+    return location
 
 
 class PipelineContextTool:

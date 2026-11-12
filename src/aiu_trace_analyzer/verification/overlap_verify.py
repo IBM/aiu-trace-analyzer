@@ -17,7 +17,7 @@ This module reuses the overlap detection of the regular processing pipeline
 from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 from aiu_trace_analyzer.pipeline.context import AbstractContext, AbstractVerificationContext
 from aiu_trace_analyzer.pipeline.overlap import OverlapDetectionContext
-from aiu_trace_analyzer.pipeline.tools import PipelineContextTool
+from aiu_trace_analyzer.pipeline.tools import PipelineContextTool, event_location
 
 
 class OverlapVerificationContext(OverlapDetectionContext, AbstractVerificationContext):
@@ -62,14 +62,9 @@ class OverlapVerificationContext(OverlapDetectionContext, AbstractVerificationCo
 
     def _record_overlap(self, oevent: TraceEvent) -> None:
         super()._record_overlap(oevent)
-        self.warnings[self._OVERLAP_WARNING].add_instance({
-            "name": oevent["name"],
-            "pid": oevent["pid"],
-            "tid": oevent["tid"],
-            "stream": oevent["args"].get(self._STREAM_KEY),
-            "ts": oevent["ts"],
-            "dur": oevent["dur"],
-        })
+        self.warnings[self._OVERLAP_WARNING].add_instance(
+            event_location(oevent)
+        )
 
     def add_default_stream(self, event: TraceEvent) -> bool:
         '''

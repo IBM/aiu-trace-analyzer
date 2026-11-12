@@ -46,6 +46,7 @@ import aiu_trace_analyzer.logger as aiulog
 from aiu_trace_analyzer.types import TraceEvent, TraceWarning
 from aiu_trace_analyzer.pipeline.barrier import TwoPhaseWithBarrierContext
 from aiu_trace_analyzer.pipeline.context import AbstractContext, AbstractVerificationContext
+from aiu_trace_analyzer.pipeline.tools import event_location
 
 
 class KernelParentVerificationContext(AbstractVerificationContext, TwoPhaseWithBarrierContext):
@@ -141,13 +142,20 @@ class KernelParentVerificationContext(AbstractVerificationContext, TwoPhaseWithB
         if correlation_id == 0:
             return
 
+        queue_id = (event["args"].get("rank", 0), correlation_id)
+
         # Check if this is a parent ScheduleCompute or ScheduleWait event
         # Pattern matches both Torch ("aiuLaunchScheduleCompute") and Flex ("ScheduleCompute", "ScheduleWait")
         if "ScheduleCompute" in event["name"] or "ScheduleWait" in event["name"]:
             # Get or create entry for this correlation ID
             qid = self.get_or_create(
-                correlation_id,
-                {"parent_start": float('inf'), "parent_end": float('-inf'), "kernel_count": 0}
+                queue_id,
+                {
+                    "parent_start": float('inf'),
+                    "parent_end": float('-inf'),
+                    "kernel_count": 0,
+                    "location": event_location(event),
+                }
             )
             # Store parent timing information, tracking min start and max end
             self.queues[qid]["parent_start"] = min(self.queues[qid]["parent_start"], event["ts"])
@@ -157,8 +165,13 @@ class KernelParentVerificationContext(AbstractVerificationContext, TwoPhaseWithB
         elif "cat" in event and event["cat"] == "kernel":
             # Get or create entry for this correlation ID
             qid = self.get_or_create(
-                correlation_id,
-                {"parent_start": float('inf'), "parent_end": float('-inf'), "kernel_count": 0}
+                queue_id,
+                {
+                    "parent_start": float('inf'),
+                    "parent_end": float('-inf'),
+                    "kernel_count": 0,
+                    "location": event_location(event),
+                }
             )
             # Increment kernel count
             self.queues[qid]["kernel_count"] += 1
@@ -198,12 +211,14 @@ class KernelParentVerificationContext(AbstractVerificationContext, TwoPhaseWithB
         if correlation_id == 0:
             return
 
-        # Check if we have parent timing information for this correlation ID
-        if correlation_id not in self.queues:
+        queue_id = (event["args"].get("rank", 0), correlation_id)
+
+        # Check if we have parent timing information for this correlation ID and rank
+        if queue_id not in self.queues:
             aiulog.log(aiulog.ERROR, "BUG: verify_kernel_containment called for unknown correlation ID", correlation_id)
             return
 
-        parent_data = self.queues[correlation_id]
+        parent_data = self.queues[queue_id]
 
         # If parent timing is not available, this is an orphan kernel — counted in drain()
         if math.isinf(parent_data["parent_start"]) or math.isinf(parent_data["parent_end"]):
@@ -229,6 +244,7 @@ class KernelParentVerificationContext(AbstractVerificationContext, TwoPhaseWithB
             # Update warning counter and record instance detail for the report
             self.warnings["kernel_outside_parent"].update({"count": 1})
             self.warnings["kernel_outside_parent"].add_instance({
+                **event_location(event),
                 "corr_id": hex(correlation_id),
                 "kernel_start": kernel_start,
                 "kernel_end": kernel_end,
@@ -259,11 +275,14 @@ class KernelParentVerificationContext(AbstractVerificationContext, TwoPhaseWithB
         if self.collection_phase():
             return TwoPhaseWithBarrierContext.drain(self)
 
-        for correlation_id, data in self.queues.items():
+        for (rank, correlation_id), data in self.queues.items():
             # Check for orphan parents (parent without kernels)
             if data["kernel_count"] == 0 and not math.isinf(data["parent_start"]):
                 self.warnings["orphan_parents"].update({"count": 1})
-                self.warnings["orphan_parents"].add_instance({"corr_id": correlation_id})
+                self.warnings["orphan_parents"].add_instance({
+                    **data["location"],
+                    "corr_id": correlation_id,
+                })
                 aiulog.log(
                     aiulog.DEBUG,
                     "Kernel-Parent Verification: Orphan parent - "
@@ -274,9 +293,11 @@ class KernelParentVerificationContext(AbstractVerificationContext, TwoPhaseWithB
             if data["kernel_count"] > 0 and math.isinf(data["parent_start"]):
                 number_of_kernels = data["kernel_count"]
                 self.warnings["orphan_kernels"].update({"count": number_of_kernels})
-                self.warnings["orphan_kernels"].add_instance(
-                    {"corr_id": correlation_id, "count": number_of_kernels}
-                )
+                self.warnings["orphan_kernels"].add_instance({
+                    **data["location"],
+                    "corr_id": correlation_id,
+                    "count": number_of_kernels,
+                })
                 aiulog.log(
                     aiulog.WARN,
                     "Kernel-Parent Verification: Orphan kernels - "

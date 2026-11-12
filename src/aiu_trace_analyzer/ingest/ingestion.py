@@ -244,6 +244,7 @@ class AbstractTraceIngest:
         the_args = self._detect_args_type(event)
         if self.verification_mode:
             if the_args in event:
+                event = self._rank_device_annotation(event, the_args)
                 event = self._add_job_hash(event, the_args)
             return event
 
