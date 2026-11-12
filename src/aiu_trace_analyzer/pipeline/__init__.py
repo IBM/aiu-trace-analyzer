@@ -64,7 +64,6 @@ from aiu_trace_analyzer.pipeline.categorize import EventCategorizerContext, Even
 from aiu_trace_analyzer.pipeline.sanity import sanity_check
 from aiu_trace_analyzer.pipeline.mappings import map_complete_to_duration, remove_ids_from_name
 from aiu_trace_analyzer.pipeline.normalize import normalize_phase1, normalize_phase2, merge_roundtrip_events
-from aiu_trace_analyzer.pipeline.correctness import event_sanity_checks
 from aiu_trace_analyzer.pipeline.overlap import (
     detect_partial_overlap_tids,
     detect_partial_overlap_events,

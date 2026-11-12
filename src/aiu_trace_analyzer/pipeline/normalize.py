@@ -435,6 +435,18 @@ def _name_unification(name: str) -> str:
     return new_name
 
 
+def _args_ts_n_sanity_check(event: TraceEvent) -> TraceEvent:
+    """
+    Check that the HW timestamp sequence is monotonically increasing.
+    """
+    if has_hw_ts(event):
+        values = get_hw_ts_list(event)
+        for n in range(2, len(values) + 1):
+            assert values[n - 2] <= values[n - 1], \
+                f'{hw_ts_label(n)} is smaller than {hw_ts_label(n - 1)}, {event["name"]}, {event["args"]}'
+    return event
+
+
 def normalize_phase1(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
     assert isinstance(context, NormalizationContext)
 
@@ -472,6 +484,7 @@ def normalize_phase2(event: TraceEvent, context: AbstractContext) -> list[TraceE
     if has_hw_ts(event):
         qid = context.queue_hash(event)
         event["args"] = context.tsx_32bit_global_correction(qid, event)
+        event = _args_ts_n_sanity_check(event)
         aiulog.log(aiulog.TRACE, "NORM after:", id(event["args"]), event)
 
     assert isinstance(event, dict)

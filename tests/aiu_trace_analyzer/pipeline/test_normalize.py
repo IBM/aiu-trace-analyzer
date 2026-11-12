@@ -8,7 +8,8 @@ from aiu_trace_analyzer.pipeline.normalize import (
     EventLimiter,
     NormalizationContext,
     RoundtripMergeContext,
-    merge_roundtrip_events
+    merge_roundtrip_events,
+    normalize_phase2
 )
 from aiu_trace_analyzer.dialect import InputDialectTORCH
 from aiu_trace_analyzer.types import GlobalIngestData
@@ -458,3 +459,65 @@ def test_roundtrip_merge_names_stay_separate(torch_jobhash):
     assert out[0]["dur"] == 15.0
     assert out[1]["dur"] == 4.0 and "merged_events" not in out[1]["args"]
     assert out[2]["dur"] == 4.0
+
+
+def test_normalize_phase2_checks_hw_timestamp_sequence_after_global_correction(
+        normalization_ctx, monkeypatch):
+    event = {
+        "name": "testevent",
+        "ph": "X",
+        "ts": 3.141,
+        "pid": 0,
+        "tid": 0,
+        "args": {
+            "TS1": 1,
+            "TS2": 2,
+            "TS3": 3,
+            "TS4": 4,
+            "TS5": 5,
+            "jobhash": 0,
+        },
+    }
+
+    monkeypatch.setattr(normalization_ctx, "queue_hash", lambda _: 0)
+
+    def make_sequence_invalid(_, event):
+        event["args"]["TS3"] = 1
+        return event["args"]
+
+    monkeypatch.setattr(
+        normalization_ctx,
+        "tsx_32bit_global_correction",
+        make_sequence_invalid,
+    )
+
+    with pytest.raises(AssertionError):
+        normalize_phase2(event, normalization_ctx)
+
+
+def test_normalize_phase2_accepts_ordered_hw_timestamps_after_global_correction(
+        normalization_ctx, monkeypatch):
+    event = {
+        "name": "testevent",
+        "ph": "X",
+        "ts": 3.141,
+        "pid": 0,
+        "tid": 0,
+        "args": {
+            "TS1": 1,
+            "TS2": 2,
+            "TS3": 3,
+            "TS4": 4,
+            "TS5": 5,
+            "jobhash": 0,
+        },
+    }
+
+    monkeypatch.setattr(normalization_ctx, "queue_hash", lambda _: 0)
+    monkeypatch.setattr(
+        normalization_ctx,
+        "tsx_32bit_global_correction",
+        lambda _, event: event["args"],
+    )
+
+    assert normalize_phase2(event, normalization_ctx) == [event]

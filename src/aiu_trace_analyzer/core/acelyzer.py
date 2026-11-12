@@ -547,9 +547,6 @@ class Acelyzer:
             process.register_stage(callback=event_pipe.frequency_align_apply, context=frequency_align_ctx)
         process.register_stage(callback=event_pipe.normalize_phase2, context=normalize_ctx)
 
-        # make sure the data in the events have no unexpected values
-        process.register_stage(callback=event_pipe.event_sanity_checks)
-
         ##############################################################
         # Event manipulation: making changes to args or other event parameters beyond cleanup
         # move request IDs from the event name into args
