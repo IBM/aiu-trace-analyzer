@@ -597,7 +597,7 @@ _PRIORITY_OF_CLASS = {
 }
 
 # (start, end, class name); integer ns on the category track
-_Slice = tuple[float, float, str]
+_Slice = tuple[int, int, str]
 
 
 class _PriorityTrack:
@@ -609,11 +609,11 @@ class _PriorityTrack:
     """
 
     def __init__(self) -> None:
-        self.cursor = 0
-        self.active: list[tuple[int, float, str]] = []   # (priority, end, class)
+        self.cursor: int = 0
+        self.active: list[tuple[int, int, str]] = []   # (priority, end, class)
         self.open: Optional[_Slice] = None
 
-    def _extend(self, start: float, end: float, name: str) -> list[_Slice]:
+    def _extend(self, start: int, end: int, name: str) -> list[_Slice]:
         # touching slices of the same class are one slice, so embedded events do not fragment it
         if self.open is not None and self.open[1] == start and self.open[2] == name:
             self.open = (self.open[0], end, name)
@@ -622,7 +622,7 @@ class _PriorityTrack:
         self.open = (start, end, name)
         return done
 
-    def _advance(self, to: float) -> list[_Slice]:
+    def _advance(self, to: int) -> list[_Slice]:
         done: list[_Slice] = []
         while self.active and self.cursor < to:
             # highest priority wins; among equals the one that lasts longest
@@ -634,7 +634,7 @@ class _PriorityTrack:
         self.cursor = max(self.cursor, to)   # time without any active event stays empty
         return done
 
-    def add(self, start: float, end: float, priority: int, name: str) -> list[_Slice]:
+    def add(self, start: int, end: int, priority: int, name: str) -> list[_Slice]:
         """Add an event and return the slices that are final now."""
         assert self.cursor <= start, f"Events out-of-order: {self.cursor} > {start} ({name})"
         done = self._advance(start)
