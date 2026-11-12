@@ -572,9 +572,9 @@ def event_categorizer_update(event: TraceEvent, context: AbstractContext) -> lis
 # (OS pids, device pids, host pids + 1000, hashed string pids) to avoid collisions.
 CATEGORY_PID = 2_000_000_000
 
-# Digits of the slice timestamps (ns resolution). Timestamps of ~1e12 us carry more precision than
-# a double holds, so unrounded slice boundaries and durations show float noise.
-_TS_DIGITS = 3
+# Timestamps are in us and the trace displays ns. The slices are computed on integer ns, so that
+# shared boundaries are exact and durations are clean multiples of 1 ns at any timestamp scale.
+_NS_PER_US = 1000
 
 # Blame priority of overlapping events on the category track, highest first: a time slice is
 # shown as the highest-priority class covering it. Classes not listed rank below all listed ones.
@@ -596,8 +596,8 @@ _PRIORITY_OF_CLASS = {
     str(c): rank for rank, c in enumerate(_CATEGORY_PRIORITY + [c for c in EventClass if c not in _CATEGORY_PRIORITY])
 }
 
-# (start, end, class name)
-_Slice = tuple[float, float, str]
+# (start, end, class name); integer ns on the category track
+_Slice = tuple[int, int, str]
 
 
 class _PriorityTrack:
@@ -609,11 +609,11 @@ class _PriorityTrack:
     """
 
     def __init__(self) -> None:
-        self.cursor = 0.0
-        self.active: list[tuple[int, float, str]] = []   # (priority, end, class)
+        self.cursor: int = 0
+        self.active: list[tuple[int, int, str]] = []   # (priority, end, class)
         self.open: Optional[_Slice] = None
 
-    def _extend(self, start: float, end: float, name: str) -> list[_Slice]:
+    def _extend(self, start: int, end: int, name: str) -> list[_Slice]:
         # touching slices of the same class are one slice, so embedded events do not fragment it
         if self.open is not None and self.open[1] == start and self.open[2] == name:
             self.open = (self.open[0], end, name)
@@ -622,7 +622,7 @@ class _PriorityTrack:
         self.open = (start, end, name)
         return done
 
-    def _advance(self, to: float) -> list[_Slice]:
+    def _advance(self, to: int) -> list[_Slice]:
         done: list[_Slice] = []
         while self.active and self.cursor < to:
             # highest priority wins; among equals the one that lasts longest
@@ -634,7 +634,7 @@ class _PriorityTrack:
         self.cursor = max(self.cursor, to)   # time without any active event stays empty
         return done
 
-    def add(self, start: float, end: float, priority: int, name: str) -> list[_Slice]:
+    def add(self, start: int, end: int, priority: int, name: str) -> list[_Slice]:
         """Add an event and return the slices that are final now."""
         assert self.cursor <= start, f"Events out-of-order: {self.cursor} > {start} ({name})"
         done = self._advance(start)
@@ -657,17 +657,62 @@ class CategoryTrackContext(AbstractHashQueueContext):
     """
 
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__(warnings=[
+            TraceWarning(
+                name="category_slice_dropped",
+                text="CAT: Dropped {d[count]} category slices that would overlap their successor by float precision.",
+                data={"count": 0}
+            )])
         self.jobhash: dict[int, int] = {}
+        self.drained = False
+        self.origin: Optional[int] = None   # first start ts (ns) seen; viewers count time from there
 
-    def _slice_events(self, rank: int, pieces: list[_Slice]) -> list[TraceEvent]:
-        # Boundaries are rounded (not ts and dur separately), so that neighbouring slices share
-        # exactly the same boundary value. Slices that vanish by rounding are dropped.
+    @staticmethod
+    def _overlaps(start: float, dur: float, next_start: float, origin: float) -> bool:
+        """Would a viewer see the slice reach into the next one? All values in us as they are written to the trace.
+
+        Viewers differ in how they get from ts and dur to the end of a slice: add them directly, subtract
+        the timestamp of the trace start first, or convert to ms first. At ~1e12 us the spacing of doubles
+        is coarser than 1 ns, so these can disagree by one ULP. All of them are checked.
+        """
+        return (start + dur > next_start
+                or dur > next_start - start
+                or (start - origin) + dur > next_start - origin
+                or (start / 1e3 - origin / 1e3) + dur / 1e3 > next_start / 1e3 - origin / 1e3)
+
+    @staticmethod
+    def _fit_dur(start: int, end: int, next_start: Optional[int], origin: int = 0) -> int:
+        """Duration in ns, reduced in 1 ns steps until no viewer computation reaches past the next slice.
+
+        Args:
+            start, end, next_start, origin: integer ns; next_start is None if no slice follows
+        """
+        dur = end - start
+        if next_start is not None:
+            ts, nts, org = start / _NS_PER_US, next_start / _NS_PER_US, origin / _NS_PER_US
+            while dur > 0 and CategoryTrackContext._overlaps(ts, dur / _NS_PER_US, nts, org):
+                dur -= 1
+        return dur
+
+    def _slice_events(self, rank: int, pieces: list[_Slice], next_start: Optional[int] = None) -> list[TraceEvent]:
+        """Convert final slices to events.
+
+        Args:
+            next_start: start of the slice that follows the last of the pieces (None: nothing follows)
+
+        Slices that vanish at ns resolution (events closer together than the input can resolve) are
+        dropped silently. Slices that vanish by shortening them to avoid an overlap are dropped with a warning.
+        These are harmless: a long event whose visible part is cut to 1 ns by a higher-priority successor.
+        """
+        pieces = [piece for piece in pieces if piece[1] > piece[0]]
         events = []
-        for start, end, name in pieces:
-            start, end = round(start, _TS_DIGITS), round(end, _TS_DIGITS)
-            if end > start:
-                events.append(self._slice_event(rank, (start, end, name)))
+        for i, (start, end, name) in enumerate(pieces):
+            following = pieces[i + 1][0] if i + 1 < len(pieces) else next_start
+            dur = self._fit_dur(start, end, following, self.origin or 0)
+            if dur <= 0:
+                self.issue_warning("category_slice_dropped")
+                continue
+            events.append(self._slice_event(rank, (start, start + dur, name)))
         return events
 
     def _slice_event(self, rank: int, piece: _Slice) -> TraceEvent:
@@ -680,8 +725,8 @@ class CategoryTrackContext(AbstractHashQueueContext):
             "ph": "X",
             "name": name,
             "cat": "category",
-            "ts": start,
-            "dur": round(end - start, _TS_DIGITS),
+            "ts": start / _NS_PER_US,
+            "dur": (end - start) / _NS_PER_US,
             "pid": CATEGORY_PID,
             "tid": rank,
             "args": args,
@@ -697,16 +742,23 @@ class CategoryTrackContext(AbstractHashQueueContext):
             self.jobhash.setdefault(rank, event["args"]["jobhash"])
 
         class_name = event["args"]["class"]
+        if self.origin is None:
+            self.origin = round(event["ts"] * _NS_PER_US)
+        # each boundary is rounded once; ts and dur are not rounded separately to not double the error
         done = track.add(
-            event["ts"],
-            event["ts"] + event["dur"],
+            round(event["ts"] * _NS_PER_US),
+            round((event["ts"] + event["dur"]) * _NS_PER_US),
             _PRIORITY_OF_CLASS.get(class_name, len(_PRIORITY_OF_CLASS)),
             class_name)
-        return self._slice_events(rank, done)
+        # the slice that is still open starts where the last of the final ones ends
+        return self._slice_events(rank, done, None if track.open is None else track.open[0])
 
     def drain(self) -> list[TraceEvent]:
-        if not self.queues:
+        if self.drained:
             return []
+        self.drained = True
+        if not self.queues:
+            return super().drain()
 
         revents = [
             TraceEvent({"ph": "M", "name": "process_name", "pid": CATEGORY_PID, "ts": 0,
@@ -721,7 +773,8 @@ class CategoryTrackContext(AbstractHashQueueContext):
             revents += self._slice_events(rank, self.queues[rank].flush())
         # idempotent: do not emit events twice
         self.queues.clear()
-        return revents
+        # chain to the base drain to emit the accumulated warnings
+        return revents + super().drain()
 
 
 def category_track(event: TraceEvent, context: AbstractContext) -> list[TraceEvent]:
